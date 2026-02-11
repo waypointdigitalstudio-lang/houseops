@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "954807448148",
+    "project_id": "houseops-55490",
+    "storage_bucket": "houseops-55490.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954807448148:android:20aae76b654d1d64cb33c1",
+        "android_client_info": {
+          "package_name": "com.houseops.houseops"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDIRv-BwAsqgRra66XTBDLGALagkjhE4bE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
