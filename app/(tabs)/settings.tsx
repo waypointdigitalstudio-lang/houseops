@@ -17,7 +17,7 @@ import { usePushNotifications } from "../../hooks/usePushNotifications";
 import { useToast } from "../../hooks/useToast";
 import { useUserProfile } from "../../hooks/useUserProfile";
 import { useThemePreference } from "../../src/theme/ThemeProvider";
-// import { exportInventoryToCSV } from "../../utils/exportInventory"; // Temporarily disabled until rebuild
+import { exportInventoryToCSV } from "../../utils/exportInventory";
 
 type RegistrationDoc = {
   token: string;
@@ -214,7 +214,6 @@ export default function SettingsScreen() {
     showToast(value ? "✓ Vibration enabled" : "Vibration disabled", "success");
   };
 
-  /* Temporarily disabled until rebuild with new native modules
   const handleExport = async () => {
     if (!siteId) {
       showToast("No site assigned", "error");
@@ -232,7 +231,6 @@ export default function SettingsScreen() {
       setExporting(false);
     }
   };
-  */
 
   const Card = ({
     title,
@@ -502,7 +500,6 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        {/* Temporarily disabled until rebuild with new native modules
         <Card title="Data management" subtitle="Export and backup your data">
           <Pressable
             onPress={handleExport}
@@ -524,7 +521,6 @@ export default function SettingsScreen() {
             Downloads a spreadsheet with all inventory items for your site.
           </Text>
         </Card>
-        */}
 
         <Card title="App information" subtitle="Version and details">
           <InfoRow label="Version" value={`${appVersion} (${buildNumber})`} />
