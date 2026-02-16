@@ -1,7 +1,6 @@
 // utils/exportInventory.ts
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Platform, Share } from 'react-native';
-import RNFS from 'react-native-fs';
+import Share from 'react-native-share';
 
 import { db } from '../firebaseConfig';
 
@@ -65,20 +64,22 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
     const siteName = siteId.replace('ballys_', '');
     const filename = `inventory_${siteName}_${date}.csv`;
 
-    // Use react-native-fs which works reliably in production
-    const filePath = `${RNFS.CachesDirectoryPath}/${filename}`;
+    // Convert to base64
+    const base64 = Buffer.from(csv, 'utf8').toString('base64');
 
-    // Write the CSV file
-    await RNFS.writeFile(filePath, csv, 'utf8');
-
-    // Share the actual file
-    await Share.share({
-      url: Platform.OS === 'ios' ? filePath : `file://${filePath}`,
+    // Share using base64 data URI
+    await Share.open({
       title: 'Export Inventory',
-      message: Platform.OS === 'android' ? 'Inventory Export' : undefined,
+      message: `Inventory export from Control Deck - ${siteName}`,
+      url: `data:text/csv;base64,${base64}`,
+      filename: filename,
+      subject: `Inventory Export - ${siteName} - ${date}`,
     });
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === 'User did not share') {
+      return;
+    }
     console.error('Export failed:', error);
     throw error;
   }
@@ -88,7 +89,6 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
 function escapeCSV(value: string): string {
   if (!value) return '';
   
-  // If value contains comma, quote, or newline, wrap in quotes and escape quotes
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
     return `"${value.replace(/"/g, '""')}"`;
   }

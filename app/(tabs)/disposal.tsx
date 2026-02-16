@@ -6,11 +6,11 @@ import {
   Alert,
   FlatList,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   View
 } from "react-native";
+import Share from 'react-native-share';
 
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
@@ -164,17 +164,25 @@ export default function DisposalScreen() {
     try {
       const csv = generateCSV();
       const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `disposal_records_${siteId}_${timestamp}.csv`;
 
-      // Use React Native's native Share instead of expo-sharing/file-system
-      const result = await Share.share({
-        message: csv,
+      // Convert to base64
+      const base64 = Buffer.from(csv, 'utf8').toString('base64');
+
+      // Share using base64 data URI
+      await Share.open({
         title: 'Export Disposal Records',
+        message: `Disposal records export from Control Deck - ${siteId}`,
+        url: `data:text/csv;base64,${base64}`,
+        filename: fileName,
+        subject: `Disposal Records - ${siteId} - ${timestamp}`,
       });
 
-      if (result.action === Share.sharedAction) {
-        Alert.alert('Success', 'Disposal records shared successfully! You can save this to a file from the share menu.');
+    } catch (error: any) {
+      if (error.message === 'User did not share') {
+        setExporting(false);
+        return;
       }
-    } catch (error) {
       console.error('Export error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       Alert.alert('Export Failed', `Error: ${errorMessage}`);
