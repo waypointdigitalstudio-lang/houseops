@@ -1,5 +1,4 @@
 // app/(tabs)/disposal.tsx
-import { encode as base64encode } from 'base-64';
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -167,8 +166,8 @@ export default function DisposalScreen() {
       const timestamp = new Date().toISOString().split('T')[0];
       const fileName = `disposal_records_${siteId}_${timestamp}.csv`;
 
-      // Convert to base64 using base-64 package
-      const base64 = base64encode(csv);
+      // Convert to base64 using btoa (globally available in React Native)
+      const base64 = btoa(unescape(encodeURIComponent(csv)));
 
       // Share using base64 data URI
       await Share.open({
