@@ -1,6 +1,4 @@
 // app/(tabs)/disposal.tsx
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -8,6 +6,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View
@@ -163,60 +162,20 @@ export default function DisposalScreen() {
     setExporting(true);
 
     try {
-      console.log('=== DISPOSAL EXPORT DEBUG START ===');
-      console.log('1. Starting export with', disposals.length, 'records');
-      
-      // Use cacheDirectory instead of documentDirectory for Android production builds
-      const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
-      console.log('2. Using directory:', baseDir);
-      
-      if (!baseDir) {
-        throw new Error('No file system directory available');
-      }
-
-      console.log('3. Generating CSV...');
       const csv = generateCSV();
-      console.log('4. CSV generated, length:', csv.length, 'characters');
-
       const timestamp = new Date().toISOString().split('T')[0];
-      const fileName = `disposal_records_${siteId}_${timestamp}.csv`;
-      const fileUri = baseDir + fileName;
-      console.log('5. Target file URI:', fileUri);
 
-      console.log('6. Writing file...');
-      await FileSystem.writeAsStringAsync(fileUri, csv, {
-        encoding: 'utf8',
+      // Use React Native's native Share instead of expo-sharing/file-system
+      const result = await Share.share({
+        message: csv,
+        title: 'Export Disposal Records',
       });
-      console.log('7. File written successfully');
 
-      console.log('8. Getting file info...');
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      console.log('9. File info:', JSON.stringify(fileInfo));
-
-      console.log('10. Checking if sharing is available...');
-      const isAvailable = await Sharing.isAvailableAsync();
-      console.log('11. Sharing available:', isAvailable);
-
-      if (isAvailable) {
-        console.log('12. Attempting to share...');
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/csv',
-          dialogTitle: 'Export Disposal Records',
-          UTI: 'public.comma-separated-values-text',
-        });
-        console.log('13. Share completed');
-        Alert.alert('Success', 'Disposal records exported successfully!');
-      } else {
-        Alert.alert(
-          'Export Complete',
-          `File saved to: ${fileUri}\n\nNote: Sharing is not available on this device.`
-        );
+      if (result.action === Share.sharedAction) {
+        Alert.alert('Success', 'Disposal records shared successfully! You can save this to a file from the share menu.');
       }
-      console.log('=== DISPOSAL EXPORT DEBUG END ===');
     } catch (error) {
-      console.error('=== DISPOSAL EXPORT ERROR ===');
-      console.error('Error:', error);
-        
+      console.error('Export error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       Alert.alert('Export Failed', `Error: ${errorMessage}`);
     } finally {
