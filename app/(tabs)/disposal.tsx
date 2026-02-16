@@ -163,27 +163,45 @@ export default function DisposalScreen() {
     setExporting(true);
 
     try {
+      console.log('=== DISPOSAL EXPORT DEBUG START ===');
+      console.log('1. Starting export with', disposals.length, 'records');
+      
+      console.log('2. Checking FileSystem.documentDirectory:', FileSystem.documentDirectory);
+      if (!FileSystem.documentDirectory) {
+        throw new Error('FileSystem.documentDirectory is null');
+      }
+
+      console.log('3. Generating CSV...');
       const csv = generateCSV();
+      console.log('4. CSV generated, length:', csv.length, 'characters');
+
       const timestamp = new Date().toISOString().split('T')[0];
       const fileName = `disposal_records_${siteId}_${timestamp}.csv`;
-      
-      // @ts-ignore - FileSystem.documentDirectory is available at runtime
-      const fileUri = FileSystem.documentDirectory + fileName;
+      const fileUri = FileSystem.documentDirectory! + fileName;
+      console.log('5. Target file URI:', fileUri);
 
-      // Write CSV to file
+      console.log('6. Writing file...');
       await FileSystem.writeAsStringAsync(fileUri, csv, {
         encoding: 'utf8',
       });
+      console.log('7. File written successfully');
 
-      // Check if sharing is available
+      console.log('8. Getting file info...');
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      console.log('9. File info:', JSON.stringify(fileInfo));
+
+      console.log('10. Checking if sharing is available...');
       const isAvailable = await Sharing.isAvailableAsync();
+      console.log('11. Sharing available:', isAvailable);
 
       if (isAvailable) {
-        await Sharing.shareAsync(fileUri, {
+        console.log('12. Attempting to share...');
+        const shareResult = await Sharing.shareAsync(fileUri, {
           mimeType: 'text/csv',
           dialogTitle: 'Export Disposal Records',
           UTI: 'public.comma-separated-values-text',
         });
+        console.log('13. Share result:', JSON.stringify(shareResult));
         Alert.alert('Success', 'Disposal records exported successfully!');
       } else {
         Alert.alert(
@@ -191,9 +209,20 @@ export default function DisposalScreen() {
           `File saved to: ${fileUri}\n\nNote: Sharing is not available on this device.`
         );
       }
+      console.log('=== DISPOSAL EXPORT DEBUG END ===');
     } catch (error) {
-      console.error('Export error:', error);
-      Alert.alert('Export Failed', 'Failed to export disposal records. Please try again.');
+      console.error('=== DISPOSAL EXPORT ERROR ===');
+      console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      console.error('Full error object:', JSON.stringify(error, null, 2));
+      console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack');
+      
+      // Show detailed error in alert for production debugging
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Alert.alert(
+        'Export Failed', 
+        `Error: ${errorMessage}\n\nCheck if file permissions are enabled in Settings > Apps > Control Deck > Permissions`
+      );
     } finally {
       setExporting(false);
     }
@@ -235,7 +264,7 @@ export default function DisposalScreen() {
           <Pressable
             style={[
               styles.exportButton,
-              { backgroundColor: '#007AFF' }, // iOS blue - change to your brand color if needed
+              { backgroundColor: '#007AFF' },
               exporting && styles.exportButtonDisabled
             ]}
             onPress={exportToCSV}

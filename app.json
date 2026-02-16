@@ -2,7 +2,7 @@
   "expo": {
     "name": "Control Deck",
     "slug": "houseops",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/images/houseops-icon.png",
     "scheme": "houseops",
@@ -14,7 +14,9 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "We use the camera to scan barcodes for inventory."
+        "NSCameraUsageDescription": "We use the camera to scan barcodes for inventory.",
+        "NSPhotoLibraryUsageDescription": "We need access to save exported CSV files to your device.",
+        "NSPhotoLibraryAddUsageDescription": "We need access to save exported CSV files to your device."
       }
     },
     "android": {
@@ -30,8 +32,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
