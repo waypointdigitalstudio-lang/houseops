@@ -1,7 +1,6 @@
 // utils/exportInventory.ts
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { collection, getDocs, query, where } from 'firebase/firestore';
+import { Share } from 'react-native';
 
 import { db } from '../firebaseConfig';
 
@@ -36,6 +35,10 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
       };
     });
 
+    if (items.length === 0) {
+      throw new Error('No inventory items found for this site');
+    }
+
     // Sort by name
     items.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -56,37 +59,14 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
 
     const csv = [headers.join(','), ...rows].join('\n');
 
-    // Generate filename with date
-    const date = new Date().toISOString().split('T')[0];
-    const siteName = siteId.replace('ballys_', '');
-    const filename = `inventory_${siteName}_${date}.csv`;
-    
-    // Ensure directory exists
-    // @ts-ignore
-    const directory = FileSystem.documentDirectory;
-    if (!directory) {
-      throw new Error('Document directory not available');
-    }
-    
-    const fileUri = `${directory}${filename}`;
-
-    // Write file
-    // @ts-ignore
-    await FileSystem.writeAsStringAsync(fileUri, csv, {
-      // @ts-ignore
-      encoding: FileSystem.EncodingType.UTF8,
+    // Use React Native's Share API instead of file system
+    const result = await Share.share({
+      message: csv,
+      title: 'Export Inventory',
     });
 
-    // Share/download the file
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (isAvailable) {
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'text/csv',
-        dialogTitle: 'Export Inventory',
-        UTI: 'public.comma-separated-values-text',
-      });
-    } else {
-      throw new Error('Sharing is not available on this device');
+    if (result.action === Share.dismissedAction) {
+      throw new Error('Export cancelled');
     }
   } catch (error) {
     console.error('Export failed:', error);
