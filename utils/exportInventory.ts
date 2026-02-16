@@ -1,4 +1,5 @@
 // utils/exportInventory.ts
+import { encode as base64encode } from 'base-64';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import Share from 'react-native-share';
 
@@ -65,7 +66,7 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
     const filename = `inventory_${siteName}_${date}.csv`;
 
     // Convert to base64
-    const base64 = Buffer.from(csv, 'utf8').toString('base64');
+    const base64 = base64encode(csv);
 
     // Share using base64 data URI
     await Share.open({
