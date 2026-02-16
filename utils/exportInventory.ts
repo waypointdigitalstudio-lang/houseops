@@ -1,6 +1,7 @@
 // utils/exportInventory.ts
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Share } from 'react-native';
+import { Platform, Share } from 'react-native';
+import RNFS from 'react-native-fs';
 
 import { db } from '../firebaseConfig';
 
@@ -59,15 +60,24 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
 
     const csv = [headers.join(','), ...rows].join('\n');
 
-    // Use React Native's Share API instead of file system
-    const result = await Share.share({
-      message: csv,
+    // Generate filename with date
+    const date = new Date().toISOString().split('T')[0];
+    const siteName = siteId.replace('ballys_', '');
+    const filename = `inventory_${siteName}_${date}.csv`;
+
+    // Use react-native-fs which works reliably in production
+    const filePath = `${RNFS.CachesDirectoryPath}/${filename}`;
+
+    // Write the CSV file
+    await RNFS.writeFile(filePath, csv, 'utf8');
+
+    // Share the actual file
+    await Share.share({
+      url: Platform.OS === 'ios' ? filePath : `file://${filePath}`,
       title: 'Export Inventory',
+      message: Platform.OS === 'android' ? 'Inventory Export' : undefined,
     });
 
-    if (result.action === Share.dismissedAction) {
-      throw new Error('Export cancelled');
-    }
   } catch (error) {
     console.error('Export failed:', error);
     throw error;
