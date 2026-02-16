@@ -1,6 +1,6 @@
 // utils/exportInventory.ts
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import Share from 'react-native-share';
+import { Share } from 'react-native';
 
 import { db } from '../firebaseConfig';
 
@@ -59,27 +59,16 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
 
     const csv = [headers.join(','), ...rows].join('\n');
 
-    // Generate filename with date
+    // Share CSV as text - user can paste into Excel/Sheets or save to file
     const date = new Date().toISOString().split('T')[0];
     const siteName = siteId.replace('ballys_', '');
-    const filename = `inventory_${siteName}_${date}.csv`;
-
-    // Convert to base64 using btoa (globally available in React Native)
-    const base64 = btoa(unescape(encodeURIComponent(csv)));
-
-    // Share using base64 data URI
-    await Share.open({
-      title: 'Export Inventory',
-      message: `Inventory export from Control Deck - ${siteName}`,
-      url: `data:text/csv;base64,${base64}`,
-      filename: filename,
-      subject: `Inventory Export - ${siteName} - ${date}`,
+    
+    await Share.share({
+      message: csv,
+      title: `Inventory Export - ${siteName} - ${date}`,
     });
 
   } catch (error: any) {
-    if (error.message === 'User did not share') {
-      return;
-    }
     console.error('Export failed:', error);
     throw error;
   }
