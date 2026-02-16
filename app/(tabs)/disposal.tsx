@@ -166,9 +166,12 @@ export default function DisposalScreen() {
       console.log('=== DISPOSAL EXPORT DEBUG START ===');
       console.log('1. Starting export with', disposals.length, 'records');
       
-      console.log('2. Checking FileSystem.documentDirectory:', FileSystem.documentDirectory);
-      if (!FileSystem.documentDirectory) {
-        throw new Error('FileSystem.documentDirectory is null');
+      // Use cacheDirectory instead of documentDirectory for Android production builds
+      const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      console.log('2. Using directory:', baseDir);
+      
+      if (!baseDir) {
+        throw new Error('No file system directory available');
       }
 
       console.log('3. Generating CSV...');
@@ -177,7 +180,7 @@ export default function DisposalScreen() {
 
       const timestamp = new Date().toISOString().split('T')[0];
       const fileName = `disposal_records_${siteId}_${timestamp}.csv`;
-      const fileUri = FileSystem.documentDirectory! + fileName;
+      const fileUri = baseDir + fileName;
       console.log('5. Target file URI:', fileUri);
 
       console.log('6. Writing file...');
@@ -196,12 +199,12 @@ export default function DisposalScreen() {
 
       if (isAvailable) {
         console.log('12. Attempting to share...');
-        const shareResult = await Sharing.shareAsync(fileUri, {
+        await Sharing.shareAsync(fileUri, {
           mimeType: 'text/csv',
           dialogTitle: 'Export Disposal Records',
           UTI: 'public.comma-separated-values-text',
         });
-        console.log('13. Share result:', JSON.stringify(shareResult));
+        console.log('13. Share completed');
         Alert.alert('Success', 'Disposal records exported successfully!');
       } else {
         Alert.alert(
@@ -212,17 +215,10 @@ export default function DisposalScreen() {
       console.log('=== DISPOSAL EXPORT DEBUG END ===');
     } catch (error) {
       console.error('=== DISPOSAL EXPORT ERROR ===');
-      console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
-      console.error('Error message:', error instanceof Error ? error.message : String(error));
-      console.error('Full error object:', JSON.stringify(error, null, 2));
-      console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack');
-      
-      // Show detailed error in alert for production debugging
+      console.error('Error:', error);
+        
       const errorMessage = error instanceof Error ? error.message : String(error);
-      Alert.alert(
-        'Export Failed', 
-        `Error: ${errorMessage}\n\nCheck if file permissions are enabled in Settings > Apps > Control Deck > Permissions`
-      );
+      Alert.alert('Export Failed', `Error: ${errorMessage}`);
     } finally {
       setExporting(false);
     }

@@ -55,7 +55,9 @@
         }
       ],
       "expo-camera",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-file-system",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,
