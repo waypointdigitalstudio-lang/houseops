@@ -1,6 +1,7 @@
 // utils/exportInventory.ts
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Share } from 'react-native';
 
 import { db } from '../firebaseConfig';
 
@@ -59,13 +60,24 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
 
     const csv = [headers.join(','), ...rows].join('\n');
 
-    // Share CSV as text - user can paste into Excel/Sheets or save to file
     const date = new Date().toISOString().split('T')[0];
     const siteName = siteId.replace('ballys_', '');
-    
-    await Share.share({
-      message: csv,
-      title: `Inventory Export - ${siteName} - ${date}`,
+    const filename = `Inventory_${siteName}_${date}.csv`;
+
+    if (!FileSystem.documentDirectory) {
+      throw new Error('Unable to access device storage.');
+    }
+
+    const fileUri = FileSystem.documentDirectory + filename;
+
+    await FileSystem.writeAsStringAsync(fileUri, csv, {
+      encoding: 'utf8',
+    });
+
+    await Sharing.shareAsync(fileUri, {
+      mimeType: 'text/csv',
+      dialogTitle: `Inventory Export - ${siteName}`,
+      UTI: 'public.comma-separated-values-text', // iOS
     });
 
   } catch (error: any) {
@@ -77,10 +89,10 @@ export async function exportInventoryToCSV(siteId: string): Promise<void> {
 // Helper to escape CSV values
 function escapeCSV(value: string): string {
   if (!value) return '';
-  
+
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
     return `"${value.replace(/"/g, '""')}"`;
   }
-  
+
   return value;
 }
