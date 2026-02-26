@@ -1,4 +1,6 @@
 // app/(tabs)/disposal.tsx
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -6,7 +8,6 @@ import {
   Alert,
   FlatList,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   View
@@ -120,7 +121,6 @@ export default function DisposalScreen() {
   };
 
   const generateCSV = () => {
-    // CSV Header
     const headers = [
       'Item Name',
       'Item ID',
@@ -132,7 +132,6 @@ export default function DisposalScreen() {
       'Disposal Date'
     ];
 
-    // CSV Rows
     const rows = disposals.map(disposal => [
       escapeCSV(disposal.itemName),
       escapeCSV(disposal.itemId),
@@ -144,7 +143,6 @@ export default function DisposalScreen() {
       escapeCSV(formatDateForCSV(disposal.disposedAt))
     ]);
 
-    // Combine headers and rows
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.join(','))
@@ -164,11 +162,19 @@ export default function DisposalScreen() {
     try {
       const csv = generateCSV();
       const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `Disposal_${siteId}_${timestamp}.csv`;
 
-      // Share CSV as text - user can paste into Excel/Sheets or save to file
-      await Share.share({
-        message: csv,
-        title: `Disposal Records - ${siteId} - ${timestamp}`,
+      const dir = FileSystem.documentDirectory as string;
+      const fileUri = dir + filename;
+
+      await FileSystem.writeAsStringAsync(fileUri, csv, {
+        encoding: 'utf8',
+      });
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: `Disposal Records - ${siteId}`,
+        UTI: 'public.comma-separated-values-text', // iOS
       });
 
     } catch (error: any) {
@@ -211,7 +217,7 @@ export default function DisposalScreen() {
             Disposed items for audit and tracking
           </Text>
         </View>
-        
+
         {disposals.length > 0 && (
           <Pressable
             style={[
