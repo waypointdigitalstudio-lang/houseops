@@ -2,7 +2,7 @@
   "expo": {
     "name": "Control Deck",
     "slug": "houseops",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/houseops-icon.png",
     "scheme": "houseops",
