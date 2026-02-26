@@ -897,9 +897,16 @@ export default function IndexScreen() {
               style={[styles.fieldInput, { borderColor: theme.border, backgroundColor: theme.card, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
               onPress={() => setShowPrinterDropdown((p) => !p)}
             >
-              <Text style={{ color: tonerForm.printer ? theme.text : theme.mutedText, fontSize: 14 }}>
-                {tonerForm.printer || "Select a printer…"}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: tonerForm.printer ? theme.text : theme.mutedText, fontSize: 14 }}>
+                  {tonerForm.printer || "Select a printer…"}
+                </Text>
+                {tonerForm.printer ? (
+                  <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }}>
+                    {printers.find((p) => p.name === tonerForm.printer)?.location || ""}
+                  </Text>
+                ) : null}
+              </View>
               <Ionicons name={showPrinterDropdown ? "chevron-up" : "chevron-down"} size={16} color={theme.mutedText} />
             </Pressable>
 
