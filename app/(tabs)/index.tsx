@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -17,15 +18,16 @@ import {
   Alert,
   Animated,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 
-import { BRAND } from "../../constants/branding";
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
@@ -40,18 +42,35 @@ type Item = {
   notes?: string;
 };
 
+type Toner = {
+  id: string;
+  model: string;
+  partNumber?: string;
+  color: string;
+  quantity: number;
+  minQuantity: number;
+  printer?: string;
+  supplier?: string;
+  notes?: string;
+  siteId: string;
+};
+
 type SortMode = "name" | "stock";
+type TabMode = "inventory" | "toners";
+
+const TONER_COLORS = ["Black", "Cyan", "Magenta", "Yellow", "Other"];
 
 export default function IndexScreen() {
   const theme = useAppTheme();
-
-  // IMPORTANT: use siteId from the hook result (NOT profile?.siteId)
   const { uid, profile, siteId, loading: profileLoading } = useUserProfile();
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabMode>("inventory");
+
+  // --- Inventory state ---
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [showLowOnly, setShowLowOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
@@ -62,38 +81,42 @@ export default function IndexScreen() {
     backup: any;
     timeoutId: any;
   } | null>(null);
-
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const undoAnim = useRef(new Animated.Value(0)).current;
 
-  const showUndoBar = () => {
-    Animated.timing(undoAnim, {
-      toValue: 1,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
-  };
+  // --- Toner state ---
+  const [toners, setToners] = useState<Toner[]>([]);
+  const [tonersLoading, setTonersLoading] = useState(true);
+  const [tonerSearch, setTonerSearch] = useState("");
+  const [showTonerLowOnly, setShowTonerLowOnly] = useState(false);
+  const [showTonerModal, setShowTonerModal] = useState(false);
+  const [editingToner, setEditingToner] = useState<Toner | null>(null);
+  const [tonerForm, setTonerForm] = useState({
+    model: "",
+    partNumber: "",
+    color: "Black",
+    quantity: "",
+    minQuantity: "",
+    printer: "",
+    supplier: "",
+    notes: "",
+  });
+  const [savingToner, setSavingToner] = useState(false);
 
+  // ─── Undo helpers ───────────────────────────────────────────────
+  const showUndoBar = () => {
+    Animated.timing(undoAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+  };
   const hideUndoBar = () => {
-    Animated.timing(undoAnim, {
-      toValue: 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
   };
 
   const scheduleDelete = async (item: Item) => {
     if (pendingDelete?.timeoutId) {
       clearTimeout(pendingDelete.timeoutId);
-      try {
-        await deleteDoc(doc(db, "items", pendingDelete.item.id));
-      } catch {}
+      try { await deleteDoc(doc(db, "items", pendingDelete.item.id)); } catch {}
       setPendingDelete(null);
-      setHiddenIds((p) => {
-        const n = new Set(p);
-        n.delete(pendingDelete.item.id);
-        return n;
-      });
+      setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
       hideUndoBar();
     }
 
@@ -111,14 +134,8 @@ export default function IndexScreen() {
     showUndoBar();
 
     const timeoutId = setTimeout(async () => {
-      try {
-        await deleteDoc(doc(db, "items", item.id));
-      } catch {
-        setHiddenIds((p) => {
-          const n = new Set(p);
-          n.delete(item.id);
-          return n;
-        });
+      try { await deleteDoc(doc(db, "items", item.id)); } catch {
+        setHiddenIds((p) => { const n = new Set(p); n.delete(item.id); return n; });
       } finally {
         hideUndoBar();
         setPendingDelete(null);
@@ -130,143 +147,200 @@ export default function IndexScreen() {
 
   const undoDelete = async () => {
     if (!pendingDelete) return;
-
     clearTimeout(pendingDelete.timeoutId);
-
-    setHiddenIds((p) => {
-      const n = new Set(p);
-      n.delete(pendingDelete.item.id);
-      return n;
-    });
-
+    setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
     try {
-      await setDoc(doc(db, "items", pendingDelete.item.id), pendingDelete.backup, {
-        merge: true,
-      });
-    } catch {
-    } finally {
+      await setDoc(doc(db, "items", pendingDelete.item.id), pendingDelete.backup, { merge: true });
+    } catch {} finally {
       hideUndoBar();
       setPendingDelete(null);
     }
   };
 
-  // Pull-to-refresh handler
   const onRefresh = () => {
     setRefreshing(true);
-    // The onSnapshot listener will automatically update items
-    // Just simulate a brief refresh animation
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
-  // 🔥 SITE-SCOPED INVENTORY LISTENER
+  // ─── Inventory listener ──────────────────────────────────────────
   useEffect(() => {
-    // Still loading profile → don't do anything yet
     if (profileLoading) return;
-
-    // Profile loaded but no siteId → show empty state
-    if (!siteId) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
+    if (!siteId) { setItems([]); setLoading(false); return; }
 
     setLoading(true);
-
     const q = query(collection(db, "items"), where("siteId", "==", siteId));
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list: Item[] = snap.docs.map((docSnap) => {
-          const d = docSnap.data() as any;
-          return {
-            id: docSnap.id,
-            name: d.name || "Unnamed item",
-            currentQuantity: Number(d.currentQuantity ?? 0),
-            minQuantity: Number(d.minQuantity ?? 0),
-            location: d.location || "",
-            barcode: d.barcode || "",
-            notes: d.notes || "",
-          };
-        });
-
-        setItems(list.filter((i) => !hiddenIds.has(i.id)));
-        setLoading(false);
-      },
-      (err) => {
-        console.log("Inventory snapshot error:", err);
-        setItems([]);
-        setLoading(false);
-      }
-    );
-
+    const unsub = onSnapshot(q, (snap) => {
+      const list: Item[] = snap.docs.map((docSnap) => {
+        const d = docSnap.data() as any;
+        return {
+          id: docSnap.id,
+          name: d.name || "Unnamed item",
+          currentQuantity: Number(d.currentQuantity ?? 0),
+          minQuantity: Number(d.minQuantity ?? 0),
+          location: d.location || "",
+          barcode: d.barcode || "",
+          notes: d.notes || "",
+        };
+      });
+      setItems(list.filter((i) => !hiddenIds.has(i.id)));
+      setLoading(false);
+    }, (err) => {
+      console.log("Inventory snapshot error:", err);
+      setItems([]);
+      setLoading(false);
+    });
     return () => unsub();
   }, [siteId, profileLoading, hiddenIds]);
 
+  // ─── Toners listener ─────────────────────────────────────────────
+  useEffect(() => {
+    if (profileLoading) return;
+    if (!siteId) { setToners([]); setTonersLoading(false); return; }
+
+    setTonersLoading(true);
+    const q = query(collection(db, "toners"), where("siteId", "==", siteId));
+    const unsub = onSnapshot(q, (snap) => {
+      const list: Toner[] = snap.docs.map((docSnap) => {
+        const d = docSnap.data() as any;
+        return {
+          id: docSnap.id,
+          model: d.model || "Unknown model",
+          partNumber: d.partNumber || "",
+          color: d.color || "Black",
+          quantity: Number(d.quantity ?? 0),
+          minQuantity: Number(d.minQuantity ?? 0),
+          printer: d.printer || "",
+          supplier: d.supplier || "",
+          notes: d.notes || "",
+          siteId: d.siteId || "",
+        };
+      });
+      setToners(list);
+      setTonersLoading(false);
+    }, (err) => {
+      console.log("Toners snapshot error:", err);
+      setToners([]);
+      setTonersLoading(false);
+    });
+    return () => unsub();
+  }, [siteId, profileLoading]);
+
+  // ─── Inventory computed ──────────────────────────────────────────
   const normalizedQuery = searchQuery.trim().toLowerCase();
-
   const filtered = useMemo(() => {
-    let list =
-      normalizedQuery.length === 0
-        ? items
-        : items.filter((i) =>
-            [i.name, i.location, i.barcode, i.notes]
-              .join(" ")
-              .toLowerCase()
-              .includes(normalizedQuery)
-          );
-
-    if (showLowOnly) {
-      list = list.filter((i) => i.currentQuantity <= i.minQuantity);
-    }
-
+    let list = normalizedQuery.length === 0
+      ? items
+      : items.filter((i) => [i.name, i.location, i.barcode, i.notes].join(" ").toLowerCase().includes(normalizedQuery));
+    if (showLowOnly) list = list.filter((i) => i.currentQuantity <= i.minQuantity);
     return list;
   }, [items, normalizedQuery, showLowOnly]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
-    list.sort((a, b) =>
-      sortMode === "name"
-        ? a.name.localeCompare(b.name)
-        : a.currentQuantity - b.currentQuantity
-    );
+    list.sort((a, b) => sortMode === "name" ? a.name.localeCompare(b.name) : a.currentQuantity - b.currentQuantity);
     return list;
   }, [filtered, sortMode]);
 
-  const lowStockCount = useMemo(
-    () => items.filter((i) => i.currentQuantity <= i.minQuantity).length,
-    [items]
-  );
+  const lowStockCount = useMemo(() => items.filter((i) => i.currentQuantity <= i.minQuantity).length, [items]);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <StatusBar style="auto" />
+  // ─── Toners computed ─────────────────────────────────────────────
+  const normalizedTonerQuery = tonerSearch.trim().toLowerCase();
+  const filteredToners = useMemo(() => {
+    let list = normalizedTonerQuery.length === 0
+      ? toners
+      : toners.filter((t) => [t.model, t.partNumber, t.color, t.printer, t.supplier, t.notes].join(" ").toLowerCase().includes(normalizedTonerQuery));
+    if (showTonerLowOnly) list = list.filter((t) => t.quantity <= t.minQuantity);
+    return list;
+  }, [toners, normalizedTonerQuery, showTonerLowOnly]);
 
-        <Text style={[styles.screenTitle, { color: theme.text }]}>
-          {BRAND.appName}
-        </Text>
+  const tonerLowCount = useMemo(() => toners.filter((t) => t.quantity <= t.minQuantity).length, [toners]);
 
-        <Text style={{ color: theme.mutedText, marginTop: 6 }}>
-          Loading inventory…
-        </Text>
+  // ─── Toner modal helpers ─────────────────────────────────────────
+  const openAddToner = () => {
+    setEditingToner(null);
+    setTonerForm({ model: "", partNumber: "", color: "Black", quantity: "", minQuantity: "", printer: "", supplier: "", notes: "" });
+    setShowTonerModal(true);
+  };
 
-        <View style={{ marginTop: 12 }}>
-          <ActivityIndicator />
-        </View>
-      </View>
-    );
-  }
+  const openEditToner = (toner: Toner) => {
+    setEditingToner(toner);
+    setTonerForm({
+      model: toner.model,
+      partNumber: toner.partNumber || "",
+      color: toner.color,
+      quantity: toner.quantity.toString(),
+      minQuantity: toner.minQuantity.toString(),
+      printer: toner.printer || "",
+      supplier: toner.supplier || "",
+      notes: toner.notes || "",
+    });
+    setShowTonerModal(true);
+  };
 
+  const saveToner = async () => {
+    if (!tonerForm.model.trim()) {
+      Alert.alert("Required", "Please enter a model name.");
+      return;
+    }
+    if (!siteId) return;
+
+    setSavingToner(true);
+    try {
+      const data = {
+        model: tonerForm.model.trim(),
+        partNumber: tonerForm.partNumber.trim(),
+        color: tonerForm.color,
+        quantity: parseInt(tonerForm.quantity) || 0,
+        minQuantity: parseInt(tonerForm.minQuantity) || 0,
+        printer: tonerForm.printer.trim(),
+        supplier: tonerForm.supplier.trim(),
+        notes: tonerForm.notes.trim(),
+        siteId,
+      };
+
+      if (editingToner) {
+        await setDoc(doc(db, "toners", editingToner.id), data, { merge: true });
+      } else {
+        await addDoc(collection(db, "toners"), data);
+      }
+      setShowTonerModal(false);
+    } catch (err) {
+      Alert.alert("Error", "Failed to save toner.");
+    } finally {
+      setSavingToner(false);
+    }
+  };
+
+  const deleteToner = (toner: Toner) => {
+    Alert.alert("Delete Toner?", `Delete "${toner.model} (${toner.color})"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive",
+        onPress: async () => {
+          try { await deleteDoc(doc(db, "toners", toner.id)); } catch {
+            Alert.alert("Error", "Failed to delete toner.");
+          }
+        },
+      },
+    ]);
+  };
+
+  const tonerColorDot = (color: string) => {
+    switch (color.toLowerCase()) {
+      case "black": return "#1f2937";
+      case "cyan": return "#06b6d4";
+      case "magenta": return "#ec4899";
+      case "yellow": return "#eab308";
+      default: return "#6b7280";
+    }
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar style="auto" />
 
-      <Text style={[styles.screenTitle, { color: theme.text }]}>
-        Control Deck
-      </Text>
+      <Text style={[styles.screenTitle, { color: theme.text }]}>Control Deck</Text>
 
       {!siteId ? (
         <Text style={{ color: "#ef4444", marginTop: 8, fontWeight: "800" }}>
@@ -274,254 +348,360 @@ export default function IndexScreen() {
         </Text>
       ) : null}
 
-      {/* Search */}
-      <TextInput
-        style={[
-          styles.searchInput,
-          {
-            borderColor: theme.border,
-            color: theme.text,
-            backgroundColor: theme.card,
-          },
-        ]}
-        placeholder="Search name, location, barcode, or notes…"
-        placeholderTextColor={theme.mutedText}
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-      />
-
-      {/* Filters + Sort */}
-      <View style={styles.filterRow}>
+      {/* Sub-tabs */}
+      <View style={[styles.subTabRow, { borderColor: theme.border }]}>
         <Pressable
-          onPress={() => setShowLowOnly((p) => !p)}
-          style={[
-            styles.chip,
-            {
-              borderColor: showLowOnly ? theme.tint : theme.border,
-              backgroundColor: showLowOnly ? theme.card : "transparent",
-            },
-          ]}
+          style={[styles.subTab, activeTab === "inventory" && { borderBottomColor: theme.tint, borderBottomWidth: 2 }]}
+          onPress={() => setActiveTab("inventory")}
         >
-          <Text
-            style={[
-              styles.chipText,
-              { color: showLowOnly ? theme.text : theme.mutedText },
-            ]}
-          >
-            Low stock only
+          <Text style={[styles.subTabText, { color: activeTab === "inventory" ? theme.tint : theme.mutedText }]}>
+            Inventory
           </Text>
         </Pressable>
-
-        <View style={styles.sortGroup}>
-          <Pressable
-            onPress={() => setSortMode("name")}
-            style={[
-              styles.chipSmall,
-              {
-                borderColor: sortMode === "name" ? theme.tint : theme.border,
-                backgroundColor: sortMode === "name" ? theme.card : "transparent",
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.chipTextSmall,
-                { color: sortMode === "name" ? theme.text : theme.mutedText },
-              ]}
-            >
-              A–Z
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setSortMode("stock")}
-            style={[
-              styles.chipSmall,
-              {
-                borderColor: sortMode === "stock" ? theme.tint : theme.border,
-                backgroundColor: sortMode === "stock" ? theme.card : "transparent",
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.chipTextSmall,
-                { color: sortMode === "stock" ? theme.text : theme.mutedText },
-              ]}
-            >
-              Low → High
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={[styles.subTab, activeTab === "toners" && { borderBottomColor: theme.tint, borderBottomWidth: 2 }]}
+          onPress={() => setActiveTab("toners")}
+        >
+          <Text style={[styles.subTabText, { color: activeTab === "toners" ? theme.tint : theme.mutedText }]}>
+            Toners {tonerLowCount > 0 ? `🔴` : ""}
+          </Text>
+        </Pressable>
       </View>
 
-      {/* Global Low Stock Banner */}
-      {siteId && lowStockCount > 0 && !showLowOnly && normalizedQuery.length === 0 ? (
-        <View
-          style={[
-            styles.alertBox,
-            {
-              borderColor: "#ef4444",
-              backgroundColor: "rgba(239, 68, 68, 0.18)",
-            },
-          ]}
-        >
-          <Text style={[styles.alertTitle, { color: theme.text }]}>
-            Needs Attention
-          </Text>
-          <Text style={[styles.alertText, { color: theme.mutedText }]}>
-            {lowStockCount} item{lowStockCount === 1 ? " is" : "s are"} at or below
-            minimum stock.
-          </Text>
-        </View>
-      ) : null}
+      {/* ── INVENTORY TAB ── */}
+      {activeTab === "inventory" && (
+        <>
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator />
+              <Text style={{ color: theme.mutedText, marginTop: 10 }}>Loading inventory…</Text>
+            </View>
+          ) : (
+            <>
+              <TextInput
+                style={[styles.searchInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                placeholder="Search name, location, barcode, or notes…"
+                placeholderTextColor={theme.mutedText}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
 
-      {/* Results */}
-      {!siteId ? (
-        <Text style={{ color: theme.mutedText, marginTop: 14 }}>
-          No site assigned for this user yet.
-        </Text>
-      ) : sorted.length === 0 ? (
-        <Text style={{ color: theme.mutedText, marginTop: 14 }}>
-          No items found.
-        </Text>
-      ) : (
-        <FlatList
-          data={sorted}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 90 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.tint}
-              colors={[theme.tint]}
-            />
-          }
-          renderItem={({ item }) => {
-            const isLow = item.currentQuantity <= item.minQuantity;
+              <View style={styles.filterRow}>
+                <Pressable
+                  onPress={() => setShowLowOnly((p) => !p)}
+                  style={[styles.chip, { borderColor: showLowOnly ? theme.tint : theme.border, backgroundColor: showLowOnly ? theme.card : "transparent" }]}
+                >
+                  <Text style={[styles.chipText, { color: showLowOnly ? theme.text : theme.mutedText }]}>Low stock only</Text>
+                </Pressable>
 
-            return (
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: "/item/[id]",
-                    params: { id: item.id },
-                  })
-                }
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: theme.card,
-                    borderColor: isLow ? "#ef4444" : theme.border,
-                  },
-                ]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemName, { color: theme.text }]}>
-                    {item.name}
-                  </Text>
-
-                  {item.location ? (
-                    <Text style={{ color: theme.tint, fontSize: 12, marginTop: 2 }}>
-                      Location: {item.location}
-                    </Text>
-                  ) : null}
-
-                  {item.barcode ? (
-                    <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }}>
-                      Barcode: {item.barcode}
-                    </Text>
-                  ) : null}
-
-                  {item.notes ? (
-                    <Text
-                      numberOfLines={2}
-                      style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}
-                    >
-                      Note: {item.notes}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <View style={styles.rightControls}>
+                <View style={styles.sortGroup}>
                   <Pressable
-                    onPress={() =>
-                      Alert.alert(
-                        "Delete item?",
-                        `Delete "${item.name}"? You can undo for 5 seconds.`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Delete",
-                            style: "destructive",
-                            onPress: () => scheduleDelete(item),
-                          },
-                        ]
-                      )
-                    }
-                    hitSlop={10}
+                    onPress={() => setSortMode("name")}
+                    style={[styles.chipSmall, { borderColor: sortMode === "name" ? theme.tint : theme.border, backgroundColor: sortMode === "name" ? theme.card : "transparent" }]}
                   >
-                    <Ionicons
-                      name="trash-outline"
-                      size={18}
-                      color={theme.mutedText}
-                    />
+                    <Text style={[styles.chipTextSmall, { color: sortMode === "name" ? theme.text : theme.mutedText }]}>A–Z</Text>
                   </Pressable>
-
-                  <Text
-                    style={{
-                      fontWeight: "900",
-                      color: isLow ? "#ef4444" : theme.text,
-                      fontSize: 16,
-                      width: 28,
-                      textAlign: "right",
-                    }}
+                  <Pressable
+                    onPress={() => setSortMode("stock")}
+                    style={[styles.chipSmall, { borderColor: sortMode === "stock" ? theme.tint : theme.border, backgroundColor: sortMode === "stock" ? theme.card : "transparent" }]}
                   >
-                    {item.currentQuantity}
+                    <Text style={[styles.chipTextSmall, { color: sortMode === "stock" ? theme.text : theme.mutedText }]}>Low → High</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {siteId && lowStockCount > 0 && !showLowOnly && normalizedQuery.length === 0 ? (
+                <View style={[styles.alertBox, { borderColor: "#ef4444", backgroundColor: "rgba(239, 68, 68, 0.18)" }]}>
+                  <Text style={[styles.alertTitle, { color: theme.text }]}>Needs Attention</Text>
+                  <Text style={[styles.alertText, { color: theme.mutedText }]}>
+                    {lowStockCount} item{lowStockCount === 1 ? " is" : "s are"} at or below minimum stock.
                   </Text>
                 </View>
+              ) : null}
+
+              {!siteId ? (
+                <Text style={{ color: theme.mutedText, marginTop: 14 }}>No site assigned for this user yet.</Text>
+              ) : sorted.length === 0 ? (
+                <Text style={{ color: theme.mutedText, marginTop: 14 }}>No items found.</Text>
+              ) : (
+                <FlatList
+                  data={sorted}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={{ paddingBottom: 90 }}
+                  refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.tint} colors={[theme.tint]} />}
+                  renderItem={({ item }) => {
+                    const isLow = item.currentQuantity <= item.minQuantity;
+                    return (
+                      <Pressable
+                        onPress={() => router.push({ pathname: "/item/[id]", params: { id: item.id } })}
+                        style={[styles.card, { backgroundColor: theme.card, borderColor: isLow ? "#ef4444" : theme.border }]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
+                          {item.location ? <Text style={{ color: theme.tint, fontSize: 12, marginTop: 2 }}>Location: {item.location}</Text> : null}
+                          {item.barcode ? <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }}>Barcode: {item.barcode}</Text> : null}
+                          {item.notes ? <Text numberOfLines={2} style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}>Note: {item.notes}</Text> : null}
+                        </View>
+                        <View style={styles.rightControls}>
+                          <Pressable
+                            onPress={() => Alert.alert("Delete item?", `Delete "${item.name}"? You can undo for 5 seconds.`, [
+                              { text: "Cancel", style: "cancel" },
+                              { text: "Delete", style: "destructive", onPress: () => scheduleDelete(item) },
+                            ])}
+                            hitSlop={10}
+                          >
+                            <Ionicons name="trash-outline" size={18} color={theme.mutedText} />
+                          </Pressable>
+                          <Text style={{ fontWeight: "900", color: isLow ? "#ef4444" : theme.text, fontSize: 16, width: 28, textAlign: "right" }}>
+                            {item.currentQuantity}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  }}
+                />
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── TONERS TAB ── */}
+      {activeTab === "toners" && (
+        <>
+          {tonersLoading ? (
+            <View style={styles.center}>
+              <ActivityIndicator />
+              <Text style={{ color: theme.mutedText, marginTop: 10 }}>Loading toners…</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.tonerHeaderRow}>
+                <TextInput
+                  style={[styles.searchInput, { flex: 1, borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="Search model, printer, supplier…"
+                  placeholderTextColor={theme.mutedText}
+                  value={tonerSearch}
+                  onChangeText={setTonerSearch}
+                />
+                <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint }]} onPress={openAddToner}>
+                  <Ionicons name="add" size={22} color="#fff" />
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={() => setShowTonerLowOnly((p) => !p)}
+                style={[styles.chip, { borderColor: showTonerLowOnly ? theme.tint : theme.border, backgroundColor: showTonerLowOnly ? theme.card : "transparent", marginBottom: 12 }]}
+              >
+                <Text style={[styles.chipText, { color: showTonerLowOnly ? theme.text : theme.mutedText }]}>Low stock only</Text>
               </Pressable>
-            );
-          }}
-        />
+
+              {tonerLowCount > 0 && !showTonerLowOnly && normalizedTonerQuery.length === 0 ? (
+                <View style={[styles.alertBox, { borderColor: "#ef4444", backgroundColor: "rgba(239, 68, 68, 0.18)" }]}>
+                  <Text style={[styles.alertTitle, { color: theme.text }]}>Low Toner Stock</Text>
+                  <Text style={[styles.alertText, { color: theme.mutedText }]}>
+                    {tonerLowCount} toner{tonerLowCount === 1 ? " is" : "s are"} at or below minimum stock.
+                  </Text>
+                </View>
+              ) : null}
+
+              {filteredToners.length === 0 ? (
+                <View style={styles.center}>
+                  <Text style={{ color: theme.mutedText, marginTop: 14 }}>No toners found.</Text>
+                  <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginTop: 16 }]} onPress={openAddToner}>
+                    <Ionicons name="add" size={22} color="#fff" />
+                  </Pressable>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredToners}
+                  keyExtractor={(t) => t.id}
+                  contentContainerStyle={{ paddingBottom: 90 }}
+                  renderItem={({ item: toner }) => {
+                    const isLow = toner.quantity <= toner.minQuantity;
+                    return (
+                      <Pressable
+                        onPress={() => openEditToner(toner)}
+                        style={[styles.card, { backgroundColor: theme.card, borderColor: isLow ? "#ef4444" : theme.border }]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: tonerColorDot(toner.color) }} />
+                            <Text style={[styles.itemName, { color: theme.text }]}>{toner.model}</Text>
+                          </View>
+                          {toner.partNumber ? <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }}>Part #: {toner.partNumber}</Text> : null}
+                          {toner.printer ? <Text style={{ color: theme.tint, fontSize: 12, marginTop: 2 }}>Printer: {toner.printer}</Text> : null}
+                          {toner.supplier ? <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>Supplier: {toner.supplier}</Text> : null}
+                          {toner.notes ? <Text numberOfLines={2} style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}>Note: {toner.notes}</Text> : null}
+                        </View>
+                        <View style={styles.rightControls}>
+                          <Pressable onPress={() => deleteToner(toner)} hitSlop={10}>
+                            <Ionicons name="trash-outline" size={18} color={theme.mutedText} />
+                          </Pressable>
+                          <Text style={{ fontWeight: "900", color: isLow ? "#ef4444" : theme.text, fontSize: 16, width: 28, textAlign: "right" }}>
+                            {toner.quantity}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  }}
+                />
+              )}
+            </>
+          )}
+        </>
       )}
 
       {/* Undo bar */}
       {pendingDelete ? (
-        <Animated.View
-          style={[
-            styles.undoBar,
-            {
-              backgroundColor: theme.card,
-              borderColor: theme.border,
-              opacity: undoAnim,
-            },
-          ]}
-        >
-          <Text style={{ color: theme.text }} numberOfLines={1}>
-            Deleted "{pendingDelete.item.name}"
-          </Text>
-
+        <Animated.View style={[styles.undoBar, { backgroundColor: theme.card, borderColor: theme.border, opacity: undoAnim }]}>
+          <Text style={{ color: theme.text }} numberOfLines={1}>Deleted "{pendingDelete.item.name}"</Text>
           <Pressable onPress={undoDelete}>
             <Text style={{ color: theme.tint, fontWeight: "900" }}>UNDO</Text>
           </Pressable>
         </Animated.View>
       ) : null}
+
+      {/* ── TONER MODAL ── */}
+      <Modal visible={showTonerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowTonerModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingToner ? "Edit Toner" : "Add Toner"}</Text>
+            <Pressable onPress={() => setShowTonerModal(false)}>
+              <Ionicons name="close" size={24} color={theme.mutedText} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+            {/* Model */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. HP 26A"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.model}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, model: v }))}
+            />
+
+            {/* Part Number */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Part Number</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. CF226A"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.partNumber}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, partNumber: v }))}
+            />
+
+            {/* Color selector */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Color</Text>
+            <View style={styles.colorRow}>
+              {TONER_COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => setTonerForm((p) => ({ ...p, color: c }))}
+                  style={[
+                    styles.colorChip,
+                    { borderColor: tonerForm.color === c ? theme.tint : theme.border, backgroundColor: tonerForm.color === c ? theme.card : "transparent" },
+                  ]}
+                >
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tonerColorDot(c), marginRight: 4 }} />
+                  <Text style={[styles.chipTextSmall, { color: tonerForm.color === c ? theme.text : theme.mutedText }]}>{c}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Quantity + Min */}
+            <View style={styles.rowFields}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Quantity</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="0"
+                  placeholderTextColor={theme.mutedText}
+                  keyboardType="numeric"
+                  value={tonerForm.quantity}
+                  onChangeText={(v) => setTonerForm((p) => ({ ...p, quantity: v }))}
+                />
+              </View>
+              <View style={{ width: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Min Stock</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="0"
+                  placeholderTextColor={theme.mutedText}
+                  keyboardType="numeric"
+                  value={tonerForm.minQuantity}
+                  onChangeText={(v) => setTonerForm((p) => ({ ...p, minQuantity: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Printer */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Printer</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. HP LaserJet Pro M402"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.printer}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, printer: v }))}
+            />
+
+            {/* Supplier */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Supplier</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. Staples, Amazon"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.supplier}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, supplier: v }))}
+            />
+
+            {/* Notes */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, minHeight: 80, textAlignVertical: "top" }]}
+              placeholder="Any additional notes…"
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={tonerForm.notes}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, notes: v }))}
+            />
+
+            {/* Save button */}
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: theme.tint }, savingToner && { opacity: 0.6 }]}
+              onPress={saveToner}
+              disabled={savingToner}
+            >
+              {savingToner ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>{editingToner ? "Save Changes" : "Add Toner"}</Text>}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 16,
-    paddingHorizontal: 16,
+  container: { flex: 1, paddingTop: 16, paddingHorizontal: 16 },
+  screenTitle: { fontSize: 26, fontWeight: "800", marginTop: 8, marginBottom: 12 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  subTabRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    marginBottom: 14,
   },
-  screenTitle: {
-    fontSize: 26,
-    fontWeight: "800",
-    marginTop: 8,
+  subTab: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  subTabText: {
+    fontSize: 15,
+    fontWeight: "700",
   },
 
   searchInput: {
@@ -532,82 +712,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 10,
   },
+  filterRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  chipSmall: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  chipText: { fontSize: 13, fontWeight: "600" },
+  chipTextSmall: { fontSize: 12, fontWeight: "600" },
+  sortGroup: { flexDirection: "row", gap: 6 },
 
-  filterRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  chipSmall: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  chipTextSmall: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  sortGroup: {
-    flexDirection: "row",
-    gap: 6,
-  },
+  alertBox: { borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1 },
+  alertTitle: { fontWeight: "800" },
+  alertText: { fontSize: 13, marginTop: 4 },
 
-  alertBox: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  alertTitle: {
-    fontWeight: "800",
-  },
-  alertText: {
-    fontSize: 13,
-    marginTop: 4,
-  },
-
-  card: {
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  rightControls: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-    marginLeft: 12,
-  },
+  card: { borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 10, flexDirection: "row", alignItems: "center", borderWidth: 1 },
+  itemName: { fontSize: 16, fontWeight: "800" },
+  rightControls: { flexDirection: "row", gap: 12, alignItems: "center", marginLeft: 12 },
 
   undoBar: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    position: "absolute", left: 16, right: 16, bottom: 16, borderRadius: 14, borderWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
+
+  tonerHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 0 },
+  addTonerBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+
+  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
+  colorChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
+
+  rowFields: { flexDirection: "row", marginBottom: 0 },
+
+  modalContainer: { flex: 1, padding: 20 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "800" },
+  fieldLabel: { fontSize: 13, fontWeight: "600", marginBottom: 6, marginTop: 14 },
+  fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+
+  saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 });
