@@ -484,7 +484,7 @@ export default function IndexScreen() {
                   value={tonerSearch}
                   onChangeText={setTonerSearch}
                 />
-                <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint }]} onPress={openAddToner}>
+                <Pressable style={[styles.addTonerBtn, { backgroundColor: '#007AFF' }]} onPress={openAddToner}>
                   <Ionicons name="add" size={22} color="#fff" />
                 </Pressable>
               </View>
@@ -508,7 +508,7 @@ export default function IndexScreen() {
               {filteredToners.length === 0 ? (
                 <View style={styles.center}>
                   <Text style={{ color: theme.mutedText, marginTop: 14 }}>No toners found.</Text>
-                  <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginTop: 16 }]} onPress={openAddToner}>
+                  <Pressable style={[styles.addTonerBtn, { backgroundColor: '#007AFF', marginTop: 16 }]} onPress={openAddToner}>
                     <Ionicons name="add" size={22} color="#fff" />
                   </Pressable>
                 </View>
@@ -671,7 +671,7 @@ export default function IndexScreen() {
 
             {/* Save button */}
             <Pressable
-              style={[styles.saveBtn, { backgroundColor: theme.tint }, savingToner && { opacity: 0.6 }]}
+              style={[styles.saveBtn, { backgroundColor: '#007AFF' }, savingToner && { opacity: 0.6 }]}
               onPress={saveToner}
               disabled={savingToner}
             >
@@ -747,5 +747,5 @@ const styles = StyleSheet.create({
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
 
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
+  saveBtnText: { color: "#1d10d1", fontSize: 16, fontWeight: "800" },
 });
