@@ -432,28 +432,28 @@ export default function IndexScreen() {
       // Find column indices from header row (handles BOM and various column name formats)
       const header = rows[0].map((h) => h.toLowerCase().trim().replace(/^\uFEFF/, "").replace(/\uFEFF/g, ""));
 
-      // For the master CSV: Model = printer name, Description = location, IP = ip
-      const nameIdx = header.findIndex((h) => h === "model");
-      const locationIdx = header.findIndex((h) => h === "description");
-      const ipIdx = header.findIndex((h) => h === "ip");
+      // Map exact column names from the master CSV
+      const finalNameIdx = header.findIndex((h) => h === "model");
+      const finalLocationIdx = header.findIndex((h) => h === "description");
+      const finalIpIdx = header.findIndex((h) => h === "ip");
 
       // Fallbacks for simpler CSVs
-      const nameIdxFallback = nameIdx >= 0 ? nameIdx : header.findIndex((h) => h.includes("name") || h.includes("model"));
-      const locationIdxFallback = locationIdx >= 0 ? locationIdx : header.findIndex((h) => h.includes("location") || h.includes("room") || h.includes("dept"));
-      const ipIdxFallback = ipIdx >= 0 ? ipIdx : header.findIndex((h) => h.includes("ip"));
+      const fallbackNameIdx = header.findIndex((h) => h.includes("name") || h.includes("model"));
+      const fallbackLocationIdx = header.findIndex((h) => h.includes("location") || h.includes("room"));
+      const fallbackIpIdx = header.findIndex((h) => h.includes("ip"));
 
-      const finalNameIdx = nameIdx >= 0 ? nameIdx : nameIdxFallback;
-      const finalLocationIdx = locationIdx >= 0 ? locationIdx : locationIdxFallback;
-      const finalIpIdx = ipIdx >= 0 ? ipIdx : ipIdxFallback;
+      const nameIdx = finalNameIdx >= 0 ? finalNameIdx : fallbackNameIdx;
+      const locationIdx = finalLocationIdx >= 0 ? finalLocationIdx : fallbackLocationIdx;
+      const ipIdx = finalIpIdx >= 0 ? finalIpIdx : fallbackIpIdx;
 
-      if (finalNameIdx === -1) {
+      if (nameIdx === -1) {
         Alert.alert("Invalid CSV", "Could not find a 'Model' or 'Name' column in the header.");
         setImportingPrinters(false);
         return;
       }
 
       const dataRows = rows.slice(1);
-      const validRows = dataRows.filter((row) => row[finalNameIdx]?.trim());
+      const validRows = dataRows.filter((row) => row[nameIdx]?.trim());
 
       if (validRows.length === 0) {
         Alert.alert("No Data", "No valid printer rows found in the CSV.");
@@ -475,13 +475,15 @@ export default function IndexScreen() {
                   const batch = writeBatch(db);
                   const chunk = validRows.slice(i, i + batchSize);
                   chunk.forEach((row) => {
-                    const safeName = (row[finalNameIdx]?.trim() || "").toLowerCase().replace(/[^a-z0-9]/g, "_");
-                    const docId = `${siteId}__${safeName}`;
+                    // Use model + IP for a unique ID so duplicate model names don't overwrite each other
+                    const safeName = (row[nameIdx]?.trim() || "").toLowerCase().replace(/[^a-z0-9]/g, "_");
+                    const safeIp = (ipIdx >= 0 ? row[ipIdx]?.trim() : "").replace(/[^a-z0-9]/g, "_");
+                    const docId = `${siteId}__${safeName}__${safeIp || Date.now()}`;
                     const ref = doc(db, "printers", docId);
                     batch.set(ref, {
-                      name: row[finalNameIdx]?.trim() || "",
-                      location: finalLocationIdx >= 0 ? (row[finalLocationIdx]?.trim() || "") : "",
-                      ipAddress: finalIpIdx >= 0 ? (row[finalIpIdx]?.trim() || "") : "",
+                      name: row[nameIdx]?.trim() || "",
+                      location: locationIdx >= 0 ? (row[locationIdx]?.trim() || "") : "",
+                      ipAddress: ipIdx >= 0 ? (row[ipIdx]?.trim() || "") : "",
                       siteId,
                     }, { merge: true });
                   });
