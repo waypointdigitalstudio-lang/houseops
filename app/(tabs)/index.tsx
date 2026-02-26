@@ -464,17 +464,20 @@ export default function IndexScreen() {
                   const batch = writeBatch(db);
                   const chunk = validRows.slice(i, i + batchSize);
                   chunk.forEach((row) => {
-                    const ref = doc(collection(db, "printers"));
+                    // Use a deterministic ID based on siteId + name to prevent duplicates
+                    const safeName = (row[nameIdx]?.trim() || "").toLowerCase().replace(/[^a-z0-9]/g, "_");
+                    const docId = `${siteId}__${safeName}`;
+                    const ref = doc(db, "printers", docId);
                     batch.set(ref, {
                       name: row[nameIdx]?.trim() || "",
                       location: locationIdx >= 0 ? (row[locationIdx]?.trim() || "") : "",
                       ipAddress: ipIdx >= 0 ? (row[ipIdx]?.trim() || "") : "",
                       siteId,
-                    });
+                    }, { merge: true });
                   });
                   await batch.commit();
                 }
-                Alert.alert("Success", `${validRows.length} printer(s) imported successfully.`);
+                Alert.alert("Success", `${validRows.length} printer(s) imported. Existing printers were updated.`);
               } catch (err) {
                 Alert.alert("Error", "Failed to import printers.");
               } finally {
