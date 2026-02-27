@@ -475,10 +475,12 @@ export default function IndexScreen() {
                   const batch = writeBatch(db);
                   const chunk = validRows.slice(i, i + batchSize);
                   chunk.forEach((row) => {
-                    // Use model + IP for a unique ID so duplicate model names don't overwrite each other
                     const safeName = (row[nameIdx]?.trim() || "").toLowerCase().replace(/[^a-z0-9]/g, "_");
                     const safeIp = (ipIdx >= 0 ? row[ipIdx]?.trim() : "").replace(/[^a-z0-9]/g, "_");
-                    const docId = `${siteId}__${safeName}__${safeIp || Date.now()}`;
+                    const safeLocation = (locationIdx >= 0 ? row[locationIdx]?.trim() : "").toLowerCase().replace(/[^a-z0-9]/g, "_");
+                    // Use IP if available, otherwise use location to keep spares unique
+                    const uniquePart = safeIp || safeLocation || safeName;
+                    const docId = `${siteId}__${safeName}__${uniquePart}`;
                     const ref = doc(db, "printers", docId);
                     batch.set(ref, {
                       name: row[nameIdx]?.trim() || "",
