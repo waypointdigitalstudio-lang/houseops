@@ -147,6 +147,16 @@ export default function IndexScreen() {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [printersLoading, setPrintersLoading] = useState(true);
   const [importingPrinters, setImportingPrinters] = useState(false);
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
+  const [savingPrinter, setSavingPrinter] = useState(false);
+  const [printerForm, setPrinterForm] = useState({
+    name: "",
+    location: "",
+    ipAddress: "",
+    assetNumber: "",
+    serial: "",
+  });
 
   // ─── Undo helpers ────────────────────────────────────────────────
   const showUndoBar = () => {
@@ -431,6 +441,74 @@ export default function IndexScreen() {
     }
   };
 
+  // ─── Printer Form ────────────────────────────────────────────────
+  const openPrinterModal = (printer?: Printer) => {
+    if (printer) {
+      setEditingPrinter(printer);
+      setPrinterForm({
+        name: printer.name || "",
+        location: printer.location || "",
+        ipAddress: printer.ipAddress || "",
+        assetNumber: printer.assetNumber || "",
+        serial: printer.serial || "",
+      });
+    } else {
+      setEditingPrinter(null);
+      setPrinterForm({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "" });
+    }
+    setShowPrinterModal(true);
+  };
+
+  const savePrinter = async () => {
+    if (!printerForm.name.trim()) {
+      Alert.alert("Error", "Model / Name is required.");
+      return;
+    }
+    setSavingPrinter(true);
+    try {
+      const data = {
+        name: printerForm.name.trim(),
+        location: printerForm.location.trim(),
+        ipAddress: printerForm.ipAddress.trim(),
+        assetNumber: printerForm.assetNumber.trim(),
+        serial: printerForm.serial.trim(),
+        siteId,
+      };
+      if (editingPrinter) {
+        await setDoc(doc(db, "printers", editingPrinter.id), data, { merge: true });
+      } else {
+        await addDoc(collection(db, "printers"), data);
+      }
+      setShowPrinterModal(false);
+    } catch (e) {
+      Alert.alert("Error", "Failed to save printer.");
+    } finally {
+      setSavingPrinter(false);
+    }
+  };
+
+  const deletePrinter = (printer: Printer) => {
+    Alert.alert(
+      "Delete Printer",
+      `Remove "${printer.name}" from the list?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "printers", printer.id));
+              setShowPrinterModal(false);
+            } catch {
+              Alert.alert("Error", "Failed to delete printer.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ─── Filtering & Sorting ─────────────────────────────────────────
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => !hiddenIds.has(i.id));
@@ -520,7 +598,7 @@ export default function IndexScreen() {
   );
 
   const renderPrinter = ({ item }: { item: Printer }) => (
-    <Pressable onPress={() => router.push({ pathname: "/printers/[id]" as any, params: { id: item.id } })}>
+    <Pressable onPress={() => openPrinterModal(item)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
@@ -660,20 +738,29 @@ export default function IndexScreen() {
             </>
           ) : (
             <>
-              <Pressable
-                style={[styles.importBtn, { borderColor: theme.tint }]}
-                onPress={importPrintersFromCSV}
-                disabled={importingPrinters}
-              >
-                {importingPrinters ? (
-                  <ActivityIndicator size="small" color={theme.tint} />
-                ) : (
-                  <>
-                    <Ionicons name="cloud-upload-outline" size={20} color={theme.tint} />
-                    <Text style={styles.importBtnText}>Import Printers CSV</Text>
-                  </>
-                )}
-              </Pressable>
+              <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
+                <Pressable
+                  style={[styles.importBtn, { flex: 1, borderColor: theme.tint }]}
+                  onPress={importPrintersFromCSV}
+                  disabled={importingPrinters}
+                >
+                  {importingPrinters ? (
+                    <ActivityIndicator size="small" color={theme.tint} />
+                  ) : (
+                    <>
+                      <Ionicons name="cloud-upload-outline" size={20} color={theme.tint} />
+                      <Text style={styles.importBtnText}>Import CSV</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={[styles.addTonerBtn, { backgroundColor: theme.tint }]}
+                  onPress={() => openPrinterModal()}
+                >
+                  <Ionicons name="add" size={24} color="#000" />
+                </Pressable>
+              </View>
+
               <FlatList
                 data={printers}
                 keyExtractor={(p) => p.id}
@@ -708,6 +795,93 @@ export default function IndexScreen() {
           <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
         </Pressable>
       </Animated.View>
+
+      {/* Printer Modal */}
+      <Modal visible={showPrinterModal} animationType="slide" transparent={false}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {editingPrinter ? "Edit Printer" : "Add Printer"}
+            </Text>
+            <Pressable onPress={() => setShowPrinterModal(false)}>
+              <Ionicons name="close" size={28} color={theme.text} />
+            </Pressable>
+          </View>
+          <ScrollView>
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model / Name *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. TOSHIBA e-STUDIO3525AC"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.name}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, name: v }))}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location / Description</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. Copy Room - 2nd Floor"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.location}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, location: v }))}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>IP Address</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. 192.168.1.100"
+              placeholderTextColor={theme.mutedText}
+              keyboardType="decimal-pad"
+              value={printerForm.ipAddress}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, ipAddress: v }))}
+            />
+
+            <View style={styles.rowFields}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Asset Number</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="e.g. 12345"
+                  placeholderTextColor={theme.mutedText}
+                  value={printerForm.assetNumber}
+                  onChangeText={(v) => setPrinterForm((p) => ({ ...p, assetNumber: v }))}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Serial Number</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="e.g. VNB3H17230"
+                  placeholderTextColor={theme.mutedText}
+                  value={printerForm.serial}
+                  onChangeText={(v) => setPrinterForm((p) => ({ ...p, serial: v }))}
+                />
+              </View>
+            </View>
+
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: "#007AFF" }, savingPrinter && { opacity: 0.6 }]}
+              onPress={savePrinter}
+              disabled={savingPrinter}
+            >
+              {savingPrinter ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>{editingPrinter ? "Save Changes" : "Add Printer"}</Text>
+              )}
+            </Pressable>
+
+            {editingPrinter && (
+              <Pressable
+                style={[styles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ef4444", marginTop: 12 }]}
+                onPress={() => deletePrinter(editingPrinter)}
+              >
+                <Text style={[styles.saveBtnText, { color: "#ef4444" }]}>Delete Printer</Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* Toner Modal */}
       <Modal visible={showTonerModal} animationType="slide" transparent={false}>
