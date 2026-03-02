@@ -63,6 +63,8 @@ type Printer = {
   name: string;
   location?: string;
   ipAddress?: string;
+  assetNumber?: string;
+  serial?: string;
   siteId: string;
 };
 
@@ -259,6 +261,8 @@ export default function IndexScreen() {
           name: d.name || "Unknown printer",
           location: d.location || "",
           ipAddress: d.ipAddress || "",
+          assetNumber: d.assetNumber || "",
+          serial: d.serial || "",
           siteId: d.siteId || "",
         };
       });
@@ -446,6 +450,11 @@ export default function IndexScreen() {
       const locationIdx = finalLocationIdx >= 0 ? finalLocationIdx : fallbackLocationIdx;
       const ipIdx = finalIpIdx >= 0 ? finalIpIdx : fallbackIpIdx;
 
+      // Stable unique key columns — prefer asset number, then serial, then host name
+      const assetIdx = header.findIndex((h) => h === "asset number" || h === "asset #" || h === "asset#" || h === "asset_number");
+      const serialIdx = header.findIndex((h) => h === "serial" || h === "serial number");
+      const hostIdx = header.findIndex((h) => h === "host name" || h === "hostname");
+
       if (nameIdx === -1) {
         Alert.alert("Invalid CSV", "Could not find a 'Model' or 'Name' column in the header.");
         setImportingPrinters(false);
@@ -474,18 +483,30 @@ export default function IndexScreen() {
                 for (let i = 0; i < validRows.length; i += batchSize) {
                   const batch = writeBatch(db);
                   const chunk = validRows.slice(i, i + batchSize);
-                  chunk.forEach((row) => {
+                  chunk.forEach((row, chunkIndex) => {
                     const safeName = (row[nameIdx]?.trim() || "").toLowerCase().replace(/[^a-z0-9]/g, "_");
-                    const safeIp = (ipIdx >= 0 ? row[ipIdx]?.trim() : "").replace(/[^a-z0-9]/g, "_");
+                    const rawIp = (ipIdx >= 0 ? row[ipIdx]?.trim() : "") || "";
+                    const safeIp = (rawIp === "-" || rawIp === "") ? "" : rawIp.replace(/[^a-z0-9]/g, "_");
                     const safeLocation = (locationIdx >= 0 ? row[locationIdx]?.trim() : "").toLowerCase().replace(/[^a-z0-9]/g, "_");
-                    // Use IP if available, otherwise use location to keep spares unique
-                    const uniquePart = safeIp || safeLocation || safeName;
-                    const docId = `${siteId}__${safeName}__${uniquePart}`;
+
+                    // Stable unique key: asset number > serial > host name > IP > location > index
+                    const assetNum = (assetIdx >= 0 ? row[assetIdx]?.trim() : "") || "";
+                    const serial = (serialIdx >= 0 ? row[serialIdx]?.trim() : "") || "";
+                    const host = (hostIdx >= 0 ? row[hostIdx]?.trim() : "") || "";
+                    const safeAsset = assetNum.toLowerCase().replace(/[^a-z0-9]/g, "_");
+                    const safeSerial = serial.toLowerCase().replace(/[^a-z0-9]/g, "_");
+                    const safeHost = host.toLowerCase().replace(/[^a-z0-9]/g, "_");
+
+                    const stableKey = safeAsset || safeSerial || safeHost || safeIp || safeLocation || String(i + chunkIndex);
+                    const docId = `${siteId}__${stableKey}`;
+
                     const ref = doc(db, "printers", docId);
                     batch.set(ref, {
                       name: row[nameIdx]?.trim() || "",
                       location: locationIdx >= 0 ? (row[locationIdx]?.trim() || "") : "",
-                      ipAddress: ipIdx >= 0 ? (row[ipIdx]?.trim() || "") : "",
+                      ipAddress: rawIp === "-" ? "" : rawIp,
+                      assetNumber: assetNum,
+                      serial: serial,
                       siteId,
                     }, { merge: true });
                   });
