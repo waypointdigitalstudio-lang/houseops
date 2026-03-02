@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Sharing from "expo-sharing";
 import { StatusBar } from "expo-status-bar";
 import {
   addDoc,
@@ -66,6 +67,7 @@ type Printer = {
   ipAddress?: string;
   assetNumber?: string;
   serial?: string;
+  tonerSeries?: string;
   siteId: string;
 };
 
@@ -156,6 +158,7 @@ export default function IndexScreen() {
     ipAddress: "",
     assetNumber: "",
     serial: "",
+    tonerSeries: "",
   });
 
   // ─── Undo helpers ────────────────────────────────────────────────
@@ -283,6 +286,42 @@ export default function IndexScreen() {
     );
   };
 
+  const exportPrintersToCSV = async () => {
+    if (printers.length === 0) {
+      Alert.alert("Empty", "No printers to export.");
+      return;
+    }
+
+    try {
+      const headers = ["Name", "Location", "IP Address", "Asset Number", "Serial", "Toner Series"];
+      const rows = printers.map((p) =>
+        [
+          `"${p.name || ""}"`,
+          `"${p.location || ""}"`,
+          `"${p.ipAddress || ""}"`,
+          `"${p.assetNumber || ""}"`,
+          `"${p.serial || ""}"`,
+          `"${p.tonerSeries || ""}"`,
+        ].join(",")
+      );
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      const fileName = `printers_export_${new Date().toISOString().split("T")[0]}.csv`;
+      const fileUri = FileSystem.documentDirectory + fileName;
+
+      await FileSystem.writeAsStringAsync(fileUri, csvContent);
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri);
+      } else {
+        Alert.alert("Success", `File saved to: ${fileUri}`);
+      }
+    } catch (err) {
+      Alert.alert("Error", "Failed to export CSV.");
+      console.error(err);
+    }
+  };
+
   const importPrintersFromCSV = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({ type: "text/csv" });
@@ -306,6 +345,7 @@ export default function IndexScreen() {
       const assetIdx = headers.indexOf("asset number");
       const serialIdx = headers.indexOf("serial");
       const hostIdx = headers.indexOf("host name");
+      const tonerSeriesIdx = headers.indexOf("toner series");
 
       if (nameIdx === -1) {
         Alert.alert("Error", 'CSV must have a "Model" column.');
@@ -358,6 +398,7 @@ export default function IndexScreen() {
               ipAddress: rawIp,
               assetNumber: assetNum,
               serial: serial,
+              tonerSeries: normalizeCell(tonerSeriesIdx >= 0 ? row[tonerSeriesIdx] : ""),
               siteId,
             },
             { merge: true }
@@ -451,10 +492,18 @@ export default function IndexScreen() {
         ipAddress: printer.ipAddress || "",
         assetNumber: printer.assetNumber || "",
         serial: printer.serial || "",
+        tonerSeries: printer.tonerSeries || "",
       });
     } else {
       setEditingPrinter(null);
-      setPrinterForm({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "" });
+      setPrinterForm({
+        name: "",
+        location: "",
+        ipAddress: "",
+        assetNumber: "",
+        serial: "",
+        tonerSeries: "",
+      });
     }
     setShowPrinterModal(true);
   };
@@ -472,6 +521,7 @@ export default function IndexScreen() {
         ipAddress: printerForm.ipAddress.trim(),
         assetNumber: printerForm.assetNumber.trim(),
         serial: printerForm.serial.trim(),
+        tonerSeries: printerForm.tonerSeries.trim(),
         siteId,
       };
       if (editingPrinter) {
@@ -738,28 +788,35 @@ export default function IndexScreen() {
             </>
           ) : (
             <>
-              <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
-                <Pressable
-                  style={[styles.importBtn, { flex: 1, borderColor: theme.tint }]}
-                  onPress={importPrintersFromCSV}
-                  disabled={importingPrinters}
-                >
-                  {importingPrinters ? (
-                    <ActivityIndicator size="small" color={theme.tint} />
-                  ) : (
-                    <>
-                      <Ionicons name="cloud-upload-outline" size={20} color={theme.tint} />
-                      <Text style={styles.importBtnText}>Import CSV</Text>
-                    </>
-                  )}
-                </Pressable>
-                <Pressable
-                  style={[styles.addTonerBtn, { backgroundColor: theme.tint }]}
-                  onPress={() => openPrinterModal()}
-                >
-                  <Ionicons name="add" size={24} color="#000" />
-                </Pressable>
-              </View>
+            <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
+              <Pressable
+                style={[styles.importBtn, { flex: 1, borderColor: theme.tint }]}
+                onPress={importPrintersFromCSV}
+                disabled={importingPrinters}
+              >
+                {importingPrinters ? (
+                  <ActivityIndicator size="small" color={theme.tint} />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={20} color={theme.tint} />
+                    <Text style={styles.importBtnText}>Import</Text>
+                  </>
+                )}
+              </Pressable>
+              <Pressable
+                style={[styles.importBtn, { flex: 1, borderColor: theme.tint, marginLeft: 8 }]}
+                onPress={exportPrintersToCSV}
+              >
+                <Ionicons name="cloud-download-outline" size={20} color={theme.tint} />
+                <Text style={styles.importBtnText}>Export</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginLeft: 8 }]}
+                onPress={() => openPrinterModal()}
+              >
+                <Ionicons name="add" size={24} color="#000" />
+              </Pressable>
+            </View>
 
               <FlatList
                 data={printers}
@@ -858,6 +915,15 @@ export default function IndexScreen() {
                 />
               </View>
             </View>
+
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Toner Series (e.g. T-FC425U)</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. T-FC425U"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.tonerSeries}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, tonerSeries: v }))}
+            />
 
             <Pressable
               style={[styles.saveBtn, { backgroundColor: "#007AFF" }, savingPrinter && { opacity: 0.6 }]}
