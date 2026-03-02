@@ -67,6 +67,21 @@ export default function ExploreScreen() {
     return { id: docSnap.id, ...docSnap.data() };
   };
 
+  const lookupTonerByBarcode = async (
+    barcode: string
+  ): Promise<FoundItem | null> => {
+    const clean = String(barcode).trim();
+    if (!clean) return null;
+
+    const qy = query(collection(db, "toners"), where("barcode", "==", clean));
+    const snap = await getDocs(qy);
+
+    if (snap.empty) return null;
+
+    const docSnap = snap.docs[0];
+    return { id: docSnap.id, ...docSnap.data() };
+  };
+
   const handleBarcodeScanned = useCallback(
     async ({ data }: { data: string }) => {
       if (!scanningEnabled || busy) return;
@@ -82,25 +97,42 @@ export default function ExploreScreen() {
 
       try {
         const cleanBarcode = String(data).trim();
-        const found = await lookupItemByBarcode(cleanBarcode);
 
-        if (!found?.id) {
-          Alert.alert("Not found", `No item has barcode:\n${cleanBarcode}`, [
-            {
-              text: "Add to inventory",
-              onPress: () =>
-                router.push({
-                  pathname: "/add-item",
-                  params: { barcode: cleanBarcode },
-                }),
-            },
-            { text: "Scan again", onPress: () => setScanningEnabled(true) },
-            { text: "Cancel", style: "cancel" },
-          ]);
+        // 1. Check inventory items first
+        const foundItem = await lookupItemByBarcode(cleanBarcode);
+        if (foundItem?.id) {
+          router.push({ pathname: "/item/[id]", params: { id: foundItem.id } });
           return;
         }
 
-        router.push(`/item/${found.id}`);
+        // 2. Check toners next
+        const foundToner = await lookupTonerByBarcode(cleanBarcode);
+        if (foundToner?.id) {
+          router.push({ pathname: "/toners/[id]" as any, params: { id: foundToner.id } });
+          return;
+        }
+
+        // 3. Not found in either — offer to add
+        Alert.alert("Not found", `No item or toner has barcode:\n${cleanBarcode}`, [
+          {
+            text: "Add to Inventory",
+            onPress: () =>
+              router.push({
+                pathname: "/add-item",
+                params: { barcode: cleanBarcode },
+              }),
+          },
+          {
+            text: "Add as Toner",
+            onPress: () =>
+              router.push({
+                pathname: "/(tabs)" as any,
+                params: { addTonerBarcode: cleanBarcode },
+              }),
+          },
+          { text: "Scan again", onPress: () => setScanningEnabled(true) },
+          { text: "Cancel", style: "cancel" },
+        ]);
       } catch (e) {
         console.error("Barcode lookup failed:", e);
         Alert.alert("Scan failed", "Could not look up that barcode. Try again.");
@@ -153,7 +185,7 @@ export default function ExploreScreen() {
 
       <Text style={[styles.title, { color: theme.text }]}>Scan</Text>
       <Text style={[styles.subtitle, { color: theme.mutedText }]}>
-        Scan a barcode to find or add an item
+        Scan a barcode to find inventory or toner
       </Text>
 
       <View
