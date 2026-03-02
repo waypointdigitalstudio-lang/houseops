@@ -2,7 +2,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   addDoc,
@@ -55,6 +55,7 @@ type Toner = {
   printer?: string;
   supplier?: string;
   notes?: string;
+  barcode?: string;
   siteId: string;
 };
 
@@ -78,6 +79,7 @@ export default function IndexScreen() {
   const theme = useAppTheme();
   const router = useRouter();
   const { uid, profile, siteId, loading: profileLoading } = useUserProfile();
+  const { addTonerBarcode } = useLocalSearchParams<{ addTonerBarcode?: string }>();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<TabMode>("inventory");
@@ -116,7 +118,29 @@ export default function IndexScreen() {
     printer: "",
     supplier: "",
     notes: "",
+    barcode: "",
   });
+
+  // Auto-open toner modal when navigated from scanner with a barcode
+  useEffect(() => {
+    if (addTonerBarcode) {
+      setActiveTab("toners");
+      setTonerSubTab("toners");
+      setEditingToner(null);
+      setTonerForm({
+        model: "",
+        partNumber: "",
+        color: "Black",
+        quantity: "",
+        minQuantity: "",
+        printer: "",
+        supplier: "",
+        notes: "",
+        barcode: addTonerBarcode,
+      });
+      setShowTonerModal(true);
+    }
+  }, [addTonerBarcode]);
   const [savingToner, setSavingToner] = useState(false);
 
   // --- Printer state ---
@@ -355,6 +379,7 @@ export default function IndexScreen() {
         printer: toner.printer || "",
         supplier: toner.supplier || "",
         notes: toner.notes || "",
+        barcode: toner.barcode || "",
       });
     } else {
       setEditingToner(null);
@@ -367,6 +392,7 @@ export default function IndexScreen() {
         printer: "",
         supplier: "",
         notes: "",
+        barcode: "",
       });
     }
     setShowTonerModal(true);
@@ -388,6 +414,7 @@ export default function IndexScreen() {
         printer: tonerForm.printer.trim(),
         supplier: tonerForm.supplier.trim(),
         notes: tonerForm.notes.trim(),
+        barcode: tonerForm.barcode.trim(),
         siteId,
       };
 
@@ -748,6 +775,15 @@ export default function IndexScreen() {
               placeholderTextColor={theme.mutedText}
               value={tonerForm.printer}
               onChangeText={(v) => setTonerForm((p) => ({ ...p, printer: v }))}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Scan or type barcode…"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.barcode}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, barcode: v }))}
             />
 
             <Pressable
