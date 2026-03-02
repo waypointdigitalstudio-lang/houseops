@@ -393,16 +393,36 @@ export default function IndexScreen() {
   };
 
   // ─── CSV Import ──────────────────────────────────────────────────
+
+  // Normalize empty-ish cell values to empty string
+  const normalizeCell = (v?: string): string => {
+    if (!v) return "";
+    const t = v.trim();
+    if (t.toLowerCase() === "nan" || t === "-" || t === "") return "";
+    return t;
+  };
+
   const parseCSV = (text: string): string[][] => {
-    return text
+    const lines = text
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) =>
-        line.split(",").map((cell) =>
-          cell.trim().replace(/^"|"$/g, "").replace(/""/g, '"')
-        )
-      );
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) return [];
+
+    // Auto-detect delimiter from first line
+    const firstLine = lines[0];
+    const delimiter = firstLine.includes("|")
+      ? "|"
+      : firstLine.includes(";")
+      ? ";"
+      : ",";
+
+    return lines.map((line) =>
+      line
+        .split(delimiter)
+        .map((cell) => cell.trim().replace(/^"|"$/g, "").replace(/""/g, '"'))
+    );
   };
 
   const importPrintersFromCSV = async () => {
@@ -462,7 +482,20 @@ export default function IndexScreen() {
       }
 
       const dataRows = rows.slice(1);
-      const validRows = dataRows.filter((row) => row[nameIdx]?.trim());
+
+      // Skip repeated header rows and markdown divider rows embedded in the CSV
+      const cleanedRows = dataRows.filter((row) => {
+        const firstCell = (row[0] || "").toLowerCase().trim();
+        const nameCell = (row[nameIdx] || "").toLowerCase().trim();
+        // Skip header repeat rows
+        if (firstCell === "room #" || firstCell === "room#") return false;
+        if (nameCell === "model" || nameCell === "name") return false;
+        // Skip markdown divider rows like |:----|:----|
+        if (firstCell.startsWith(":---") || firstCell.startsWith("---")) return false;
+        return true;
+      });
+
+      const validRows = cleanedRows.filter((row) => normalizeCell(row[nameIdx]));
 
       if (validRows.length === 0) {
         Alert.alert("No Data", "No valid printer rows found in the CSV.");
@@ -484,15 +517,14 @@ export default function IndexScreen() {
                   const batch = writeBatch(db);
                   const chunk = validRows.slice(i, i + batchSize);
                   chunk.forEach((row, chunkIndex) => {
-                    const safeName = (row[nameIdx]?.trim() || "").toLowerCase().replace(/[^a-z0-9]/g, "_");
-                    const rawIp = (ipIdx >= 0 ? row[ipIdx]?.trim() : "") || "";
-                    const safeIp = (rawIp === "-" || rawIp === "") ? "" : rawIp.replace(/[^a-z0-9]/g, "_");
-                    const safeLocation = (locationIdx >= 0 ? row[locationIdx]?.trim() : "").toLowerCase().replace(/[^a-z0-9]/g, "_");
+                    const rawIp = normalizeCell(ipIdx >= 0 ? row[ipIdx] : "");
+                    const safeIp = rawIp.replace(/[^a-z0-9]/g, "_");
+                    const safeLocation = normalizeCell(locationIdx >= 0 ? row[locationIdx] : "").toLowerCase().replace(/[^a-z0-9]/g, "_");
 
                     // Stable unique key: asset number > serial > host name > IP > location > index
-                    const assetNum = (assetIdx >= 0 ? row[assetIdx]?.trim() : "") || "";
-                    const serial = (serialIdx >= 0 ? row[serialIdx]?.trim() : "") || "";
-                    const host = (hostIdx >= 0 ? row[hostIdx]?.trim() : "") || "";
+                    const assetNum = normalizeCell(assetIdx >= 0 ? row[assetIdx] : "");
+                    const serial = normalizeCell(serialIdx >= 0 ? row[serialIdx] : "");
+                    const host = normalizeCell(hostIdx >= 0 ? row[hostIdx] : "");
                     const safeAsset = assetNum.toLowerCase().replace(/[^a-z0-9]/g, "_");
                     const safeSerial = serial.toLowerCase().replace(/[^a-z0-9]/g, "_");
                     const safeHost = host.toLowerCase().replace(/[^a-z0-9]/g, "_");
@@ -502,9 +534,9 @@ export default function IndexScreen() {
 
                     const ref = doc(db, "printers", docId);
                     batch.set(ref, {
-                      name: row[nameIdx]?.trim() || "",
-                      location: locationIdx >= 0 ? (row[locationIdx]?.trim() || "") : "",
-                      ipAddress: rawIp === "-" ? "" : rawIp,
+                      name: normalizeCell(row[nameIdx]),
+                      location: normalizeCell(locationIdx >= 0 ? row[locationIdx] : ""),
+                      ipAddress: rawIp,
                       assetNumber: assetNum,
                       serial: serial,
                       siteId,
