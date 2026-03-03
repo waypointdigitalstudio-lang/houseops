@@ -68,6 +68,7 @@ type Printer = {
   assetNumber?: string;
   serial?: string;
   tonerSeries?: string;
+  barcode?: string;
   siteId: string;
 };
 
@@ -159,6 +160,7 @@ export default function IndexScreen() {
     assetNumber: "",
     serial: "",
     tonerSeries: "",
+    barcode: "",
   });
 
   // ─── Undo helpers ────────────────────────────────────────────────
@@ -493,6 +495,7 @@ export default function IndexScreen() {
         assetNumber: printer.assetNumber || "",
         serial: printer.serial || "",
         tonerSeries: printer.tonerSeries || "",
+        barcode: printer.barcode || "",
       });
     } else {
       setEditingPrinter(null);
@@ -503,6 +506,7 @@ export default function IndexScreen() {
         assetNumber: "",
         serial: "",
         tonerSeries: "",
+        barcode: "",
       });
     }
     setShowPrinterModal(true);
@@ -522,6 +526,7 @@ export default function IndexScreen() {
         assetNumber: printerForm.assetNumber.trim(),
         serial: printerForm.serial.trim(),
         tonerSeries: printerForm.tonerSeries.trim(),
+        barcode: printerForm.barcode.trim(),
         siteId,
       };
       if (editingPrinter) {
@@ -629,7 +634,10 @@ export default function IndexScreen() {
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.itemName, { color: theme.text }]}>{item.model}</Text>
-          <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.printer || "Universal"}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <Ionicons name="print-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
+            <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.printer || "Universal"}</Text>
+          </View>
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text
@@ -923,6 +931,15 @@ export default function IndexScreen() {
               placeholderTextColor={theme.mutedText}
               value={printerForm.tonerSeries}
               onChangeText={(v) => setPrinterForm((p) => ({ ...p, tonerSeries: v }))}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Scan or type printer barcode…"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.barcode}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, barcode: v }))}
             />
 
             <Pressable
