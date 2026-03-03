@@ -111,6 +111,7 @@ export default function IndexScreen() {
   const [tonerSearch, setTonerSearch] = useState("");
   const [showTonerLowOnly, setShowTonerLowOnly] = useState(false);
   const [showTonerModal, setShowTonerModal] = useState(false);
+  const [showPrinterPicker, setShowPrinterPicker] = useState(false);
   const [editingToner, setEditingToner] = useState<Toner | null>(null);
   const [tonerForm, setTonerForm] = useState({
     model: "",
@@ -1026,13 +1027,43 @@ export default function IndexScreen() {
             </View>
 
             <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Compatible Printer Model</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="e.g. LaserJet M402dne"
-              placeholderTextColor={theme.mutedText}
-              value={tonerForm.printer}
-              onChangeText={(v) => setTonerForm((p) => ({ ...p, printer: v }))}
-            />
+            <Pressable
+              style={[styles.fieldInput, { borderColor: theme.border, backgroundColor: theme.card, justifyContent: 'center' }]}
+              onPress={() => setShowPrinterPicker(true)}
+            >
+              <Text style={{ color: tonerForm.printer ? theme.text : theme.mutedText }}>
+                {tonerForm.printer || "Select a printer..."}
+              </Text>
+            </Pressable>
+
+            <Modal visible={showPrinterPicker} animationType="fade" transparent={true}>
+              <View style={styles.pickerOverlay}>
+                <View style={[styles.pickerContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <View style={styles.pickerHeader}>
+                    <Text style={[styles.pickerTitle, { color: theme.text }]}>Select Printer</Text>
+                    <Pressable onPress={() => setShowPrinterPicker(false)}>
+                      <Ionicons name="close" size={24} color={theme.text} />
+                    </Pressable>
+                  </View>
+                  <FlatList
+                    data={[{ id: 'universal', name: 'Universal', location: 'All Printers' }, ...printers]}
+                    keyExtractor={(p) => p.id}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        style={styles.pickerItem}
+                        onPress={() => {
+                          setTonerForm(p => ({ ...p, printer: item.name }));
+                          setShowPrinterPicker(false);
+                        }}
+                      >
+                        <Text style={[styles.pickerItemName, { color: theme.text }]}>{item.name}</Text>
+                        <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location}</Text>
+                      </Pressable>
+                    )}
+                  />
+                </View>
+              </View>
+            </Modal>
 
             <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
             <TextInput
@@ -1096,4 +1127,10 @@ const styles = StyleSheet.create({
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
+  pickerContent: { borderRadius: 16, borderWidth: 1, maxHeight: '80%', padding: 16 },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  pickerTitle: { fontSize: 18, fontWeight: '800' },
+  pickerItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
+  pickerItemName: { fontSize: 15, fontWeight: '700' },
 });
