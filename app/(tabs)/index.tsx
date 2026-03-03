@@ -31,7 +31,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
@@ -145,6 +144,7 @@ export default function IndexScreen() {
       setShowTonerModal(true);
     }
   }, [addTonerBarcode]);
+
   const [savingToner, setSavingToner] = useState(false);
 
   // --- Printer state ---
@@ -180,7 +180,6 @@ export default function IndexScreen() {
       setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
       hideUndoBar();
     }
-
     const backup = {
       name: item.name,
       currentQuantity: item.currentQuantity,
@@ -190,10 +189,8 @@ export default function IndexScreen() {
       notes: item.notes ?? "",
       siteId: siteId ?? null,
     };
-
     setHiddenIds((p) => new Set(p).add(item.id));
     showUndoBar();
-
     const timeoutId = setTimeout(async () => {
       try { await deleteDoc(doc(db, "items", item.id)); } catch {
         setHiddenIds((p) => { const n = new Set(p); n.delete(item.id); return n; });
@@ -202,7 +199,6 @@ export default function IndexScreen() {
         setPendingDelete(null);
       }
     }, 5000);
-
     setPendingDelete({ item, backup, timeoutId });
   };
 
@@ -259,7 +255,7 @@ export default function IndexScreen() {
     return () => unsub();
   }, [siteId]);
 
-  // ─── CSV Import ──────────────────────────────────────────────────
+  // ─── CSV Helpers ─────────────────────────────────────────────────
   const normalizeCell = (v?: string): string => {
     if (!v) return "";
     const t = v.trim();
@@ -272,16 +268,13 @@ export default function IndexScreen() {
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
-
     if (lines.length === 0) return [];
-
     const firstLine = lines[0];
     const delimiter = firstLine.includes("|")
       ? "|"
       : firstLine.includes(";")
       ? ";"
       : ",";
-
     return lines.map((line) =>
       line
         .split(delimiter)
@@ -289,12 +282,12 @@ export default function IndexScreen() {
     );
   };
 
+  // ─── Export ──────────────────────────────────────────────────────
   const exportPrintersToCSV = async () => {
     if (printers.length === 0) {
       Alert.alert("Empty", "No printers to export.");
       return;
     }
-
     try {
       const headers = ["Name", "Location", "IP Address", "Asset Number", "Serial", "Toner Series"];
       const rows = printers.map((p) =>
@@ -307,13 +300,10 @@ export default function IndexScreen() {
           `"${p.tonerSeries || ""}"`,
         ].join(",")
       );
-
       const csvContent = [headers.join(","), ...rows].join("\n");
       const fileName = `printers_export_${new Date().toISOString().split("T")[0]}.csv`;
       const fileUri = FileSystem.documentDirectory + fileName;
-
       await FileSystem.writeAsStringAsync(fileUri, csvContent);
-
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri);
       } else {
@@ -325,22 +315,20 @@ export default function IndexScreen() {
     }
   };
 
+  // ─── Import ──────────────────────────────────────────────────────
   const importPrintersFromCSV = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({ type: "text/csv" });
       if (res.canceled) return;
-
       setImportingPrinters(true);
       const fileUri = res.assets[0].uri;
       const content = await FileSystem.readAsStringAsync(fileUri);
       const rows = parseCSV(content);
-
       if (rows.length < 2) {
         Alert.alert("Error", "CSV file is empty or invalid.");
         setImportingPrinters(false);
         return;
       }
-
       const headers = rows[0].map((h) => h.toLowerCase().trim());
       const nameIdx = headers.indexOf("model");
       const locationIdx = headers.indexOf("description");
@@ -357,7 +345,6 @@ export default function IndexScreen() {
       }
 
       const dataRows = rows.slice(1);
-
       const cleanedRows = dataRows.filter((row) => {
         const firstCell = (row[0] || "").toLowerCase().trim();
         const nameCell = (row[nameIdx] || "").toLowerCase().trim();
@@ -369,29 +356,46 @@ export default function IndexScreen() {
 
       const validRows = cleanedRows.filter((row) => normalizeCell(row[nameIdx]));
 
-      const batchSize = 100;
-      for (let i = 0; i < validRows.length; i += batchSize) {
-        const chunk = validRows.slice(i, i + batchSize);
-        const batch = writeBatch(db);
+      // Deduplicate by stable key before importing
+      const seenKeys = new Set<string>();
+      const uniqueRows = validRows.filter((row, i) => {
+        const rawIp = normalizeCell(ipIdx >= 0 ? row[ipIdx] : "");
+        const safeIp = rawIp.replace(/[^a-z0-9]/g, "_");
+        const safeLocation = normalizeCell(locationIdx >= 0 ? row[locationIdx] : "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "_");
+        const assetNum = normalizeCell(assetIdx >= 0 ? row[assetIdx] : "");
+        const serial = normalizeCell(serialIdx >= 0 ? row[serialIdx] : "");
+        const host = normalizeCell(hostIdx >= 0 ? row[hostIdx] : "");
+        const safeAsset = assetNum.toLowerCase().replace(/[^a-z0-9]/g, "_");
+        const safeSerial = serial.toLowerCase().replace(/[^a-z0-9]/g, "_");
+        const safeHost = host.toLowerCase().replace(/[^a-z0-9]/g, "_");
+        const stableKey = safeAsset || safeSerial || safeHost || safeIp || safeLocation || String(i);
+        const docId = `${siteId}__${stableKey}`;
+        if (seenKeys.has(docId)) return false;
+        seenKeys.add(docId);
+        return true;
+      });
 
+      const batchSize = 100;
+      for (let i = 0; i < uniqueRows.length; i += batchSize) {
+        const chunk = uniqueRows.slice(i, i + batchSize);
+        const batch = writeBatch(db);
         chunk.forEach((row, chunkIndex) => {
           const rawIp = normalizeCell(ipIdx >= 0 ? row[ipIdx] : "");
           const safeIp = rawIp.replace(/[^a-z0-9]/g, "_");
           const safeLocation = normalizeCell(locationIdx >= 0 ? row[locationIdx] : "")
             .toLowerCase()
             .replace(/[^a-z0-9]/g, "_");
-
           const assetNum = normalizeCell(assetIdx >= 0 ? row[assetIdx] : "");
           const serial = normalizeCell(serialIdx >= 0 ? row[serialIdx] : "");
           const host = normalizeCell(hostIdx >= 0 ? row[hostIdx] : "");
           const safeAsset = assetNum.toLowerCase().replace(/[^a-z0-9]/g, "_");
           const safeSerial = serial.toLowerCase().replace(/[^a-z0-9]/g, "_");
           const safeHost = host.toLowerCase().replace(/[^a-z0-9]/g, "_");
-
           const stableKey =
             safeAsset || safeSerial || safeHost || safeIp || safeLocation || String(i + chunkIndex);
           const docId = `${siteId}__${stableKey}`;
-
           const ref = doc(db, "printers", docId);
           batch.set(
             ref,
@@ -407,11 +411,10 @@ export default function IndexScreen() {
             { merge: true }
           );
         });
-
         await batch.commit();
       }
 
-      Alert.alert("Success", `${validRows.length} printer(s) imported. Existing printers were updated.`);
+      Alert.alert("Success", `${uniqueRows.length} printer(s) imported. Existing printers were updated.`);
     } catch (err) {
       console.error("Import failed:", err);
       Alert.alert("Error", "Failed to import printers.");
@@ -471,7 +474,6 @@ export default function IndexScreen() {
         barcode: tonerForm.barcode.trim(),
         siteId,
       };
-
       if (editingToner) {
         await setDoc(doc(db, "toners", editingToner.id), data, { merge: true });
       } else {
@@ -639,6 +641,9 @@ export default function IndexScreen() {
             <Ionicons name="print-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
             <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.printer || "Universal"}</Text>
           </View>
+          {item.partNumber ? (
+            <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }}>Part: {item.partNumber}</Text>
+          ) : null}
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text
@@ -651,6 +656,9 @@ export default function IndexScreen() {
             {item.quantity}
           </Text>
           <Text style={{ color: theme.mutedText, fontSize: 10 }}>{item.color.toUpperCase()}</Text>
+          {item.quantity <= item.minQuantity && (
+            <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
+          )}
         </View>
       </View>
     </Pressable>
@@ -660,14 +668,33 @@ export default function IndexScreen() {
     <Pressable onPress={() => openPrinterModal(item)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
-          <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
+          <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 3, gap: 8 }}>
+            {item.location ? (
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="location-outline" size={12} color={theme.mutedText} />
+                <Text style={{ color: theme.mutedText, fontSize: 12, marginLeft: 2 }}>{item.location}</Text>
+              </View>
+            ) : null}
+            {item.assetNumber ? (
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="pricetag-outline" size={12} color={theme.mutedText} />
+                <Text style={{ color: theme.mutedText, fontSize: 12, marginLeft: 2 }}>#{item.assetNumber}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={{ color: theme.tint, fontWeight: "700", fontSize: 13 }}>
             {item.ipAddress || "No IP"}
           </Text>
-          <Text style={{ color: theme.mutedText, fontSize: 10 }}>PRINTER</Text>
+          {item.tonerSeries ? (
+            <Text style={{ color: theme.mutedText, fontSize: 10 }}>{item.tonerSeries}</Text>
+          ) : (
+            <Text style={{ color: theme.mutedText, fontSize: 10 }}>PRINTER</Text>
+          )}
         </View>
       </View>
     </Pressable>
@@ -780,7 +807,13 @@ export default function IndexScreen() {
                   value={tonerSearch}
                   onChangeText={setTonerSearch}
                 />
-                <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint }]} onPress={() => openTonerModal()}>
+                <Pressable
+                  style={[styles.chipSmall, { borderColor: theme.border, marginLeft: 8 }, showTonerLowOnly && { backgroundColor: "rgba(239,68,68,0.2)", borderColor: "#ef4444" }]}
+                  onPress={() => setShowTonerLowOnly(!showTonerLowOnly)}
+                >
+                  <Text style={[styles.chipTextSmall, { color: showTonerLowOnly ? "#ef4444" : theme.text }]}>Low</Text>
+                </Pressable>
+                <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginLeft: 8 }]} onPress={() => openTonerModal()}>
                   <Ionicons name="add" size={24} color="#000" />
                 </Pressable>
               </View>
@@ -797,36 +830,35 @@ export default function IndexScreen() {
             </>
           ) : (
             <>
-            <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
-              <Pressable
-                style={[styles.importBtn, { flex: 1, borderColor: theme.tint }]}
-                onPress={importPrintersFromCSV}
-                disabled={importingPrinters}
-              >
-                {importingPrinters ? (
-                  <ActivityIndicator size="small" color={theme.tint} />
-                ) : (
-                  <>
-                    <Ionicons name="cloud-upload-outline" size={20} color={theme.tint} />
-                    <Text style={styles.importBtnText}>Import</Text>
-                  </>
-                )}
-              </Pressable>
-              <Pressable
-                style={[styles.importBtn, { flex: 1, borderColor: theme.tint, marginLeft: 8 }]}
-                onPress={exportPrintersToCSV}
-              >
-                <Ionicons name="cloud-download-outline" size={20} color={theme.tint} />
-                <Text style={styles.importBtnText}>Export</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginLeft: 8 }]}
-                onPress={() => openPrinterModal()}
-              >
-                <Ionicons name="add" size={24} color="#000" />
-              </Pressable>
-            </View>
-
+              <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
+                <Pressable
+                  style={[styles.importBtn, { flex: 1, borderColor: theme.tint }]}
+                  onPress={importPrintersFromCSV}
+                  disabled={importingPrinters}
+                >
+                  {importingPrinters ? (
+                    <ActivityIndicator size="small" color={theme.tint} />
+                  ) : (
+                    <>
+                      <Ionicons name="cloud-upload-outline" size={20} color={theme.tint} />
+                      <Text style={styles.importBtnText}>Import</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={[styles.importBtn, { flex: 1, borderColor: theme.tint, marginLeft: 8 }]}
+                  onPress={exportPrintersToCSV}
+                >
+                  <Ionicons name="cloud-download-outline" size={20} color={theme.tint} />
+                  <Text style={styles.importBtnText}>Export</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginLeft: 8 }]}
+                  onPress={() => openPrinterModal()}
+                >
+                  <Ionicons name="add" size={24} color="#000" />
+                </Pressable>
+              </View>
               <FlatList
                 data={printers}
                 keyExtractor={(p) => p.id}
@@ -862,7 +894,7 @@ export default function IndexScreen() {
         </Pressable>
       </Animated.View>
 
-      {/* Printer Modal */}
+      {/* ── PRINTER MODAL ── */}
       <Modal visible={showPrinterModal} animationType="slide" transparent={false}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
@@ -873,76 +905,94 @@ export default function IndexScreen() {
               <Ionicons name="close" size={28} color={theme.text} />
             </Pressable>
           </View>
-          <ScrollView>
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model / Name *</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="e.g. TOSHIBA e-STUDIO3525AC"
-              placeholderTextColor={theme.mutedText}
-              value={printerForm.name}
-              onChangeText={(v) => setPrinterForm((p) => ({ ...p, name: v }))}
-            />
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location / Description</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="e.g. Copy Room - 2nd Floor"
-              placeholderTextColor={theme.mutedText}
-              value={printerForm.location}
-              onChangeText={(v) => setPrinterForm((p) => ({ ...p, location: v }))}
-            />
+          <ScrollView showsVerticalScrollIndicator={false}>
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>IP Address</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="e.g. 192.168.1.100"
-              placeholderTextColor={theme.mutedText}
-              keyboardType="decimal-pad"
-              value={printerForm.ipAddress}
-              onChangeText={(v) => setPrinterForm((p) => ({ ...p, ipAddress: v }))}
-            />
+            {/* ── LOCATION CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>📍 Location</Text>
 
-            <View style={styles.rowFields}>
-              <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Asset Number</Text>
-                <TextInput
-                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-                  placeholder="e.g. 12345"
-                  placeholderTextColor={theme.mutedText}
-                  value={printerForm.assetNumber}
-                  onChangeText={(v) => setPrinterForm((p) => ({ ...p, assetNumber: v }))}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Serial Number</Text>
-                <TextInput
-                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-                  placeholder="e.g. VNB3H17230"
-                  placeholderTextColor={theme.mutedText}
-                  value={printerForm.serial}
-                  onChangeText={(v) => setPrinterForm((p) => ({ ...p, serial: v }))}
-                />
-              </View>
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model / Name *</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. TOSHIBA e-STUDIO3525AC"
+                placeholderTextColor={theme.mutedText}
+                value={printerForm.name}
+                onChangeText={(v) => setPrinterForm((p) => ({ ...p, name: v }))}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location / Description</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. Copy Room - 2nd Floor"
+                placeholderTextColor={theme.mutedText}
+                value={printerForm.location}
+                onChangeText={(v) => setPrinterForm((p) => ({ ...p, location: v }))}
+              />
             </View>
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Toner Series (e.g. T-FC425U)</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="e.g. T-FC425U"
-              placeholderTextColor={theme.mutedText}
-              value={printerForm.tonerSeries}
-              onChangeText={(v) => setPrinterForm((p) => ({ ...p, tonerSeries: v }))}
-            />
+            {/* ── NETWORK CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>🌐 Network</Text>
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="Scan or type printer barcode…"
-              placeholderTextColor={theme.mutedText}
-              value={printerForm.barcode}
-              onChangeText={(v) => setPrinterForm((p) => ({ ...p, barcode: v }))}
-            />
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>IP Address</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. 192.168.1.100"
+                placeholderTextColor={theme.mutedText}
+                keyboardType="decimal-pad"
+                value={printerForm.ipAddress}
+                onChangeText={(v) => setPrinterForm((p) => ({ ...p, ipAddress: v }))}
+              />
+            </View>
 
+            {/* ── HARDWARE CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>🔧 Hardware</Text>
+
+              <View style={styles.rowFields}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Asset Number</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                    placeholder="e.g. 12345"
+                    placeholderTextColor={theme.mutedText}
+                    value={printerForm.assetNumber}
+                    onChangeText={(v) => setPrinterForm((p) => ({ ...p, assetNumber: v }))}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Serial Number</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                    placeholder="e.g. VNB3H17230"
+                    placeholderTextColor={theme.mutedText}
+                    value={printerForm.serial}
+                    onChangeText={(v) => setPrinterForm((p) => ({ ...p, serial: v }))}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Toner Series</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. T-FC425U"
+                placeholderTextColor={theme.mutedText}
+                value={printerForm.tonerSeries}
+                onChangeText={(v) => setPrinterForm((p) => ({ ...p, tonerSeries: v }))}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="Scan or type printer barcode…"
+                placeholderTextColor={theme.mutedText}
+                value={printerForm.barcode}
+                onChangeText={(v) => setPrinterForm((p) => ({ ...p, barcode: v }))}
+              />
+            </View>
+
+            {/* ── ACTIONS ── */}
             <Pressable
               style={[styles.saveBtn, { backgroundColor: "#007AFF" }, savingPrinter && { opacity: 0.6 }]}
               onPress={savePrinter}
@@ -963,11 +1013,13 @@ export default function IndexScreen() {
                 <Text style={[styles.saveBtnText, { color: "#ef4444" }]}>Delete Printer</Text>
               </Pressable>
             )}
+
+            <View style={{ height: 40 }} />
           </ScrollView>
         </View>
       </Modal>
 
-      {/* Toner Modal */}
+      {/* ── TONER MODAL ── */}
       <Modal visible={showTonerModal} animationType="slide" transparent={false}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
@@ -978,102 +1030,130 @@ export default function IndexScreen() {
               <Ionicons name="close" size={28} color={theme.text} />
             </Pressable>
           </View>
-          <ScrollView>
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model / Name</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="e.g. HP 58X Black"
-              placeholderTextColor={theme.mutedText}
-              value={tonerForm.model}
-              onChangeText={(v) => setTonerForm((p) => ({ ...p, model: v }))}
-            />
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Color</Text>
-            <View style={styles.colorRow}>
-              {TONER_COLORS.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[
-                    styles.colorChip,
-                    { borderColor: theme.border },
-                    tonerForm.color === c && { backgroundColor: theme.tint, borderColor: theme.tint },
-                  ]}
-                  onPress={() => setTonerForm((p) => ({ ...p, color: c }))}
-                >
-                  <Text style={{ color: tonerForm.color === c ? "#000" : theme.text, fontWeight: "700" }}>{c}</Text>
-                </Pressable>
-              ))}
-            </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
 
-            <View style={styles.rowFields}>
-              <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Quantity</Text>
-                <TextInput
-                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-                  keyboardType="numeric"
-                  value={tonerForm.quantity}
-                  onChangeText={(v) => setTonerForm((p) => ({ ...p, quantity: v }))}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Min Qty</Text>
-                <TextInput
-                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-                  keyboardType="numeric"
-                  value={tonerForm.minQuantity}
-                  onChangeText={(v) => setTonerForm((p) => ({ ...p, minQuantity: v }))}
-                />
+            {/* ── TONER IDENTITY CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>🖨 Toner Info</Text>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model / Name *</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. HP 58X Black"
+                placeholderTextColor={theme.mutedText}
+                value={tonerForm.model}
+                onChangeText={(v) => setTonerForm((p) => ({ ...p, model: v }))}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Part Number</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. CF258X"
+                placeholderTextColor={theme.mutedText}
+                value={tonerForm.partNumber}
+                onChangeText={(v) => setTonerForm((p) => ({ ...p, partNumber: v }))}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Color</Text>
+              <View style={styles.colorRow}>
+                {TONER_COLORS.map((c) => (
+                  <Pressable
+                    key={c}
+                    style={[
+                      styles.colorChip,
+                      { borderColor: theme.border },
+                      tonerForm.color === c && { backgroundColor: theme.tint, borderColor: theme.tint },
+                    ]}
+                    onPress={() => setTonerForm((p) => ({ ...p, color: c }))}
+                  >
+                    <Text style={{ color: tonerForm.color === c ? "#000" : theme.text, fontSize: 13, fontWeight: "600" }}>
+                      {c}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
             </View>
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Compatible Printer Model</Text>
-            <Pressable
-              style={[styles.fieldInput, { borderColor: theme.border, backgroundColor: theme.card, justifyContent: 'center' }]}
-              onPress={() => setShowPrinterPicker(true)}
-            >
-              <Text style={{ color: tonerForm.printer ? theme.text : theme.mutedText }}>
-                {tonerForm.printer || "Select a printer..."}
-              </Text>
-            </Pressable>
+            {/* ── STOCK CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>📦 Stock</Text>
 
-            <Modal visible={showPrinterPicker} animationType="fade" transparent={true}>
-              <View style={styles.pickerOverlay}>
-                <View style={[styles.pickerContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <View style={styles.pickerHeader}>
-                    <Text style={[styles.pickerTitle, { color: theme.text }]}>Select Printer</Text>
-                    <Pressable onPress={() => setShowPrinterPicker(false)}>
-                      <Ionicons name="close" size={24} color={theme.text} />
-                    </Pressable>
-                  </View>
-                  <FlatList
-                    data={[{ id: 'universal', name: 'Universal', location: 'All Printers' }, ...printers]}
-                    keyExtractor={(p) => p.id}
-                    renderItem={({ item }) => (
-                      <Pressable
-                        style={styles.pickerItem}
-                        onPress={() => {
-                          setTonerForm(p => ({ ...p, printer: item.name }));
-                          setShowPrinterPicker(false);
-                        }}
-                      >
-                        <Text style={[styles.pickerItemName, { color: theme.text }]}>{item.name}</Text>
-                        <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location}</Text>
-                      </Pressable>
-                    )}
+              <View style={styles.rowFields}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Quantity *</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                    placeholder="0"
+                    placeholderTextColor={theme.mutedText}
+                    keyboardType="numeric"
+                    value={tonerForm.quantity}
+                    onChangeText={(v) => setTonerForm((p) => ({ ...p, quantity: v }))}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Min Qty</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                    placeholder="0"
+                    placeholderTextColor={theme.mutedText}
+                    keyboardType="numeric"
+                    value={tonerForm.minQuantity}
+                    onChangeText={(v) => setTonerForm((p) => ({ ...p, minQuantity: v }))}
                   />
                 </View>
               </View>
-            </Modal>
 
-            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
-            <TextInput
-              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-              placeholder="Scan or type barcode…"
-              placeholderTextColor={theme.mutedText}
-              value={tonerForm.barcode}
-              onChangeText={(v) => setTonerForm((p) => ({ ...p, barcode: v }))}
-            />
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Supplier</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. Staples, Amazon"
+                placeholderTextColor={theme.mutedText}
+                value={tonerForm.supplier}
+                onChangeText={(v) => setTonerForm((p) => ({ ...p, supplier: v }))}
+              />
+            </View>
 
+            {/* ── PRINTER LINK CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>🔗 Linked Printer</Text>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Compatible Printer Model</Text>
+              <Pressable
+                style={[styles.fieldInput, { borderColor: theme.border, backgroundColor: theme.background, justifyContent: "center" }]}
+                onPress={() => setShowPrinterPicker(true)}
+              >
+                <Text style={{ color: tonerForm.printer ? theme.text : theme.mutedText, fontSize: 14 }}>
+                  {tonerForm.printer || "Select a printer..."}
+                </Text>
+              </Pressable>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background, minHeight: 60 }]}
+                placeholder="Any additional notes…"
+                placeholderTextColor={theme.mutedText}
+                multiline
+                value={tonerForm.notes}
+                onChangeText={(v) => setTonerForm((p) => ({ ...p, notes: v }))}
+              />
+            </View>
+
+            {/* ── BARCODE CARD ── */}
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>📷 Barcode</Text>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="Scan or type barcode…"
+                placeholderTextColor={theme.mutedText}
+                value={tonerForm.barcode}
+                onChangeText={(v) => setTonerForm((p) => ({ ...p, barcode: v }))}
+              />
+            </View>
+
+            {/* ── ACTIONS ── */}
             <Pressable
               style={[styles.saveBtn, { backgroundColor: "#007AFF" }, savingToner && { opacity: 0.6 }]}
               onPress={saveToner}
@@ -1085,7 +1165,39 @@ export default function IndexScreen() {
                 <Text style={styles.saveBtnText}>{editingToner ? "Save Changes" : "Add Toner"}</Text>
               )}
             </Pressable>
+
+            <View style={{ height: 40 }} />
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── PRINTER PICKER MODAL ── */}
+      <Modal visible={showPrinterPicker} animationType="fade" transparent>
+        <View style={styles.pickerOverlay}>
+          <View style={[styles.pickerContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: theme.text }]}>Select Printer</Text>
+              <Pressable onPress={() => setShowPrinterPicker(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={printers}
+              keyExtractor={(p) => p.id}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.pickerItem}
+                  onPress={() => {
+                    setTonerForm((p) => ({ ...p, printer: item.name }));
+                    setShowPrinterPicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerItemName, { color: theme.text }]}>{item.name}</Text>
+                  <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location}</Text>
+                </Pressable>
+              )}
+            />
+          </View>
         </View>
       </Modal>
     </View>
@@ -1127,10 +1239,12 @@ const styles = StyleSheet.create({
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
-  pickerContent: { borderRadius: 16, borderWidth: 1, maxHeight: '80%', padding: 16 },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  pickerTitle: { fontSize: 18, fontWeight: '800' },
-  pickerItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  pickerItemName: { fontSize: 15, fontWeight: '700' },
+  sectionCard: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 14 },
+  sectionCardTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 0.5, marginBottom: 10, textTransform: "uppercase" },
+  pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  pickerContent: { borderRadius: 16, borderWidth: 1, maxHeight: "80%", padding: 16 },
+  pickerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  pickerTitle: { fontSize: 18, fontWeight: "800" },
+  pickerItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.1)" },
+  pickerItemName: { fontSize: 15, fontWeight: "700" },
 });
