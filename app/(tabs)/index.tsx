@@ -215,6 +215,13 @@ export default function IndexScreen() {
     }
   };
 
+  // ─── Clear searches on tab/subtab switch ────────────────────────
+  useEffect(() => {
+    setPrinterSearch("");
+    setTonerSearch("");
+    setSearchQuery("");
+  }, [activeTab, tonerSubTab]);
+
   const onRefresh = () => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
