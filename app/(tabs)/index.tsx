@@ -900,6 +900,15 @@ export default function IndexScreen() {
           ) : (
             <>
               <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
+                <TextInput
+                  style={[styles.searchInput, { flex: 1, borderColor: theme.border, color: theme.text, backgroundColor: theme.card, marginBottom: 0 }]}
+                  placeholder="Search printers…"
+                  placeholderTextColor={theme.mutedText}
+                  value={printerSearch}
+                  onChangeText={setPrinterSearch}
+                />
+              </View>
+              <View style={[styles.tonerHeaderRow, { marginBottom: 8 }]}>
                 <Pressable
                   style={[styles.importBtn, { flex: 1, borderColor: theme.tint }]}
                   onPress={importPrintersFromCSV}
@@ -929,7 +938,7 @@ export default function IndexScreen() {
                 </Pressable>
               </View>
               <FlatList
-                data={printers}
+                data={filteredPrinters}
                 keyExtractor={(p) => p.id}
                 renderItem={renderPrinter}
                 ListEmptyComponent={
