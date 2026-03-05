@@ -95,6 +95,18 @@ export default function IndexScreen() {
   const [showLowOnly, setShowLowOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
 
+  // --- Manual Add Item state ---
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [itemForm, setItemForm] = useState({
+    name: "",
+    location: "",
+    currentQuantity: "",
+    minQuantity: "",
+    notes: "",
+    barcode: "",
+  });
+
   // --- Undo delete state ---
   const [pendingDelete, setPendingDelete] = useState<{
     item: Item;
@@ -575,6 +587,36 @@ export default function IndexScreen() {
     );
   };
 
+  // ─── Item Form ───────────────────────────────────────────────────
+  const openItemModal = () => {
+    setItemForm({ name: "", location: "", currentQuantity: "", minQuantity: "", notes: "", barcode: "" });
+    setShowItemModal(true);
+  };
+
+  const saveItem = async () => {
+    if (!itemForm.name.trim()) {
+      Alert.alert("Error", "Item name is required.");
+      return;
+    }
+    setSavingItem(true);
+    try {
+      await addDoc(collection(db, "items"), {
+        name: itemForm.name.trim(),
+        location: itemForm.location.trim(),
+        currentQuantity: parseInt(itemForm.currentQuantity) || 0,
+        minQuantity: parseInt(itemForm.minQuantity) || 0,
+        notes: itemForm.notes.trim(),
+        barcode: itemForm.barcode.trim(),
+        siteId,
+      });
+      setShowItemModal(false);
+    } catch (e) {
+      Alert.alert("Error", "Failed to save item.");
+    } finally {
+      setSavingItem(false);
+    }
+  };
+
   // ─── Filtering & Sorting ─────────────────────────────────────────
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => !hiddenIds.has(i.id));
@@ -757,13 +799,18 @@ export default function IndexScreen() {
 
       {activeTab === "inventory" ? (
         <>
-          <TextInput
-            style={[styles.searchInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
-            placeholder="Search inventory…"
-            placeholderTextColor={theme.mutedText}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+          <View style={styles.tonerHeaderRow}>
+            <TextInput
+              style={[styles.searchInput, { flex: 1, borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Search inventory…"
+              placeholderTextColor={theme.mutedText}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            <Pressable style={[styles.addTonerBtn, { backgroundColor: theme.tint, marginLeft: 8 }]} onPress={openItemModal}>
+              <Ionicons name="add" size={24} color="#000" />
+            </Pressable>
+          </View>
           <View style={styles.filterRow}>
             <Pressable
               style={[styles.chip, { borderColor: theme.border }, showLowOnly && { backgroundColor: "rgba(239,68,68,0.2)", borderColor: "#ef4444" }]}
@@ -915,6 +962,100 @@ export default function IndexScreen() {
           <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
         </Pressable>
       </Animated.View>
+
+      {/* ── ADD ITEM MODAL ── */}
+      <Modal visible={showItemModal} animationType="slide" transparent={false}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Add Item</Text>
+            <Pressable onPress={() => setShowItemModal(false)}>
+              <Ionicons name="close" size={28} color={theme.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionCardTitle, { color: theme.tint }]}>📦 Item Info</Text>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Name *</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. Staples, Batteries AA"
+                placeholderTextColor={theme.mutedText}
+                value={itemForm.name}
+                onChangeText={(v) => setItemForm((p) => ({ ...p, name: v }))}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="e.g. Supply Closet"
+                placeholderTextColor={theme.mutedText}
+                value={itemForm.location}
+                onChangeText={(v) => setItemForm((p) => ({ ...p, location: v }))}
+              />
+
+              <View style={styles.rowFields}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Quantity *</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                    placeholder="0"
+                    placeholderTextColor={theme.mutedText}
+                    keyboardType="numeric"
+                    value={itemForm.currentQuantity}
+                    onChangeText={(v) => setItemForm((p) => ({ ...p, currentQuantity: v }))}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Min Qty</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                    placeholder="0"
+                    placeholderTextColor={theme.mutedText}
+                    keyboardType="numeric"
+                    value={itemForm.minQuantity}
+                    onChangeText={(v) => setItemForm((p) => ({ ...p, minQuantity: v }))}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background, minHeight: 60 }]}
+                placeholder="Any additional notes…"
+                placeholderTextColor={theme.mutedText}
+                multiline
+                value={itemForm.notes}
+                onChangeText={(v) => setItemForm((p) => ({ ...p, notes: v }))}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode (Optional)</Text>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                placeholder="Scan or type barcode…"
+                placeholderTextColor={theme.mutedText}
+                value={itemForm.barcode}
+                onChangeText={(v) => setItemForm((p) => ({ ...p, barcode: v }))}
+              />
+            </View>
+
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: "#007AFF" }, savingItem && { opacity: 0.6 }]}
+              onPress={saveItem}
+              disabled={savingItem}
+            >
+              {savingItem ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Add Item</Text>
+              )}
+            </Pressable>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* ── PRINTER MODAL ── */}
       <Modal visible={showPrinterModal} animationType="slide" transparent={false}>
