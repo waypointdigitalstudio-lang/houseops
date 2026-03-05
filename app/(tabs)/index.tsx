@@ -151,6 +151,7 @@ export default function IndexScreen() {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [printersLoading, setPrintersLoading] = useState(true);
   const [importingPrinters, setImportingPrinters] = useState(false);
+  const [printerSearch, setPrinterSearch] = useState("");
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
   const [savingPrinter, setSavingPrinter] = useState(false);
@@ -603,6 +604,20 @@ export default function IndexScreen() {
     return list.sort((a, b) => a.model.localeCompare(b.model));
   }, [toners, tonerSearch, showTonerLowOnly]);
 
+  const filteredPrinters = useMemo(() => {
+    if (!printerSearch.trim()) return printers;
+    const q = printerSearch.toLowerCase();
+    return printers.filter(
+      (p) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.location?.toLowerCase().includes(q) ||
+        p.ipAddress?.toLowerCase().includes(q) ||
+        p.assetNumber?.toLowerCase().includes(q) ||
+        p.serial?.toLowerCase().includes(q) ||
+        p.tonerSeries?.toLowerCase().includes(q)
+    );
+  }, [printers, printerSearch]);
+
   // ─── Render Helpers ──────────────────────────────────────────────
   const renderItem = ({ item }: { item: Item }) => (
     <Pressable onPress={() => router.push({ pathname: "/item/[id]", params: { id: item.id } })}>
@@ -792,7 +807,7 @@ export default function IndexScreen() {
               onPress={() => setTonerSubTab("printers")}
             >
               <Text style={[styles.tonerSubTabText, { color: tonerSubTab === "printers" ? theme.tint : theme.mutedText }]}>
-                Printers ({printers.length})
+                Printers ({filteredPrinters.length})
               </Text>
             </Pressable>
           </View>
