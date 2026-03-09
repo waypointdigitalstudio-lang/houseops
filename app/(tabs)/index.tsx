@@ -506,7 +506,7 @@ export default function IndexScreen() {
     </Pressable>
   );
 
-  const renderPrinter = ({ item }: { item: Printer }) => (
+const renderPrinter = ({ item }: { item: Printer }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <View style={{ flex: 1 }}>
         <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
@@ -538,7 +538,7 @@ export default function IndexScreen() {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.actionButton, { backgroundColor: theme.tint }]}
+            style={[styles.actionButton, { backgroundColor: "#2563eb" }]}
             onPress={() => {
               setSelectedPrinter(item);
               setTonerLinkSearch("");
