@@ -144,6 +144,14 @@ export default function IndexScreen() {
   } | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const undoAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    // Keep animation in sync with pendingDelete state to avoid the bar getting stuck visible
+    if (pendingDelete) {
+      Animated.timing(undoAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    } else {
+      Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    }
+  }, [pendingDelete]);
 
   // --- Toner state ---
   const [toners, setToners] = useState<Toner[]>([]);
@@ -173,6 +181,14 @@ export default function IndexScreen() {
   } | null>(null);
   const [hiddenTonerIds, setHiddenTonerIds] = useState<Set<string>>(new Set());
   const undoTonerAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    // Keep animation in sync with pendingTonerDelete so toner undo bar doesn't stick
+    if (pendingTonerDelete) {
+      Animated.timing(undoTonerAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    } else {
+      Animated.timing(undoTonerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    }
+  }, [pendingTonerDelete]);
 
   // --- Printer state ---
   const [printers, setPrinters] = useState<Printer[]>([]);
