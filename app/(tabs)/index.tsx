@@ -93,12 +93,14 @@ function TonerStockBadge({ tonerId, theme }: { tonerId: string; theme: any }) {
       doc(db, "toners", tonerId),
       (snap) => {
         if (snap.exists()) {
-          const data = snap.data();
+          const data = snap.data() as any;
           setStock(data.quantity ?? data.stock ?? 0);
           setName(data.model || data.name || "Toner");
         }
       },
-      (err) => console.error("TonerStockBadge error:", err)
+      (err) => {
+        console.error("TonerStockBadge error:", err);
+      }
     );
     return () => unsub();
   }, [tonerId]);
@@ -187,19 +189,26 @@ export default function IndexScreen() {
   // --- Inventory Logic ---
   useEffect(() => {
     if (!siteId) return;
-    const q = query(collection(db, "inventory"), where("siteId", "==", siteId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newItems = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Item));
-      setItems(newItems);
-      setLoading(false);
-    });
+    const q = query(collection(db, "items"), where("siteId", "==", siteId));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const newItems = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Item));
+        setItems(newItems);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("items onSnapshot error:", err);
+        setLoading(false);
+      }
+    );
     return () => unsubscribe();
   }, [siteId]);
 
   const scheduleDelete = async (item: Item) => {
     if (pendingDelete?.timeoutId) {
       clearTimeout(pendingDelete.timeoutId);
-      try { await deleteDoc(doc(db, "inventory", pendingDelete.item.id)); } catch {}
+      try { await deleteDoc(doc(db, "items", pendingDelete.item.id)); } catch {}
       setPendingDelete(null);
       setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
       Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
@@ -209,7 +218,7 @@ export default function IndexScreen() {
     setHiddenIds((p) => new Set(p).add(item.id));
     Animated.timing(undoAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
     const timeoutId = setTimeout(async () => {
-      try { await deleteDoc(doc(db, "inventory", item.id)); } catch {
+      try { await deleteDoc(doc(db, "items", item.id)); } catch {
         setHiddenIds((p) => { const n = new Set(p); n.delete(item.id); return n; });
       } finally {
         Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
@@ -224,7 +233,7 @@ export default function IndexScreen() {
     clearTimeout(pendingDelete.timeoutId);
     setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
     try {
-      await setDoc(doc(db, "inventory", pendingDelete.item.id), pendingDelete.backup, { merge: true });
+      await setDoc(doc(db, "items", pendingDelete.item.id), pendingDelete.backup, { merge: true });
     } catch {} finally {
       Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
       setPendingDelete(null);
@@ -249,11 +258,18 @@ export default function IndexScreen() {
   useEffect(() => {
     if (!siteId) return;
     const q = query(collection(db, "toners"), where("siteId", "==", siteId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newToners = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Toner));
-      setToners(newToners);
-      setTonersLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const newToners = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Toner));
+        setToners(newToners);
+        setTonersLoading(false);
+      },
+      (err) => {
+        console.error("toners onSnapshot error:", err);
+        setTonersLoading(false);
+      }
+    );
     return () => unsubscribe();
   }, [siteId]);
 
@@ -261,17 +277,23 @@ export default function IndexScreen() {
   useEffect(() => {
     if (!showLinkModal || !siteId) return;
     const q = query(collection(db, "toners"), where("siteId", "==", siteId), orderBy("model", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.model || data.name || "Unknown",
-          stock: data.quantity ?? data.stock ?? 0,
-        } as TonerLink;
-      });
-      setTonerLinkList(list);
-    });
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            name: data.model || data.name || "Unknown",
+            stock: data.quantity ?? data.stock ?? 0,
+          } as TonerLink;
+        });
+        setTonerLinkList(list);
+      },
+      (err) => {
+        console.error("tonerLinkList onSnapshot error:", err);
+      }
+    );
     return () => unsub();
   }, [showLinkModal, siteId]);
 
@@ -326,11 +348,18 @@ export default function IndexScreen() {
   useEffect(() => {
     if (!siteId) return;
     const q = query(collection(db, "printers"), where("siteId", "==", siteId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newPrinters = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Printer));
-      setPrinters(newPrinters);
-      setPrintersLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const newPrinters = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Printer));
+        setPrinters(newPrinters);
+        setPrintersLoading(false);
+      },
+      (err) => {
+        console.error("printers onSnapshot error:", err);
+        setPrintersLoading(false);
+      }
+    );
     return () => unsubscribe();
   }, [siteId]);
 
