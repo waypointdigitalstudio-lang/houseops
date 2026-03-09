@@ -2,12 +2,11 @@
   "expo": {
     "name": "Control Deck",
     "slug": "houseops",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/houseops-icon.png",
     "scheme": "houseops",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.houseops.houseops",
@@ -40,25 +39,27 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
- "plugins": [
-  "expo-router",
-  [
-    "expo-splash-screen",
-    {
-      "image": "./assets/images/splash-icon.png",
-      "imageWidth": 200,
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff",
-      "dark": {
-        "backgroundColor": "#000000"
-      }
-    }
-  ],
-  "expo-camera",
-  "expo-notifications",
-  "expo-file-system"
-],
-  
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      "expo-camera",
+      "expo-notifications",
+      "expo-file-system"
+    ],
+    "experiments": {
+      "newArchEnabled": true
+    },
     "extra": {
       "router": {},
       "eas": {
