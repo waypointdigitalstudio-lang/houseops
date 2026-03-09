@@ -531,21 +531,21 @@ export default function IndexScreen() {
         <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
         {item.tonerId ? (
           <Pressable
-            style={styles.deductButton}
+            style={[styles.actionButton, { backgroundColor: "#ef4444" }]}
             onPress={() => handleDeductToner(item)}
           >
-            <Text style={styles.deductText}>DEDUCT 1</Text>
+            <Text style={styles.actionButtonText}>DEDUCT 1</Text>
           </Pressable>
         ) : (
           <Pressable
-            style={styles.linkButton}
+            style={[styles.actionButton, { backgroundColor: theme.tint }]}
             onPress={() => {
               setSelectedPrinter(item);
               setTonerLinkSearch("");
               setShowLinkModal(true);
             }}
           >
-            <Text style={styles.linkText}>LINK TONER</Text>
+            <Text style={styles.actionButtonText}>LINK TONER</Text>
           </Pressable>
         )}
       </View>
@@ -711,19 +711,22 @@ export default function IndexScreen() {
 
       {/* Inventory Undo Bar */}
       <Animated.View
+        pointerEvents={pendingDelete ? "auto" : "none"}
         style={[
           styles.undoBar,
           {
             backgroundColor: theme.card,
-            borderColor: theme.tint,
-            transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }],
+            borderColor: theme.border,
+            bottom: 16,
+            opacity: undoAnim,
+            transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
           },
         ]}
       >
         <Text style={{ color: theme.text, fontWeight: "700" }}>Item deleted</Text>
         <Pressable
           onPress={undoDelete}
-          style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: theme.tint, borderRadius: 8 }}
+          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
         >
           <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
         </Pressable>
@@ -731,20 +734,22 @@ export default function IndexScreen() {
 
       {/* Toner Undo Bar */}
       <Animated.View
+        pointerEvents={pendingTonerDelete ? "auto" : "none"}
         style={[
           styles.undoBar,
           {
             backgroundColor: theme.card,
-            borderColor: theme.tint,
-            bottom: 80,
-            transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }],
+            borderColor: theme.border,
+            bottom: 16,
+            opacity: undoTonerAnim,
+            transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
           },
         ]}
       >
         <Text style={{ color: theme.text, fontWeight: "700" }}>Toner deleted</Text>
         <Pressable
           onPress={undoTonerDelete}
-          style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: theme.tint, borderRadius: 8 }}
+          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
         >
           <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
         </Pressable>
@@ -861,7 +866,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 10, flexDirection: "row", alignItems: "center", borderWidth: 1 },
   itemName: { fontSize: 16, fontWeight: "800" },
   rightControls: { flexDirection: "row", gap: 12, alignItems: "center", marginLeft: 12 },
-  undoBar: { position: "absolute", left: 16, right: 16, bottom: 16, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 1000 },
+  undoBar: { position: "absolute", left: 16, right: 16, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 1000, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8 },
   tonerHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 0 },
   addTonerBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
@@ -873,13 +878,12 @@ const styles = StyleSheet.create({
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
-  // New styles
   stockBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, alignSelf: "flex-start" },
   stockText: { fontSize: 11, fontWeight: "800" },
-  deductButton: { backgroundColor: "#ef4444", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  deductText: { color: "#fff", fontSize: 10, fontWeight: "900" },
-  linkButton: { backgroundColor: "#007AFF", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  linkText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  // ADD THESE TWO:
+  actionButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  actionButtonText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  // ---
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
   linkModalContent: { borderRadius: 20, padding: 20 },
   linkItem: { paddingVertical: 14, borderBottomWidth: 1 },
