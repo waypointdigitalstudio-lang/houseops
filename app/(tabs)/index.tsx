@@ -7,9 +7,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  increment,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
+  updateDoc,
   where
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -64,6 +67,13 @@ type Printer = {
   tonerSeries?: string;
   barcode?: string;
   siteId: string;
+  tonerId?: string; // ← NEW: link to toners collection
+};
+
+type TonerLink = {
+  id: string;
+  name: string;
+  stock: number;
 };
 
 type SortMode = "name" | "stock";
@@ -71,6 +81,40 @@ type TabMode = "inventory" | "toners";
 type TonerSubTab = "toners" | "printers";
 
 const TONER_COLORS = ["Black", "Cyan", "Magenta", "Yellow", "Other"];
+
+// --- Live Toner Stock Badge ---
+function TonerStockBadge({ tonerId, theme }: { tonerId: string; theme: any }) {
+  const [stock, setStock] = useState<number | null>(null);
+  const [name, setName] = useState<string>("");
+
+  useEffect(() => {
+    if (!tonerId) return;
+    const unsub = onSnapshot(
+      doc(db, "toners", tonerId),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setStock(data.quantity ?? data.stock ?? 0);
+          setName(data.model || data.name || "Toner");
+        }
+      },
+      (err) => console.error("TonerStockBadge error:", err)
+    );
+    return () => unsub();
+  }, [tonerId]);
+
+  if (stock === null) return null;
+
+  const color = stock <= 0 ? "#ef4444" : stock <= 2 ? "#f97316" : "#22c55e";
+
+  return (
+    <View style={[styles.stockBadge, { backgroundColor: color + "20", borderColor: color }]}>
+      <Text style={[styles.stockText, { color }]}>
+        {name}: {stock}
+      </Text>
+    </View>
+  );
+}
 
 export default function IndexScreen() {
   const theme = useAppTheme();
@@ -133,6 +177,12 @@ export default function IndexScreen() {
   const [printersLoading, setPrintersLoading] = useState(true);
   const [importingPrinters, setImportingPrinters] = useState(false);
   const [printerSearch, setPrinterSearch] = useState("");
+
+  // --- Link Toner Modal state ---
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [selectedPrinter, setSelectedPrinter] = useState<Printer | null>(null);
+  const [tonerLinkSearch, setTonerLinkSearch] = useState("");
+  const [tonerLinkList, setTonerLinkList] = useState<TonerLink[]>([]);
 
   // --- Inventory Logic ---
   useEffect(() => {
@@ -207,6 +257,24 @@ export default function IndexScreen() {
     return () => unsubscribe();
   }, [siteId]);
 
+  // Load toners for the link modal
+  useEffect(() => {
+    if (!showLinkModal || !siteId) return;
+    const q = query(collection(db, "toners"), where("siteId", "==", siteId), orderBy("model", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.model || data.name || "Unknown",
+          stock: data.quantity ?? data.stock ?? 0,
+        } as TonerLink;
+      });
+      setTonerLinkList(list);
+    });
+    return () => unsub();
+  }, [showLinkModal, siteId]);
+
   const scheduleTonerDelete = async (toner: Toner) => {
     if (pendingTonerDelete?.timeoutId) {
       clearTimeout(pendingTonerDelete.timeoutId);
@@ -273,6 +341,40 @@ export default function IndexScreen() {
       .filter((p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [printers, printerSearch]);
+
+  const filteredTonerLinkList = useMemo(() => {
+    if (!tonerLinkSearch) return tonerLinkList;
+    return tonerLinkList.filter((t) => t.name.toLowerCase().includes(tonerLinkSearch.toLowerCase()));
+  }, [tonerLinkList, tonerLinkSearch]);
+
+  const handleLinkToner = async (toner: TonerLink) => {
+    if (!selectedPrinter) return;
+    try {
+      await updateDoc(doc(db, "printers", selectedPrinter.id), { tonerId: toner.id });
+      setShowLinkModal(false);
+      setSelectedPrinter(null);
+      Alert.alert("Linked!", `${toner.name} linked to ${selectedPrinter.name}.`);
+    } catch {
+      Alert.alert("Error", "Failed to link toner.");
+    }
+  };
+
+  const handleDeductToner = async (printer: Printer) => {
+    if (!printer.tonerId) return;
+    Alert.alert("Deduct Toner", `Use 1 toner for ${printer.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Deduct 1",
+        onPress: async () => {
+          try {
+            await updateDoc(doc(db, "toners", printer.tonerId!), { quantity: increment(-1) });
+          } catch {
+            Alert.alert("Error", "Failed to update stock.");
+          }
+        },
+      },
+    ]);
+  };
 
   const openTonerModal = (toner?: Toner) => {
     if (toner) {
@@ -373,10 +475,34 @@ export default function IndexScreen() {
             </>
           )}
         </View>
+        {/* Live Toner Stock Badge */}
+        {item.tonerId && (
+          <View style={{ marginTop: 6 }}>
+            <TonerStockBadge tonerId={item.tonerId} theme={theme} />
+          </View>
+        )}
       </View>
-      <View style={{ alignItems: "flex-end" }}>
+      <View style={{ alignItems: "flex-end", gap: 8 }}>
         <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
-        <Text style={{ color: theme.mutedText, fontSize: 10, textTransform: "uppercase" }}>Printer</Text>
+        {item.tonerId ? (
+          <Pressable
+            style={styles.deductButton}
+            onPress={() => handleDeductToner(item)}
+          >
+            <Text style={styles.deductText}>DEDUCT 1</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={styles.linkButton}
+            onPress={() => {
+              setSelectedPrinter(item);
+              setTonerLinkSearch("");
+              setShowLinkModal(true);
+            }}
+          >
+            <Text style={styles.linkText}>LINK TONER</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -635,6 +761,42 @@ export default function IndexScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Link Toner Modal */}
+      <Modal visible={showLinkModal} animationType="slide" transparent={true} onRequestClose={() => setShowLinkModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.linkModalContent, { backgroundColor: theme.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.text, marginBottom: 12 }]}>
+              Link Toner to {selectedPrinter?.name}
+            </Text>
+            <TextInput
+              style={[styles.searchInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+              placeholder="Search toners..."
+              placeholderTextColor={theme.mutedText}
+              value={tonerLinkSearch}
+              onChangeText={setTonerLinkSearch}
+            />
+            <ScrollView style={{ maxHeight: 380 }}>
+              {filteredTonerLinkList.map((t) => (
+                <Pressable
+                  key={t.id}
+                  style={[styles.linkItem, { borderBottomColor: theme.border }]}
+                  onPress={() => handleLinkToner(t)}
+                >
+                  <Text style={{ color: theme.text, fontWeight: "700", fontSize: 15 }}>{t.name}</Text>
+                  <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>Stock: {t.stock}</Text>
+                </Pressable>
+              ))}
+              {filteredTonerLinkList.length === 0 && (
+                <Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 24 }}>No toners found.</Text>
+              )}
+            </ScrollView>
+            <Pressable style={{ marginTop: 16, alignItems: "center" }} onPress={() => setShowLinkModal(false)}>
+              <Text style={{ color: theme.tint, fontWeight: "800", fontSize: 16 }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -666,4 +828,14 @@ const styles = StyleSheet.create({
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
+  // New styles
+  stockBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, alignSelf: "flex-start" },
+  stockText: { fontSize: 11, fontWeight: "800" },
+  deductButton: { backgroundColor: "#ef4444", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  deductText: { color: "#fff", fontSize: 10, fontWeight: "900" },
+  linkButton: { backgroundColor: "#007AFF", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  linkText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  linkModalContent: { borderRadius: 20, padding: 20 },
+  linkItem: { paddingVertical: 14, borderBottomWidth: 1 },
 });
