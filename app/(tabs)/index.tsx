@@ -69,8 +69,10 @@ type Printer = {
   serial?: string;
   tonerSeries?: string;
   barcode?: string;
+  notes?: string; // Added this
   siteId: string;
-  tonerId?: string; // ← NEW: link to toners collection
+  tonerId?: string;
+  importedAt?: string; // Added this
 };
 
 type TonerLink = {
@@ -198,6 +200,20 @@ export default function IndexScreen() {
   const [printersLoading, setPrintersLoading] = useState(true);
   const [importingPrinters, setImportingPrinters] = useState(false);
   const [printerSearch, setPrinterSearch] = useState("");
+
+  // Printer modal / edit state
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
+  const [printerForm, setPrinterForm] = useState({
+    name: "",
+    location: "",
+    ipAddress: "",
+    assetNumber: "",
+    serial: "",
+    tonerSeries: "",
+    barcode: "",
+    notes: "",
+  });
 
   // --- Import state ---
   const [importingInventory, setImportingInventory] = useState(false);
@@ -661,6 +677,109 @@ export default function IndexScreen() {
     }
   };
 
+  // --- Import Printers from CSV ---
+  const importPrintersFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImportingPrinters(true);
+      const fileUri = result.assets[0].uri;
+      const content = await FileSystem.readAsStringAsync(fileUri);
+      const rows = parseCSV(content);
+
+      if (rows.length < 2) {
+        Alert.alert("Empty File", "No data rows found in the CSV.");
+        return;
+      }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) {
+          const idx = headers.findIndex((h) => h.includes(n));
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const iName = col(["name", "printer"]);
+      const iLocation = col(["location", "loc"]);
+      const iIp = col(["ip", "ipaddress", "ipaddress"]);
+      const iAsset = col(["asset", "assetnumber"]);
+      const iSerial = col(["serial", "sn"]);
+      const iTonerSeries = col(["toner", "tonerseries"]);
+      const iBarcode = col(["barcode", "sku", "upc"]);
+      const iNotes = col(["notes", "note"]);
+
+      if (iName === -1) {
+        Alert.alert("Import Failed", "Could not find a 'Name' column.");
+        return;
+      }
+
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const name = normalizeCell(row[iName] ?? "");
+        if (!name) continue;
+
+        const stableId = `${siteId}_${name}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "_")
+          .replace(/_+/g, "_")
+          .slice(0, 100);
+
+        const docRef = doc(db, "printers", stableId);
+        batch.set(
+          docRef,
+          {
+            name,
+            location: normalizeCell(row[iLocation] ?? ""),
+            ipAddress: normalizeCell(row[iIp] ?? ""),
+            assetNumber: normalizeCell(row[iAsset] ?? ""),
+            serial: normalizeCell(row[iSerial] ?? ""),
+            tonerSeries: normalizeCell(row[iTonerSeries] ?? ""),
+            barcode: normalizeCell(row[iBarcode] ?? ""),
+            notes: normalizeCell(row[iNotes] ?? ""),
+            siteId: siteId || "default",
+            importedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert("Import Complete", `${count} printer${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      console.error("Printer import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingPrinters(false);
+    }
+  };
+
+  const savePrinter = async () => {
+    if (!printerForm.name) {
+      Alert.alert("Error", "Name is required.");
+      return;
+    }
+    const data = { ...printerForm, siteId };
+    try {
+      if (editingPrinter) {
+        await setDoc(doc(db, "printers", editingPrinter.id), data, { merge: true });
+      } else {
+        await addDoc(collection(db, "printers"), data);
+      }
+      setShowPrinterModal(false);
+    } catch (err) {
+      Alert.alert("Error", "Failed to save printer.");
+    }
+  };
+
   const renderToner = ({ item }: { item: Toner }) => (
     <Pressable onPress={() => openTonerModal(item)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -693,7 +812,21 @@ export default function IndexScreen() {
   );
 
 const renderPrinter = ({ item }: { item: Printer }) => (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+    <Pressable onPress={() => {
+      setEditingPrinter(item);
+      setPrinterForm({
+        name: item.name || "",
+        location: item.location || "",
+        ipAddress: item.ipAddress || "",
+        assetNumber: item.assetNumber || "",
+        serial: item.serial || "",
+        tonerSeries: item.tonerSeries || "",
+        barcode: item.barcode || "",
+        notes: item.notes || "",
+      });
+      setShowPrinterModal(true);
+    }}>
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <View style={{ flex: 1 }}>
         <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
@@ -736,6 +869,7 @@ const renderPrinter = ({ item }: { item: Printer }) => (
         )}
       </View>
     </View>
+    </Pressable>
   );
 
   if (profileLoading || loading) {
@@ -902,6 +1036,25 @@ const renderPrinter = ({ item }: { item: Printer }) => (
               renderItem={renderPrinter}
               contentContainerStyle={{ padding: 16 }}
               ListHeaderComponent={
+                <>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <Pressable
+                    onPress={importPrintersFromCSV}
+                    disabled={importingPrinters}
+                    style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1 }]}
+                  >
+                    {importingPrinters
+                      ? <ActivityIndicator size="small" color={theme.text} />
+                      : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import Printers CSV</Text></>
+                    }
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { setEditingPrinter(null); setPrinterForm({ name: '', location: '', ipAddress: '', assetNumber: '', serial: '', tonerSeries: '', barcode: '', notes: '' }); setShowPrinterModal(true); }}
+                    style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}
+                  >
+                    <Ionicons name="add" size={18} color={theme.text} />
+                  </Pressable>
+                </View>
                 <TextInput
                   style={[styles.searchInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
                   placeholder="Search printers..."
@@ -909,6 +1062,7 @@ const renderPrinter = ({ item }: { item: Printer }) => (
                   value={printerSearch}
                   onChangeText={setPrinterSearch}
                 />
+              </>
               }
             />
           )}
@@ -1013,6 +1167,88 @@ const renderPrinter = ({ item }: { item: Printer }) => (
             </View>
             <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveToner}>
               <Text style={styles.saveBtnText}>{editingToner ? "Update Toner" : "Add Toner"}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Printer Modal */}
+      <Modal visible={showPrinterModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPrinterModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingPrinter ? "Edit Printer" : "Add Printer"}</Text>
+            <Pressable onPress={() => setShowPrinterModal(false)}>
+              <Ionicons name="close" size={24} color={theme.text} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Name *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Printer name"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.name}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, name: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Location"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.location}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, location: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>IP Address</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="192.168.x.x"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.ipAddress}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, ipAddress: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Asset Number</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Asset #"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.assetNumber}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, assetNumber: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Serial</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Serial #"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.serial}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, serial: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Toner Series</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. 1234-series"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.tonerSeries}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, tonerSeries: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Barcode"
+              placeholderTextColor={theme.mutedText}
+              value={printerForm.barcode}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, barcode: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100 }]}
+              placeholder="Notes"
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={printerForm.notes}
+              onChangeText={(v) => setPrinterForm((p) => ({ ...p, notes: v }))}
+            />
+            <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={savePrinter}>
+              <Text style={styles.saveBtnText}>{editingPrinter ? "Update Printer" : "Add Printer"}</Text>
             </Pressable>
           </ScrollView>
         </View>
