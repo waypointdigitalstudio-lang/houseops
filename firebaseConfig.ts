@@ -1,8 +1,9 @@
 // firebaseConfig.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { initializeApp } from "firebase/app";
-import { getReactNativePersistence, initializeAuth } from "firebase/auth";
+import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { Platform } from "react-native";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA-yFt19bskSyEEHuarglJUqRDOtJb634I",
@@ -19,9 +20,12 @@ const app = initializeApp(firebaseConfig);
 // Firestore
 export const db = getFirestore(app);
 
-// Auth (with persistence so you DON'T relog every launch)
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+// Auth (platform-safe: AsyncStorage persistence on device, default on web)
+export const auth =
+  Platform.OS === "web"
+    ? getAuth(app)
+    : initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      });
 
 export default app;
