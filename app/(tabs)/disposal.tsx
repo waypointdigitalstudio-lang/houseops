@@ -305,6 +305,33 @@ export default function DisposalScreen() {
     }
   };
 
+  // ── Delete All ──────────────────────────────────────────────────────────────
+
+  const deleteAllDisposals = () => {
+    if (disposals.length === 0) return;
+    Alert.alert(
+      "Delete All Records",
+      `This will permanently delete all ${disposals.length} disposal record${disposals.length !== 1 ? "s" : ""} for this site. This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const batch = writeBatch(db);
+              disposals.forEach((d) => batch.delete(doc(db, "disposals", d.id)));
+              await batch.commit();
+              Alert.alert("Deleted", "All disposal records have been removed.");
+            } catch (err: any) {
+              Alert.alert("Error", err.message || "Failed to delete records.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ───────────────────────────────────────────────────────────────────────────
 
   const reasonColor = (reason: DisposalReason) => {
@@ -348,6 +375,15 @@ export default function DisposalScreen() {
               disabled={exporting}
             >
               {exporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.exportButtonText}>Export CSV</Text>}
+            </Pressable>
+          )}
+
+          {disposals.length > 0 && (
+            <Pressable
+              style={[styles.exportButton, { backgroundColor: '#ef4444' }]}
+              onPress={deleteAllDisposals}
+            >
+              <Text style={styles.exportButtonText}>Delete All</Text>
             </Pressable>
           )}
         </View>

@@ -805,7 +805,7 @@ export default function IndexScreen() {
                 />
               </View>
             </View>
-            <Pressable style={[styles.saveBtn, { backgroundColor: theme.tint }]} onPress={saveToner}>
+            <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveToner}>
               <Text style={styles.saveBtnText}>{editingToner ? "Update Toner" : "Add Toner"}</Text>
             </Pressable>
           </ScrollView>
