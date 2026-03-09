@@ -1,5 +1,7 @@
 // app/(tabs)/index.tsx
 import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -13,7 +15,8 @@ import {
   query,
   setDoc,
   updateDoc,
-  where
+  where,
+  writeBatch
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -195,6 +198,10 @@ export default function IndexScreen() {
   const [printersLoading, setPrintersLoading] = useState(true);
   const [importingPrinters, setImportingPrinters] = useState(false);
   const [printerSearch, setPrinterSearch] = useState("");
+
+  // --- Import state ---
+  const [importingInventory, setImportingInventory] = useState(false);
+  const [importingToners, setImportingToners] = useState(false);
 
   // --- Link Toner Modal state ---
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -475,6 +482,185 @@ export default function IndexScreen() {
     }
   };
 
+  // --- CSV Import Helpers ---
+  const normalizeCell = (val: string): string => {
+    if (!val) return "";
+    const trimmed = val.trim();
+    if (["nan", "none", "null", "-", "n/a"].includes(trimmed.toLowerCase())) return "";
+    return trimmed;
+  };
+
+  const parseCSV = (content: string): string[][] => {
+    const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
+    if (lines.length === 0) return [];
+    const firstLine = lines[0];
+    const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
+    return lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
+  };
+
+  // --- Import Inventory from CSV ---
+  const importInventoryFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImportingInventory(true);
+      const fileUri = result.assets[0].uri;
+      const content = await FileSystem.readAsStringAsync(fileUri);
+      const rows = parseCSV(content);
+
+      if (rows.length < 2) {
+        Alert.alert("Empty File", "No data rows found in the CSV.");
+        return;
+      }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) {
+          const idx = headers.findIndex((h) => h.includes(n));
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const iName     = col(["name", "item", "description"]);
+      const iQty      = col(["qty", "quantity", "amount", "stock"]);
+      const iMinQty   = col(["min", "minimum", "minqty", "minstock"]);
+      const iLocation = col(["location", "loc", "shelf", "room"]);
+      const iBarcode  = col(["barcode", "sku", "upc"]);
+      const iNotes    = col(["notes", "note", "desc"]);
+
+      if (iName === -1) {
+        Alert.alert("Import Failed", "Could not find a 'Name' or 'Item' column.");
+        return;
+      }
+
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const name = normalizeCell(row[iName] ?? "");
+        if (!name) continue;
+
+        const stableId = `${siteId}_${name}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "_")
+          .replace(/_+/g, "_")
+          .slice(0, 100);
+
+        const docRef = doc(db, "items", stableId);
+        batch.set(docRef, {
+          name,
+          currentQuantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0,
+          minQuantity:     parseInt(normalizeCell(row[iMinQty] ?? "")) || 0,
+          location:        normalizeCell(row[iLocation] ?? ""),
+          barcode:         normalizeCell(row[iBarcode] ?? ""),
+          notes:           normalizeCell(row[iNotes] ?? ""),
+          siteId:          siteId || "default",
+          importedAt:      new Date().toISOString(),
+        }, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert("Import Complete", `${count} inventory item${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      console.error("Inventory import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingInventory(false);
+    }
+  };
+
+  // --- Import Toners from CSV ---
+  const importTonersFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImportingToners(true);
+      const fileUri = result.assets[0].uri;
+      const content = await FileSystem.readAsStringAsync(fileUri);
+      const rows = parseCSV(content);
+
+      if (rows.length < 2) {
+        Alert.alert("Empty File", "No data rows found in the CSV.");
+        return;
+      }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) {
+          const idx = headers.findIndex((h) => h.includes(n));
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const iModel    = col(["model", "name", "toner"]);
+      const iPart     = col(["part", "partnumber", "sku"]);
+      const iColor    = col(["color", "colour", "type"]);
+      const iQty      = col(["qty", "quantity", "amount", "stock"]);
+      const iMinQty   = col(["min", "minimum", "minqty"]);
+      const iPrinter  = col(["printer", "compatible", "machine"]);
+      const iSupplier = col(["supplier", "vendor"]);
+      const iNotes    = col(["notes", "note"]);
+
+      if (iModel === -1) {
+        Alert.alert("Import Failed", "Could not find a 'Model' or 'Name' column.");
+        return;
+      }
+
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iModel] ?? "") !== "");
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const model = normalizeCell(row[iModel] ?? "");
+        if (!model) continue;
+
+        const rawColor = normalizeCell(row[iColor] ?? "Black");
+        const color = TONER_COLORS.find(
+          (c) => c.toLowerCase() === rawColor.toLowerCase()
+        ) || "Other";
+
+        const stableId = `${siteId}_${model}_${color}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "_")
+          .replace(/_+/g, "_")
+          .slice(0, 100);
+
+        const docRef = doc(db, "toners", stableId);
+        batch.set(docRef, {
+          model,
+          partNumber:  normalizeCell(row[iPart] ?? ""),
+          color,
+          quantity:    parseInt(normalizeCell(row[iQty] ?? "")) || 0,
+          minQuantity: parseInt(normalizeCell(row[iMinQty] ?? "")) || 0,
+          printer:     normalizeCell(row[iPrinter] ?? ""),
+          supplier:    normalizeCell(row[iSupplier] ?? ""),
+          notes:       normalizeCell(row[iNotes] ?? ""),
+          siteId:      siteId || "default",
+          importedAt:  new Date().toISOString(),
+        }, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert("Import Complete", `${count} toner${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      console.error("Toner import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingToners(false);
+    }
+  };
+
   const renderToner = ({ item }: { item: Toner }) => (
     <Pressable onPress={() => openTonerModal(item)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -607,6 +793,16 @@ const renderPrinter = ({ item }: { item: Printer }) => (
           contentContainerStyle={{ padding: 16 }}
           ListHeaderComponent={
             <>
+              <Pressable
+                onPress={importInventoryFromCSV}
+                disabled={importingInventory}
+                style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+              >
+                {importingInventory
+                  ? <ActivityIndicator size="small" color={theme.text} />
+                  : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import Inventory CSV</Text></>
+                }
+              </Pressable>
               <TextInput
                 style={[styles.searchInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
                 placeholder="Search inventory..."
@@ -668,6 +864,16 @@ const renderPrinter = ({ item }: { item: Printer }) => (
               contentContainerStyle={{ padding: 16 }}
               ListHeaderComponent={
                 <>
+                  <Pressable
+                    onPress={importTonersFromCSV}
+                    disabled={importingToners}
+                    style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, marginBottom: 10 }]}
+                  >
+                    {importingToners
+                      ? <ActivityIndicator size="small" color={theme.text} />
+                      : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import Toners CSV</Text></>
+                    }
+                  </Pressable>
                   <View style={styles.tonerHeaderRow}>
                     <TextInput
                       style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
@@ -880,10 +1086,10 @@ const styles = StyleSheet.create({
   saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
   stockBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, alignSelf: "flex-start" },
   stockText: { fontSize: 11, fontWeight: "800" },
-  // ADD THESE TWO:
   actionButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   actionButtonText: { color: "#fff", fontSize: 10, fontWeight: "800" },
-  // ---
+  importBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderStyle: "dashed", marginBottom: 16 },
+  importBtnText: { fontSize: 14, fontWeight: "700" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
   linkModalContent: { borderRadius: 20, padding: 20 },
   linkItem: { paddingVertical: 14, borderBottomWidth: 1 },
