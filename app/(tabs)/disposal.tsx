@@ -1,7 +1,8 @@
 // app/(tabs)/disposal.tsx
+import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, where, writeBatch } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -34,11 +35,13 @@ type DisposalRecord = {
 
 export default function DisposalScreen() {
   const theme = useAppTheme();
-  const { profile, siteId, loading: profileLoading } = useUserProfile();
+  // We pull 'uid' directly here since your hook provides it
+  const { profile, siteId, uid, loading: profileLoading } = useUserProfile();
 
   const [disposals, setDisposals] = useState<DisposalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (profileLoading) return;
@@ -186,24 +189,135 @@ export default function DisposalScreen() {
     }
   };
 
-  const reasonColor = (reason: DisposalReason) => {
-    switch (reason) {
-      case "broken":
-        return "#ef4444";
-      case "damaged":
-        return "#f97316";
-      case "obsolete":
-        return "#8b5cf6";
-      case "lost":
-        return "#ec4899";
-      default:
-        return "#6b7280";
+  // ── CSV Import helpers ──────────────────────────────────────────────────────
+
+  const normalizeCell = (val: string): string => {
+    if (!val) return "";
+    const trimmed = val.trim();
+    if (["nan", "none", "null", "-", "n/a"].includes(trimmed.toLowerCase())) return "";
+    return trimmed;
+  };
+
+  const parseCSV = (content: string): string[][] => {
+    const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
+    if (lines.length === 0) return [];
+    const firstLine = lines[0];
+    const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
+    return lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
+  };
+
+  const importDisposalsFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImporting(true);
+      const fileUri = result.assets[0].uri;
+      const content = await FileSystem.readAsStringAsync(fileUri);
+
+      const rows = parseCSV(content);
+      if (rows.length < 2) {
+        Alert.alert("Empty File", "No data rows found in the CSV.");
+        return;
+      }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) {
+          const idx = headers.findIndex((h) => h.includes(n));
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const iItem     = col(["item", "name", "description"]);
+      const iModel    = col(["model"]);
+      const iAmount   = col(["amount", "qty", "quantity"]);
+      const iVendor   = col(["vendor", "supplier"]);
+      const iTotal    = col(["multipleamount", "totalvalue", "total"]);
+      const iApprox   = col(["approxamount", "approxprice", "unitprice"]);
+      const iAge      = col(["approxage", "age"]);
+      const iNotes    = col(["notes", "desc"]);
+
+      if (iItem === -1) {
+        Alert.alert("Import Failed", "Could not find an 'ITEM' or 'Name' column in the CSV.");
+        return;
+      }
+
+      const headerItemVal = rows[0][iItem]?.toLowerCase() ?? "";
+      const dataRows = rows.slice(1).filter((row) => {
+        const cell = (row[iItem] ?? "").toLowerCase().trim();
+        return cell !== "" && cell !== headerItemVal && !cell.startsWith("---");
+      });
+
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const name   = normalizeCell(row[iItem]   ?? "");
+        const model  = normalizeCell(row[iModel]  ?? "");
+        const vendor = normalizeCell(row[iVendor] ?? "");
+
+        if (!name) continue;
+
+        const stableId = `${name}_${model}_${vendor}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "_")
+          .replace(/_+/g, "_")
+          .slice(0, 100);
+
+        const docRef = doc(db, "disposals", stableId);
+
+        const data: Record<string, any> = {
+          itemName:    name,
+          model:       model,
+          vendor:      vendor,
+          quantity:    parseInt(normalizeCell(row[iAmount] ?? "")) || 1,
+          approxValue: normalizeCell(row[iApprox] ?? ""),
+          totalValue:  normalizeCell(row[iTotal]  ?? ""),
+          approxAge:   normalizeCell(row[iAge]    ?? ""),
+          notes:       normalizeCell(row[iNotes]  ?? ""),
+          siteId:      siteId || "default",
+          reason:      "obsolete" as DisposalReason,
+          // FIX: Use 'uid' from hook and a generic name since profile doesn't have one
+          disposedBy:  profile?.role === "admin" ? "Admin" : "Staff",
+          disposedByUid: uid || "", 
+          importedAt:  new Date().toISOString(),
+          disposedAt:  new Date(),
+        };
+
+        batch.set(docRef, data, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert(
+        "Import Complete",
+        `${count} disposal item${count !== 1 ? "s" : ""} imported/updated successfully.`
+      );
+    } catch (err: any) {
+      console.error("Import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImporting(false);
     }
   };
 
-  const reasonLabel = (reason: DisposalReason) => {
-    return reason.toUpperCase();
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const reasonColor = (reason: DisposalReason) => {
+    switch (reason) {
+      case "broken": return "#ef4444";
+      case "damaged": return "#f97316";
+      case "obsolete": return "#8b5cf6";
+      case "lost": return "#ec4899";
+      default: return "#6b7280";
+    }
   };
+
+  const reasonLabel = (reason: DisposalReason) => reason.toUpperCase();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -218,40 +332,36 @@ export default function DisposalScreen() {
           </Text>
         </View>
 
-        {disposals.length > 0 && (
+        <View style={styles.headerButtons}>
           <Pressable
-            style={[
-              styles.exportButton,
-              { backgroundColor: '#007AFF' },
-              exporting && styles.exportButtonDisabled
-            ]}
-            onPress={exportToCSV}
-            disabled={exporting}
+            style={[styles.exportButton, { backgroundColor: '#34C759' }, importing && styles.exportButtonDisabled]}
+            onPress={importDisposalsFromCSV}
+            disabled={importing}
           >
-            {exporting ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.exportButtonText}>Export CSV</Text>
-            )}
+            {importing ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.exportButtonText}>Import CSV</Text>}
           </Pressable>
-        )}
+
+          {disposals.length > 0 && (
+            <Pressable
+              style={[styles.exportButton, { backgroundColor: '#007AFF' }, exporting && styles.exportButtonDisabled]}
+              onPress={exportToCSV}
+              disabled={exporting}
+            >
+              {exporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.exportButtonText}>Export CSV</Text>}
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={{ color: theme.mutedText, marginTop: 10 }}>
-            Loading disposal records…
-          </Text>
+          <Text style={{ color: theme.mutedText, marginTop: 10 }}>Loading disposal records…</Text>
         </View>
       ) : disposals.length === 0 ? (
         <View style={styles.center}>
-          <Text style={[styles.emptyText, { color: theme.text }]}>
-            No disposed items yet
-          </Text>
-          <Text style={[styles.emptySubtext, { color: theme.mutedText }]}>
-            Disposed items will appear here for tracking
-          </Text>
+          <Text style={[styles.emptyText, { color: theme.text }]}>No disposed items yet</Text>
+          <Text style={[styles.emptySubtext, { color: theme.mutedText }]}>Disposed items will appear here for tracking</Text>
         </View>
       ) : (
         <FlatList
@@ -259,52 +369,20 @@ export default function DisposalScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 20 }}
           renderItem={({ item }) => (
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: theme.card,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <View style={styles.cardHeader}>
-                <Text style={[styles.itemName, { color: theme.text }]}>
-                  {item.itemName}
-                </Text>
-                <View
-                  style={[
-                    styles.badge,
-                    { backgroundColor: reasonColor(item.reason) },
-                  ]}
-                >
-                  <Text style={styles.badgeText}>
-                    {reasonLabel(item.reason)}
-                  </Text>
+                <Text style={[styles.itemName, { color: theme.text }]}>{item.itemName}</Text>
+                <View style={[styles.badge, { backgroundColor: reasonColor(item.reason) }]}>
+                  <Text style={styles.badgeText}>{reasonLabel(item.reason)}</Text>
                 </View>
               </View>
-
-              {item.notes ? (
-                <Text style={[styles.notes, { color: theme.mutedText }]}>
-                  {item.notes}
-                </Text>
-              ) : null}
-
+              {item.notes ? <Text style={[styles.notes, { color: theme.mutedText }]}>{item.notes}</Text> : null}
               <View style={styles.meta}>
-                <Text style={[styles.metaText, { color: theme.mutedText }]}>
-                  Qty: {item.quantity}
-                </Text>
-                <Text style={[styles.metaText, { color: theme.mutedText }]}>
-                  •
-                </Text>
-                <Text style={[styles.metaText, { color: theme.mutedText }]}>
-                  By: {item.disposedBy}
-                </Text>
+                <Text style={[styles.metaText, { color: theme.mutedText }]}>Qty: {item.quantity}</Text>
+                <Text style={[styles.metaText, { color: theme.mutedText }]}>•</Text>
+                <Text style={[styles.metaText, { color: theme.mutedText }]}>By: {item.disposedBy}</Text>
               </View>
-
-              <Text style={[styles.date, { color: theme.mutedText }]}>
-                {formatDate(item.disposedAt)}
-              </Text>
+              <Text style={[styles.date, { color: theme.mutedText }]}>{formatDate(item.disposedAt)}</Text>
             </View>
           )}
         />
@@ -314,98 +392,25 @@ export default function DisposalScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  subtitle: {
-    fontSize: 13,
-    marginTop: 6,
-  },
-  exportButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginLeft: 12,
-    minWidth: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exportButtonDisabled: {
-    opacity: 0.6,
-  },
-  exportButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  emptySubtext: {
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: "center",
-  },
-  card: {
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 12,
-    borderWidth: 1,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: "800",
-    flex: 1,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "900",
-  },
-  notes: {
-    fontSize: 13,
-    marginTop: 8,
-  },
-  meta: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 8,
-  },
-  metaText: {
-    fontSize: 12,
-  },
-  date: {
-    fontSize: 11,
-    marginTop: 6,
-  },
+  container: { flex: 1, padding: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  headerText: { flex: 1 },
+  title: { fontSize: 22, fontWeight: "800" },
+  subtitle: { fontSize: 13, marginTop: 6 },
+  headerButtons: { flexDirection: 'column', gap: 8, marginLeft: 12 },
+  exportButton: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, minWidth: 110, alignItems: 'center', justifyContent: 'center' },
+  exportButtonDisabled: { opacity: 0.6 },
+  exportButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyText: { fontSize: 18, fontWeight: "800" },
+  emptySubtext: { fontSize: 14, marginTop: 8, textAlign: "center" },
+  card: { borderRadius: 14, padding: 14, marginTop: 12, borderWidth: 1 },
+  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  itemName: { fontSize: 16, fontWeight: "800", flex: 1 },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  badgeText: { color: "#fff", fontSize: 11, fontWeight: "900" },
+  notes: { fontSize: 13, marginTop: 8 },
+  meta: { flexDirection: "row", gap: 8, marginTop: 8 },
+  metaText: { fontSize: 12 },
+  date: { fontSize: 11, marginTop: 6 },
 });
