@@ -1,6 +1,6 @@
 // app/(tabs)/index.tsx
-// FIXED VERSION V2 - Bulletproof Undo Banner + Inventory Item Edit Support
-// Changes marked with "// FIX:" for undo banner and "// NEW:" for inventory edit
+// FIXED VERSION V3 - Bulletproof Undo Banner + Inventory Item Edit Support + Activity Logging
+// Changes marked with "// FIX:" for undo banner, "// NEW:" for inventory edit, "// ACTIVITY:" for activity logging
 
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -16,6 +16,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp, // ACTIVITY: Added serverTimestamp import
   setDoc,
   updateDoc,
   where,
@@ -88,11 +89,57 @@ type SortMode = "name" | "stock";
 type TabMode = "inventory" | "toners";
 type TonerSubTab = "toners" | "printers";
 
+// ACTIVITY: Stock status type for activity logging
+type StockStatus = "OK" | "LOW" | "OUT";
+
 const TONER_COLORS = ["Black", "Cyan", "Magenta", "Yellow", "Other"];
 
 // FIX: Constants for undo timing
 const UNDO_TIMEOUT_MS = 5000;
 const UNDO_ANIMATION_MS = 180;
+
+// ACTIVITY: Helper function to determine stock status based on quantity and minimum
+// Returns "OUT" if qty <= 0, "LOW" if qty <= min, "OK" otherwise
+function getStockStatus(qty: number, min: number): StockStatus {
+  if (qty <= 0) return "OUT";
+  if (qty <= min) return "LOW";
+  return "OK";
+}
+
+// ACTIVITY: Helper function to log activity to the alertsLog collection
+// This writes a comprehensive log entry for any inventory/toner/printer change
+async function logActivity(params: {
+  siteId: string;
+  itemName: string;
+  itemId: string;
+  qty: number;
+  min: number;
+  prevState: StockStatus;
+  nextState: StockStatus;
+  action: string; // e.g., "added", "edited", "deleted", "deducted", "linked"
+  itemType: "inventory" | "toner" | "printer";
+}) {
+  const { siteId, itemName, itemId, qty, min, prevState, nextState, action, itemType } = params;
+  
+  try {
+    await addDoc(collection(db, "alertsLog"), {
+      siteId,
+      itemName,
+      itemId,
+      qty,
+      min,
+      prevState,
+      nextState,
+      status: nextState,
+      action,
+      itemType,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Error logging activity:", err);
+    // Don't throw - activity logging should not break main functionality
+  }
+}
 
 // --- Live Toner Stock Badge ---
 function TonerStockBadge({ tonerId, theme }: { tonerId: string; theme: any }) {
@@ -285,6 +332,7 @@ export default function IndexScreen() {
   }, [undoAnim]);
 
   // FIX: Refactored scheduleDelete with bulletproof timing and cleanup
+  // ACTIVITY: Added activity logging for item deletion
   const scheduleDelete = useCallback(async (item: Item) => {
     // Step 1: If there's an existing pending delete, commit it immediately
     if (pendingDelete) {
@@ -294,6 +342,20 @@ export default function IndexScreen() {
       }
       try {
         await deleteDoc(doc(db, "items", pendingDelete.item.id));
+        
+        // ACTIVITY: Log the committed deletion
+        const prevStatus = getStockStatus(pendingDelete.item.currentQuantity, pendingDelete.item.minQuantity);
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: pendingDelete.item.name,
+          itemId: pendingDelete.item.id,
+          qty: 0,
+          min: pendingDelete.item.minQuantity,
+          prevState: prevStatus,
+          nextState: "OUT",
+          action: "deleted",
+          itemType: "inventory",
+        });
       } catch (e) {
         console.error("Error committing previous delete:", e);
       }
@@ -331,6 +393,20 @@ export default function IndexScreen() {
       
       try {
         await deleteDoc(doc(db, "items", item.id));
+        
+        // ACTIVITY: Log the deletion after timeout
+        const prevStatus = getStockStatus(item.currentQuantity, item.minQuantity);
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: item.name,
+          itemId: item.id,
+          qty: 0,
+          min: item.minQuantity,
+          prevState: prevStatus,
+          nextState: "OUT",
+          action: "deleted",
+          itemType: "inventory",
+        });
       } catch (e) {
         console.error("Error during scheduled delete:", e);
         // On error, unhide the item
@@ -348,7 +424,7 @@ export default function IndexScreen() {
         dismissUndoBanner();
       }
     }, UNDO_TIMEOUT_MS);
-  }, [pendingDelete, undoAnim, dismissUndoBanner]);
+  }, [pendingDelete, undoAnim, dismissUndoBanner, siteId]);
 
   // FIX: Refactored undoDelete with proper cleanup
   const undoDelete = useCallback(async () => {
@@ -410,6 +486,7 @@ export default function IndexScreen() {
   }, []);
 
   // --- NEW: Save inventory item (create or update) ---
+  // ACTIVITY: Added activity logging for item save operations
   // Validates required fields and saves to Firestore
   const saveItem = useCallback(async () => {
     // Validate required fields
@@ -422,10 +499,13 @@ export default function IndexScreen() {
       return;
     }
 
+    const newQty = parseInt(itemForm.currentQuantity) || 0;
+    const newMin = parseInt(itemForm.minQuantity) || 0;
+
     const data = {
       name: itemForm.name.trim(),
-      currentQuantity: parseInt(itemForm.currentQuantity) || 0,
-      minQuantity: parseInt(itemForm.minQuantity) || 0,
+      currentQuantity: newQty,
+      minQuantity: newMin,
       location: itemForm.location.trim(),
       barcode: itemForm.barcode.trim(),
       notes: itemForm.notes.trim(),
@@ -434,11 +514,42 @@ export default function IndexScreen() {
 
     try {
       if (editingItem) {
+        // ACTIVITY: Calculate previous and new status for editing
+        const prevStatus = getStockStatus(editingItem.currentQuantity, editingItem.minQuantity);
+        const nextStatus = getStockStatus(newQty, newMin);
+
         // Update existing item
         await setDoc(doc(db, "items", editingItem.id), data, { merge: true });
+
+        // ACTIVITY: Log the edit activity
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: data.name,
+          itemId: editingItem.id,
+          qty: newQty,
+          min: newMin,
+          prevState: prevStatus,
+          nextState: nextStatus,
+          action: "edited",
+          itemType: "inventory",
+        });
       } else {
         // Create new item
-        await addDoc(collection(db, "items"), data);
+        const docRef = await addDoc(collection(db, "items"), data);
+
+        // ACTIVITY: Log the add activity
+        const nextStatus = getStockStatus(newQty, newMin);
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: data.name,
+          itemId: docRef.id,
+          qty: newQty,
+          min: newMin,
+          prevState: "OK", // New items start from "OK" conceptually
+          nextState: nextStatus,
+          action: "added",
+          itemType: "inventory",
+        });
       }
       setShowInventoryModal(false);
       setEditingItem(null);
@@ -524,6 +635,7 @@ export default function IndexScreen() {
   }, [undoTonerAnim]);
 
   // FIX: Refactored scheduleTonerDelete with bulletproof timing and cleanup
+  // ACTIVITY: Added activity logging for toner deletion
   const scheduleTonerDelete = useCallback(async (toner: Toner) => {
     // Step 1: If there's an existing pending toner delete, commit it immediately
     if (pendingTonerDelete) {
@@ -533,6 +645,20 @@ export default function IndexScreen() {
       }
       try {
         await deleteDoc(doc(db, "toners", pendingTonerDelete.toner.id));
+        
+        // ACTIVITY: Log the committed deletion
+        const prevStatus = getStockStatus(pendingTonerDelete.toner.quantity, pendingTonerDelete.toner.minQuantity);
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: pendingTonerDelete.toner.model,
+          itemId: pendingTonerDelete.toner.id,
+          qty: 0,
+          min: pendingTonerDelete.toner.minQuantity,
+          prevState: prevStatus,
+          nextState: "OUT",
+          action: "deleted",
+          itemType: "toner",
+        });
       } catch (e) {
         console.error("Error committing previous toner delete:", e);
       }
@@ -564,6 +690,20 @@ export default function IndexScreen() {
       
       try {
         await deleteDoc(doc(db, "toners", toner.id));
+        
+        // ACTIVITY: Log the deletion after timeout
+        const prevStatus = getStockStatus(toner.quantity, toner.minQuantity);
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: toner.model,
+          itemId: toner.id,
+          qty: 0,
+          min: toner.minQuantity,
+          prevState: prevStatus,
+          nextState: "OUT",
+          action: "deleted",
+          itemType: "toner",
+        });
       } catch (e) {
         console.error("Error during scheduled toner delete:", e);
         if (isMountedRef.current) {
@@ -579,7 +719,7 @@ export default function IndexScreen() {
         dismissTonerUndoBanner();
       }
     }, UNDO_TIMEOUT_MS);
-  }, [pendingTonerDelete, undoTonerAnim, dismissTonerUndoBanner]);
+  }, [pendingTonerDelete, undoTonerAnim, dismissTonerUndoBanner, siteId]);
 
   // FIX: Refactored undoTonerDelete with proper cleanup
   const undoTonerDelete = useCallback(async () => {
@@ -651,10 +791,25 @@ export default function IndexScreen() {
     return tonerLinkList.filter((t) => t.name.toLowerCase().includes(tonerLinkSearch.toLowerCase()));
   }, [tonerLinkList, tonerLinkSearch]);
 
+  // ACTIVITY: Updated handleLinkToner to log activity when toner is linked to printer
   const handleLinkToner = async (toner: TonerLink) => {
     if (!selectedPrinter) return;
     try {
       await updateDoc(doc(db, "printers", selectedPrinter.id), { tonerId: toner.id });
+      
+      // ACTIVITY: Log the toner link activity
+      await logActivity({
+        siteId: siteId || "default",
+        itemName: `${toner.name} → ${selectedPrinter.name}`,
+        itemId: selectedPrinter.id,
+        qty: toner.stock,
+        min: 0,
+        prevState: "OK",
+        nextState: "OK",
+        action: "linked",
+        itemType: "printer",
+      });
+      
       setShowLinkModal(false);
       setSelectedPrinter(null);
       Alert.alert("Linked!", `${toner.name} linked to ${selectedPrinter.name}.`);
@@ -663,15 +818,40 @@ export default function IndexScreen() {
     }
   };
 
+  // ACTIVITY: Updated handleDeductToner to log activity when toner quantity is deducted
   const handleDeductToner = async (printer: Printer) => {
     if (!printer.tonerId) return;
+    
+    // Find the toner to get its current quantity and minQuantity
+    const linkedToner = toners.find(t => t.id === printer.tonerId);
+    
     Alert.alert("Deduct Toner", `Use 1 toner for ${printer.name}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Deduct 1",
         onPress: async () => {
           try {
+            const prevQty = linkedToner?.quantity ?? 1;
+            const minQty = linkedToner?.minQuantity ?? 0;
+            const newQty = Math.max(0, prevQty - 1);
+            
+            const prevStatus = getStockStatus(prevQty, minQty);
+            const nextStatus = getStockStatus(newQty, minQty);
+            
             await updateDoc(doc(db, "toners", printer.tonerId!), { quantity: increment(-1) });
+            
+            // ACTIVITY: Log the toner deduction activity
+            await logActivity({
+              siteId: siteId || "default",
+              itemName: linkedToner?.model || "Unknown Toner",
+              itemId: printer.tonerId!,
+              qty: newQty,
+              min: minQty,
+              prevState: prevStatus,
+              nextState: nextStatus,
+              action: "deducted",
+              itemType: "toner",
+            });
           } catch {
             Alert.alert("Error", "Failed to update stock.");
           }
@@ -711,22 +891,60 @@ export default function IndexScreen() {
     setShowTonerModal(true);
   };
 
+  // ACTIVITY: Updated saveToner to log activity when toners are added/edited
   const saveToner = async () => {
     if (!tonerForm.model || !tonerForm.quantity) {
       Alert.alert("Error", "Model and Quantity are required.");
       return;
     }
+    
+    const newQty = parseInt(tonerForm.quantity) || 0;
+    const newMin = parseInt(tonerForm.minQuantity) || 0;
+    
     const data = {
       ...tonerForm,
-      quantity: parseInt(tonerForm.quantity) || 0,
-      minQuantity: parseInt(tonerForm.minQuantity) || 0,
+      quantity: newQty,
+      minQuantity: newMin,
       siteId,
     };
+    
     try {
       if (editingToner) {
+        // ACTIVITY: Calculate previous and new status for editing
+        const prevStatus = getStockStatus(editingToner.quantity, editingToner.minQuantity);
+        const nextStatus = getStockStatus(newQty, newMin);
+        
         await setDoc(doc(db, "toners", editingToner.id), data, { merge: true });
+        
+        // ACTIVITY: Log the edit activity
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: data.model,
+          itemId: editingToner.id,
+          qty: newQty,
+          min: newMin,
+          prevState: prevStatus,
+          nextState: nextStatus,
+          action: "edited",
+          itemType: "toner",
+        });
       } else {
-        await addDoc(collection(db, "toners"), data);
+        // Create new toner
+        const docRef = await addDoc(collection(db, "toners"), data);
+        
+        // ACTIVITY: Log the add activity
+        const nextStatus = getStockStatus(newQty, newMin);
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: data.model,
+          itemId: docRef.id,
+          qty: newQty,
+          min: newMin,
+          prevState: "OK", // New toners start from "OK" conceptually
+          nextState: nextStatus,
+          action: "added",
+          itemType: "toner",
+        });
       }
       setShowTonerModal(false);
     } catch (err) {
@@ -998,6 +1216,7 @@ export default function IndexScreen() {
     }
   };
 
+  // ACTIVITY: Updated savePrinter to log activity when printers are added/edited
   const savePrinter = async () => {
     if (!printerForm.name) {
       Alert.alert("Error", "Name is required.");
@@ -1007,8 +1226,35 @@ export default function IndexScreen() {
     try {
       if (editingPrinter) {
         await setDoc(doc(db, "printers", editingPrinter.id), data, { merge: true });
+        
+        // ACTIVITY: Log the edit activity for printer
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: data.name,
+          itemId: editingPrinter.id,
+          qty: 0, // Printers don't have quantity
+          min: 0,
+          prevState: "OK",
+          nextState: "OK",
+          action: "edited",
+          itemType: "printer",
+        });
       } else {
-        await addDoc(collection(db, "printers"), data);
+        // Create new printer
+        const docRef = await addDoc(collection(db, "printers"), data);
+        
+        // ACTIVITY: Log the add activity for printer
+        await logActivity({
+          siteId: siteId || "default",
+          itemName: data.name,
+          itemId: docRef.id,
+          qty: 0, // Printers don't have quantity
+          min: 0,
+          prevState: "OK",
+          nextState: "OK",
+          action: "added",
+          itemType: "printer",
+        });
       }
       setShowPrinterModal(false);
     } catch (err) {
