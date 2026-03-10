@@ -63,6 +63,7 @@ export default function AlertsScreen() {
   const [activityLogs, setActivityLogs] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 1. Fetch Alerts
   useEffect(() => {
     if (profileLoading || !siteId || activeTab !== "alerts") return;
     setLoading(true);
@@ -82,6 +83,7 @@ export default function AlertsScreen() {
     return () => unsub();
   }, [siteId, profileLoading, viewMode, activeTab]);
 
+  // 2. Fetch Activity Logs (alertsLog collection)
   useEffect(() => {
     if (profileLoading || !siteId || activeTab !== "activity") return;
     setLoading(true);
@@ -140,16 +142,28 @@ export default function AlertsScreen() {
     } catch (e) { console.log(e); }
   };
 
+  // UI Components
   const TabButton = ({ id, label }: { id: "alerts" | "activity", label: string }) => (
     <Pressable
       onPress={() => setActiveTab(id)}
       style={{
         flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center",
         backgroundColor: activeTab === id ? theme.tint : "transparent",
-        borderWidth: 1, borderColor: activeTab === id ? theme.tint : theme.border
+        borderWidth: 1, borderColor: activeTab === id ? theme.tint : theme.border,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: activeTab === id ? 0.2 : 0,
+        shadowRadius: 4,
+        elevation: activeTab === id ? 3 : 0,
       }}
     >
-      <Text style={{ color: activeTab === id ? "#fff" : theme.text, fontWeight: "800", fontSize: 14 }}>
+      <Text style={{ 
+        color: activeTab === id ? "#ffffff" : theme.text, 
+        fontWeight: "900", 
+        fontSize: 14,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5
+      }}>
         {label}
       </Text>
     </Pressable>
@@ -201,12 +215,34 @@ export default function AlertsScreen() {
 
       {activeTab === "alerts" && (
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-          <Pressable onPress={() => setViewMode("unread")} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: viewMode === "unread" ? theme.card : "transparent", borderWidth: 1, borderColor: theme.border }}>
-            <Text style={{ color: theme.text, fontWeight: "700", fontSize: 12 }}>Unread</Text>
-          </Pressable>
-          <Pressable onPress={() => setViewMode("history")} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: viewMode === "history" ? theme.card : "transparent", borderWidth: 1, borderColor: theme.border }}>
-            <Text style={{ color: theme.text, fontWeight: "700", fontSize: 12 }}>History</Text>
-          </Pressable>
+          {[
+            { id: "unread", label: "Unread" },
+            { id: "history", label: "History" }
+          ].map((mode) => {
+            const isActive = viewMode === mode.id;
+            return (
+              <Pressable 
+                key={mode.id}
+                onPress={() => setViewMode(mode.id as any)} 
+                style={{ 
+                  paddingHorizontal: 20, 
+                  paddingVertical: 10, 
+                  borderRadius: 25, 
+                  backgroundColor: isActive ? theme.text : "transparent", 
+                  borderWidth: 1, 
+                  borderColor: isActive ? theme.text : theme.border 
+                }}
+              >
+                <Text style={{ 
+                  color: isActive ? theme.background : theme.text, 
+                  fontWeight: "800", 
+                  fontSize: 12 
+                }}>
+                  {mode.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       )}
 
