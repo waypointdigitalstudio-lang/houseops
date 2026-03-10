@@ -1070,52 +1070,56 @@ const renderPrinter = ({ item }: { item: Printer }) => (
       )}
 
       {/* Inventory Undo Bar */}
-      <Animated.View
-        pointerEvents={pendingDelete ? "auto" : "none"}
-        style={[
-          styles.undoBar,
-          {
-            backgroundColor: theme.card,
-            borderColor: theme.border,
-            bottom: 16,
-            opacity: undoAnim,
-            zIndex: pendingDelete ? 1000 : -1,
-            transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
-          },
-        ]}
-      >
-        <Text style={{ color: theme.text, fontWeight: "700" }}>Item deleted</Text>
-        <Pressable
-          onPress={undoDelete}
-          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
+      {pendingDelete && (
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            styles.undoBar,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              bottom: 16,
+              opacity: undoAnim,
+              zIndex: 1000,
+              transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
+            },
+          ]}
         >
-          <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
-        </Pressable>
-      </Animated.View>
+          <Text style={{ color: theme.text, fontWeight: "700" }}>Item deleted</Text>
+          <Pressable
+            onPress={undoDelete}
+            style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
+          >
+            <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
+          </Pressable>
+        </Animated.View>
+      )}
 
       {/* Toner Undo Bar */}
-      <Animated.View
-        pointerEvents={pendingTonerDelete ? "auto" : "none"}
-        style={[
-          styles.undoBar,
-          {
-            backgroundColor: theme.card,
-            borderColor: theme.border,
-            bottom: 16,
-            opacity: undoTonerAnim,
-            zIndex: pendingTonerDelete ? 1000 : -1,
-            transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
-          },
-        ]}
-      >
-        <Text style={{ color: theme.text, fontWeight: "700" }}>Toner deleted</Text>
-        <Pressable
-          onPress={undoTonerDelete}
-          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
+      {pendingTonerDelete && (
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            styles.undoBar,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              bottom: 16,
+              opacity: undoTonerAnim,
+              zIndex: 1000,
+              transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
+            },
+          ]}
         >
-          <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
-        </Pressable>
-      </Animated.View>
+          <Text style={{ color: theme.text, fontWeight: "700" }}>Toner deleted</Text>
+          <Pressable
+            onPress={undoTonerDelete}
+            style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
+          >
+            <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
+          </Pressable>
+        </Animated.View>
+      )}
 
       {/* Toner Modal */}
       <Modal visible={showTonerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowTonerModal(false)}>
