@@ -143,31 +143,34 @@ export default function AlertsScreen() {
   };
 
   // UI Components
-  const TabButton = ({ id, label }: { id: "alerts" | "activity", label: string }) => (
-    <Pressable
-      onPress={() => setActiveTab(id)}
-      style={{
-        flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center",
-        backgroundColor: activeTab === id ? theme.tint : "transparent",
-        borderWidth: 1, borderColor: activeTab === id ? theme.tint : theme.border,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: activeTab === id ? 0.2 : 0,
-        shadowRadius: 4,
-        elevation: activeTab === id ? 3 : 0,
-      }}
-    >
-      <Text style={{ 
-        color: activeTab === id ? "#ffffff" : theme.text, 
-        fontWeight: "900", 
-        fontSize: 14,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5
-      }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+  const TabButton = ({ id, label }: { id: "alerts" | "activity", label: string }) => {
+    const isActive = activeTab === id;
+    
+    // Contrast Fix: If the background (tint) is white, use black text.
+    const isWhiteBackground = theme.tint.toLowerCase() === '#ffffff' || theme.tint.toLowerCase() === '#fff';
+    const activeTextColor = isWhiteBackground ? '#000000' : '#ffffff';
+
+    return (
+      <Pressable
+        onPress={() => setActiveTab(id)}
+        style={{
+          flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center",
+          backgroundColor: isActive ? theme.tint : "transparent",
+          borderWidth: 1, borderColor: isActive ? theme.tint : theme.border,
+        }}
+      >
+        <Text style={{ 
+          color: isActive ? activeTextColor : theme.text, 
+          fontWeight: "900", 
+          fontSize: 14,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5
+        }}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  };
 
   const renderAlert = ({ item }: { item: AlertRow }) => (
     <Pressable onPress={() => viewMode === "unread" && markOneAsRead(item.id)} disabled={viewMode === "history"}>
