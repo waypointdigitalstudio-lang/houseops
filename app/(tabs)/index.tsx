@@ -1,4 +1,7 @@
 // app/(tabs)/index.tsx
+// FIXED VERSION - Bulletproof Undo Banner Implementation
+// Changes marked with "// FIX:" comments
+
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -18,7 +21,7 @@ import {
   where,
   writeBatch
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -69,10 +72,10 @@ type Printer = {
   serial?: string;
   tonerSeries?: string;
   barcode?: string;
-  notes?: string; // Added this
+  notes?: string;
   siteId: string;
   tonerId?: string;
-  importedAt?: string; // Added this
+  importedAt?: string;
 };
 
 type TonerLink = {
@@ -86,6 +89,10 @@ type TabMode = "inventory" | "toners";
 type TonerSubTab = "toners" | "printers";
 
 const TONER_COLORS = ["Black", "Cyan", "Magenta", "Yellow", "Other"];
+
+// FIX: Constants for undo timing
+const UNDO_TIMEOUT_MS = 5000;
+const UNDO_ANIMATION_MS = 180;
 
 // --- Live Toner Stock Badge ---
 function TonerStockBadge({ tonerId, theme }: { tonerId: string; theme: any }) {
@@ -141,22 +148,15 @@ export default function IndexScreen() {
   const [showLowOnly, setShowLowOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
 
-  // --- Inventory Undo delete state ---
+  // --- FIX: Inventory Undo delete state - using refs for timeouts and mounted tracking ---
   const [pendingDelete, setPendingDelete] = useState<{
     item: Item;
     backup: any;
-    timeoutId: any;
   } | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const undoAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    // Keep animation in sync with pendingDelete state to avoid the bar getting stuck visible
-    if (pendingDelete) {
-      Animated.timing(undoAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    } else {
-      Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
-    }
-  }, [pendingDelete]);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null); // FIX: Use ref for timeout
+  const isMountedRef = useRef(true); // FIX: Track mounted state
 
   // --- Toner state ---
   const [toners, setToners] = useState<Toner[]>([]);
@@ -178,22 +178,14 @@ export default function IndexScreen() {
     barcode: "",
   });
 
-  // --- Toner Undo delete state ---
+  // --- FIX: Toner Undo delete state - using refs for timeouts ---
   const [pendingTonerDelete, setPendingTonerDelete] = useState<{
     toner: Toner;
     backup: any;
-    timeoutId: any;
   } | null>(null);
   const [hiddenTonerIds, setHiddenTonerIds] = useState<Set<string>>(new Set());
   const undoTonerAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    // Keep animation in sync with pendingTonerDelete so toner undo bar doesn't stick
-    if (pendingTonerDelete) {
-      Animated.timing(undoTonerAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    } else {
-      Animated.timing(undoTonerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
-    }
-  }, [pendingTonerDelete]);
+  const undoTonerTimeoutRef = useRef<NodeJS.Timeout | null>(null); // FIX: Use ref for timeout
 
   // --- Printer state ---
   const [printers, setPrinters] = useState<Printer[]>([]);
@@ -225,6 +217,23 @@ export default function IndexScreen() {
   const [tonerLinkSearch, setTonerLinkSearch] = useState("");
   const [tonerLinkList, setTonerLinkList] = useState<TonerLink[]>([]);
 
+  // FIX: Track mounted state for cleanup
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // FIX: Cleanup timeouts on unmount
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+        undoTimeoutRef.current = null;
+      }
+      if (undoTonerTimeoutRef.current) {
+        clearTimeout(undoTonerTimeoutRef.current);
+        undoTonerTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   // --- Inventory Logic ---
   useEffect(() => {
     if (!siteId) return;
@@ -244,40 +253,119 @@ export default function IndexScreen() {
     return () => unsubscribe();
   }, [siteId]);
 
-  const scheduleDelete = async (item: Item) => {
-    if (pendingDelete?.timeoutId) {
-      clearTimeout(pendingDelete.timeoutId);
-      try { await deleteDoc(doc(db, "items", pendingDelete.item.id)); } catch {}
-      setPendingDelete(null);
-      setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
-      Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+  // FIX: Helper function to dismiss inventory undo banner with proper cleanup
+  const dismissUndoBanner = useCallback(() => {
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
     }
-    const backup = { ...item };
-    delete (backup as any).id;
-    setHiddenIds((p) => new Set(p).add(item.id));
-    Animated.timing(undoAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    const timeoutId = setTimeout(async () => {
-      try { await deleteDoc(doc(db, "items", item.id)); } catch {
-        setHiddenIds((p) => { const n = new Set(p); n.delete(item.id); return n; });
-      } finally {
-        Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    Animated.timing(undoAnim, {
+      toValue: 0,
+      duration: UNDO_ANIMATION_MS,
+      useNativeDriver: true,
+    }).start(() => {
+      // Only update state after animation completes and component is still mounted
+      if (isMountedRef.current) {
         setPendingDelete(null);
       }
-    }, 5000);
-    setPendingDelete({ item, backup, timeoutId });
-  };
+    });
+  }, [undoAnim]);
 
-  const undoDelete = async () => {
-    if (!pendingDelete) return;
-    clearTimeout(pendingDelete.timeoutId);
-    setHiddenIds((p) => { const n = new Set(p); n.delete(pendingDelete.item.id); return n; });
-    try {
-      await setDoc(doc(db, "items", pendingDelete.item.id), pendingDelete.backup, { merge: true });
-    } catch {} finally {
-      Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+  // FIX: Refactored scheduleDelete with bulletproof timing and cleanup
+  const scheduleDelete = useCallback(async (item: Item) => {
+    // Step 1: If there's an existing pending delete, commit it immediately
+    if (pendingDelete) {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+        undoTimeoutRef.current = null;
+      }
+      try {
+        await deleteDoc(doc(db, "items", pendingDelete.item.id));
+      } catch (e) {
+        console.error("Error committing previous delete:", e);
+      }
+      // Clean up previous hidden state
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        next.delete(pendingDelete.item.id);
+        return next;
+      });
+      // Reset animation immediately (no callback needed here)
+      undoAnim.setValue(0);
       setPendingDelete(null);
     }
-  };
+
+    // Step 2: Set up new pending delete
+    const backup = { ...item };
+    delete (backup as any).id;
+
+    // Hide the item from the list
+    setHiddenIds((prev) => new Set(prev).add(item.id));
+
+    // Set pending delete state (without timeoutId in state)
+    setPendingDelete({ item, backup });
+
+    // Animate banner in
+    Animated.timing(undoAnim, {
+      toValue: 1,
+      duration: UNDO_ANIMATION_MS,
+      useNativeDriver: true,
+    }).start();
+
+    // FIX: Schedule the actual deletion with ref-based timeout
+    undoTimeoutRef.current = setTimeout(async () => {
+      if (!isMountedRef.current) return;
+      
+      try {
+        await deleteDoc(doc(db, "items", item.id));
+      } catch (e) {
+        console.error("Error during scheduled delete:", e);
+        // On error, unhide the item
+        if (isMountedRef.current) {
+          setHiddenIds((prev) => {
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+        }
+      }
+      
+      // Always dismiss the banner after timeout
+      if (isMountedRef.current) {
+        dismissUndoBanner();
+      }
+    }, UNDO_TIMEOUT_MS);
+  }, [pendingDelete, undoAnim, dismissUndoBanner]);
+
+  // FIX: Refactored undoDelete with proper cleanup
+  const undoDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+
+    // Clear the scheduled deletion timeout
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+
+    const { item, backup } = pendingDelete;
+
+    // Unhide the item immediately
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      next.delete(item.id);
+      return next;
+    });
+
+    // Restore the document (it was never actually deleted since we use delayed delete)
+    try {
+      await setDoc(doc(db, "items", item.id), backup, { merge: true });
+    } catch (e) {
+      console.error("Error restoring item:", e);
+    }
+
+    // Dismiss the banner
+    dismissUndoBanner();
+  }, [pendingDelete, dismissUndoBanner]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => !hiddenIds.has(i.id));
@@ -336,40 +424,107 @@ export default function IndexScreen() {
     return () => unsub();
   }, [showLinkModal, siteId]);
 
-  const scheduleTonerDelete = async (toner: Toner) => {
-    if (pendingTonerDelete?.timeoutId) {
-      clearTimeout(pendingTonerDelete.timeoutId);
-      try { await deleteDoc(doc(db, "toners", pendingTonerDelete.toner.id)); } catch {}
-      setPendingTonerDelete(null);
-      setHiddenTonerIds((p) => { const n = new Set(p); n.delete(pendingTonerDelete.toner.id); return n; });
-      Animated.timing(undoTonerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+  // FIX: Helper function to dismiss toner undo banner with proper cleanup
+  const dismissTonerUndoBanner = useCallback(() => {
+    if (undoTonerTimeoutRef.current) {
+      clearTimeout(undoTonerTimeoutRef.current);
+      undoTonerTimeoutRef.current = null;
     }
-    const backup = { ...toner };
-    delete (backup as any).id;
-    setHiddenTonerIds((p) => new Set(p).add(toner.id));
-    Animated.timing(undoTonerAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    const timeoutId = setTimeout(async () => {
-      try { await deleteDoc(doc(db, "toners", toner.id)); } catch {
-        setHiddenTonerIds((p) => { const n = new Set(p); n.delete(toner.id); return n; });
-      } finally {
-        Animated.timing(undoTonerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    Animated.timing(undoTonerAnim, {
+      toValue: 0,
+      duration: UNDO_ANIMATION_MS,
+      useNativeDriver: true,
+    }).start(() => {
+      // Only update state after animation completes and component is still mounted
+      if (isMountedRef.current) {
         setPendingTonerDelete(null);
       }
-    }, 5000);
-    setPendingTonerDelete({ toner, backup, timeoutId });
-  };
+    });
+  }, [undoTonerAnim]);
 
-  const undoTonerDelete = async () => {
-    if (!pendingTonerDelete) return;
-    clearTimeout(pendingTonerDelete.timeoutId);
-    setHiddenTonerIds((p) => { const n = new Set(p); n.delete(pendingTonerDelete.toner.id); return n; });
-    try {
-      await setDoc(doc(db, "toners", pendingTonerDelete.toner.id), pendingTonerDelete.backup, { merge: true });
-    } catch {} finally {
-      Animated.timing(undoTonerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+  // FIX: Refactored scheduleTonerDelete with bulletproof timing and cleanup
+  const scheduleTonerDelete = useCallback(async (toner: Toner) => {
+    // Step 1: If there's an existing pending toner delete, commit it immediately
+    if (pendingTonerDelete) {
+      if (undoTonerTimeoutRef.current) {
+        clearTimeout(undoTonerTimeoutRef.current);
+        undoTonerTimeoutRef.current = null;
+      }
+      try {
+        await deleteDoc(doc(db, "toners", pendingTonerDelete.toner.id));
+      } catch (e) {
+        console.error("Error committing previous toner delete:", e);
+      }
+      setHiddenTonerIds((prev) => {
+        const next = new Set(prev);
+        next.delete(pendingTonerDelete.toner.id);
+        return next;
+      });
+      undoTonerAnim.setValue(0);
       setPendingTonerDelete(null);
     }
-  };
+
+    // Step 2: Set up new pending delete
+    const backup = { ...toner };
+    delete (backup as any).id;
+
+    setHiddenTonerIds((prev) => new Set(prev).add(toner.id));
+    setPendingTonerDelete({ toner, backup });
+
+    Animated.timing(undoTonerAnim, {
+      toValue: 1,
+      duration: UNDO_ANIMATION_MS,
+      useNativeDriver: true,
+    }).start();
+
+    // FIX: Schedule the actual deletion with ref-based timeout
+    undoTonerTimeoutRef.current = setTimeout(async () => {
+      if (!isMountedRef.current) return;
+      
+      try {
+        await deleteDoc(doc(db, "toners", toner.id));
+      } catch (e) {
+        console.error("Error during scheduled toner delete:", e);
+        if (isMountedRef.current) {
+          setHiddenTonerIds((prev) => {
+            const next = new Set(prev);
+            next.delete(toner.id);
+            return next;
+          });
+        }
+      }
+      
+      if (isMountedRef.current) {
+        dismissTonerUndoBanner();
+      }
+    }, UNDO_TIMEOUT_MS);
+  }, [pendingTonerDelete, undoTonerAnim, dismissTonerUndoBanner]);
+
+  // FIX: Refactored undoTonerDelete with proper cleanup
+  const undoTonerDelete = useCallback(async () => {
+    if (!pendingTonerDelete) return;
+
+    if (undoTonerTimeoutRef.current) {
+      clearTimeout(undoTonerTimeoutRef.current);
+      undoTonerTimeoutRef.current = null;
+    }
+
+    const { toner, backup } = pendingTonerDelete;
+
+    setHiddenTonerIds((prev) => {
+      const next = new Set(prev);
+      next.delete(toner.id);
+      return next;
+    });
+
+    try {
+      await setDoc(doc(db, "toners", toner.id), backup, { merge: true });
+    } catch (e) {
+      console.error("Error restoring toner:", e);
+    }
+
+    dismissTonerUndoBanner();
+  }, [pendingTonerDelete, dismissTonerUndoBanner]);
 
   const filteredToners = useMemo(() => {
     let list = toners.filter((t) => !hiddenTonerIds.has(t.id));
@@ -880,6 +1035,10 @@ const renderPrinter = ({ item }: { item: Printer }) => (
     );
   }
 
+  // FIX: Compute pointerEvents based on state to prevent touch blocking
+  const inventoryUndoPointerEvents = pendingDelete ? "auto" : "none";
+  const tonerUndoPointerEvents = pendingTonerDelete ? "auto" : "none";
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar style="light" />
@@ -1069,57 +1228,53 @@ const renderPrinter = ({ item }: { item: Printer }) => (
         </View>
       )}
 
-      {/* Inventory Undo Bar */}
-      {pendingDelete && (
-        <Animated.View
-          pointerEvents="auto"
-          style={[
-            styles.undoBar,
-            {
-              backgroundColor: theme.card,
-              borderColor: theme.border,
-              bottom: 16,
-              opacity: undoAnim,
-              zIndex: 1000,
-              transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
-            },
-          ]}
+      {/* FIX: Inventory Undo Bar - Always rendered, visibility controlled by animation + pointerEvents */}
+      <Animated.View
+        pointerEvents={inventoryUndoPointerEvents}
+        style={[
+          styles.undoBar,
+          {
+            backgroundColor: theme.card,
+            borderColor: theme.border,
+            bottom: 16,
+            opacity: undoAnim,
+            zIndex: 1000,
+            transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
+          },
+        ]}
+      >
+        <Text style={{ color: theme.text, fontWeight: "700" }}>Item deleted</Text>
+        <Pressable
+          onPress={undoDelete}
+          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
         >
-          <Text style={{ color: theme.text, fontWeight: "700" }}>Item deleted</Text>
-          <Pressable
-            onPress={undoDelete}
-            style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
-          >
-            <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
-          </Pressable>
-        </Animated.View>
-      )}
+          <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
+        </Pressable>
+      </Animated.View>
 
-      {/* Toner Undo Bar */}
-      {pendingTonerDelete && (
-        <Animated.View
-          pointerEvents="auto"
-          style={[
-            styles.undoBar,
-            {
-              backgroundColor: theme.card,
-              borderColor: theme.border,
-              bottom: 16,
-              opacity: undoTonerAnim,
-              zIndex: 1000,
-              transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
-            },
-          ]}
+      {/* FIX: Toner Undo Bar - Always rendered, visibility controlled by animation + pointerEvents */}
+      <Animated.View
+        pointerEvents={tonerUndoPointerEvents}
+        style={[
+          styles.undoBar,
+          {
+            backgroundColor: theme.card,
+            borderColor: theme.border,
+            bottom: 80, // FIX: Offset to avoid overlap with inventory undo bar
+            opacity: undoTonerAnim,
+            zIndex: 1001, // FIX: Higher z-index for toner bar
+            transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
+          },
+        ]}
+      >
+        <Text style={{ color: theme.text, fontWeight: "700" }}>Toner deleted</Text>
+        <Pressable
+          onPress={undoTonerDelete}
+          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
         >
-          <Text style={{ color: theme.text, fontWeight: "700" }}>Toner deleted</Text>
-          <Pressable
-            onPress={undoTonerDelete}
-            style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff", borderRadius: 8 }}
-          >
-            <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
-          </Pressable>
-        </Animated.View>
-      )}
+          <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
+        </Pressable>
+      </Animated.View>
 
       {/* Toner Modal */}
       <Modal visible={showTonerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowTonerModal(false)}>
