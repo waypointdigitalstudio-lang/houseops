@@ -1079,6 +1079,7 @@ const renderPrinter = ({ item }: { item: Printer }) => (
             borderColor: theme.border,
             bottom: 16,
             opacity: undoAnim,
+            zIndex: pendingDelete ? 1000 : -1,
             transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
           },
         ]}
@@ -1102,6 +1103,7 @@ const renderPrinter = ({ item }: { item: Printer }) => (
             borderColor: theme.border,
             bottom: 16,
             opacity: undoTonerAnim,
+            zIndex: pendingTonerDelete ? 1000 : -1,
             transform: [{ translateY: undoTonerAnim.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }) }],
           },
         ]}
