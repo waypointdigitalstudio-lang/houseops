@@ -1,6 +1,6 @@
 // app/(tabs)/index.tsx
-// FIXED VERSION - Bulletproof Undo Banner Implementation
-// Changes marked with "// FIX:" comments
+// FIXED VERSION V2 - Bulletproof Undo Banner + Inventory Item Edit Support
+// Changes marked with "// FIX:" for undo banner and "// NEW:" for inventory edit
 
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -147,6 +147,19 @@ export default function IndexScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showLowOnly, setShowLowOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
+
+  // --- NEW: Inventory item edit state ---
+  // These state variables control the inventory item edit modal
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [itemForm, setItemForm] = useState({
+    name: "",
+    currentQuantity: "",
+    minQuantity: "",
+    location: "",
+    barcode: "",
+    notes: "",
+  });
 
   // --- FIX: Inventory Undo delete state - using refs for timeouts and mounted tracking ---
   const [pendingDelete, setPendingDelete] = useState<{
@@ -366,6 +379,74 @@ export default function IndexScreen() {
     // Dismiss the banner
     dismissUndoBanner();
   }, [pendingDelete, dismissUndoBanner]);
+
+  // --- NEW: Open inventory item modal for editing or creating ---
+  // This function populates the form with item data (for edit) or empty values (for new)
+  const openInventoryModal = useCallback((item?: Item) => {
+    if (item) {
+      // Edit mode: populate form with existing item data
+      setEditingItem(item);
+      setItemForm({
+        name: item.name || "",
+        currentQuantity: String(item.currentQuantity ?? 0),
+        minQuantity: String(item.minQuantity ?? 0),
+        location: item.location || "",
+        barcode: item.barcode || "",
+        notes: item.notes || "",
+      });
+    } else {
+      // Create mode: empty form
+      setEditingItem(null);
+      setItemForm({
+        name: "",
+        currentQuantity: "",
+        minQuantity: "",
+        location: "",
+        barcode: "",
+        notes: "",
+      });
+    }
+    setShowInventoryModal(true);
+  }, []);
+
+  // --- NEW: Save inventory item (create or update) ---
+  // Validates required fields and saves to Firestore
+  const saveItem = useCallback(async () => {
+    // Validate required fields
+    if (!itemForm.name.trim()) {
+      Alert.alert("Error", "Item name is required.");
+      return;
+    }
+    if (!itemForm.currentQuantity.trim()) {
+      Alert.alert("Error", "Quantity is required.");
+      return;
+    }
+
+    const data = {
+      name: itemForm.name.trim(),
+      currentQuantity: parseInt(itemForm.currentQuantity) || 0,
+      minQuantity: parseInt(itemForm.minQuantity) || 0,
+      location: itemForm.location.trim(),
+      barcode: itemForm.barcode.trim(),
+      notes: itemForm.notes.trim(),
+      siteId: siteId || "default",
+    };
+
+    try {
+      if (editingItem) {
+        // Update existing item
+        await setDoc(doc(db, "items", editingItem.id), data, { merge: true });
+      } else {
+        // Create new item
+        await addDoc(collection(db, "items"), data);
+      }
+      setShowInventoryModal(false);
+      setEditingItem(null);
+    } catch (err) {
+      console.error("Error saving item:", err);
+      Alert.alert("Error", "Failed to save inventory item.");
+    }
+  }, [itemForm, editingItem, siteId]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => !hiddenIds.has(i.id));
@@ -1027,6 +1108,49 @@ const renderPrinter = ({ item }: { item: Printer }) => (
     </Pressable>
   );
 
+  // --- NEW: Render inventory item with tap-to-edit functionality ---
+  // Wrapped in Pressable to enable tapping to open the edit modal
+  const renderInventoryItem = ({ item }: { item: Item }) => (
+    <Pressable onPress={() => openInventoryModal(item)}>
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
+            <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
+          </View>
+          {item.barcode ? (
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+              <Ionicons name="barcode-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
+              <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.barcode}</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.rightControls}>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={{ color: item.currentQuantity <= item.minQuantity ? "#ef4444" : theme.text, fontWeight: "800", fontSize: 18 }}>
+              {item.currentQuantity}
+            </Text>
+            <Text style={{ color: theme.mutedText, fontSize: 10 }}>STOCK</Text>
+            {item.currentQuantity <= item.minQuantity && (
+              <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
+            )}
+          </View>
+          {/* NEW: Stop propagation on delete button to prevent opening edit modal */}
+          <Pressable 
+            onPress={(e) => {
+              e.stopPropagation();
+              scheduleDelete(item);
+            }} 
+            style={{ padding: 4 }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#ef4444" />
+          </Pressable>
+        </View>
+      </View>
+    </Pressable>
+  );
+
   if (profileLoading || loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background, justifyContent: "center" }]}>
@@ -1064,38 +1188,31 @@ const renderPrinter = ({ item }: { item: Printer }) => (
         <FlatList
           data={filteredItems}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
-                <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
-              </View>
-              <View style={styles.rightControls}>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={{ color: item.currentQuantity <= item.minQuantity ? "#ef4444" : theme.text, fontWeight: "800", fontSize: 18 }}>
-                    {item.currentQuantity}
-                  </Text>
-                  <Text style={{ color: theme.mutedText, fontSize: 10 }}>STOCK</Text>
-                </View>
-                <Pressable onPress={() => scheduleDelete(item)} style={{ padding: 4 }}>
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                </Pressable>
-              </View>
-            </View>
-          )}
+          // NEW: Use renderInventoryItem function with tap-to-edit support
+          renderItem={renderInventoryItem}
           contentContainerStyle={{ padding: 16 }}
           ListHeaderComponent={
             <>
-              <Pressable
-                onPress={importInventoryFromCSV}
-                disabled={importingInventory}
-                style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
-              >
-                {importingInventory
-                  ? <ActivityIndicator size="small" color={theme.text} />
-                  : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import Inventory CSV</Text></>
-                }
-              </Pressable>
+              {/* NEW: Add button row with Import CSV and Add Item buttons */}
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+                <Pressable
+                  onPress={importInventoryFromCSV}
+                  disabled={importingInventory}
+                  style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1, marginBottom: 0 }]}
+                >
+                  {importingInventory
+                    ? <ActivityIndicator size="small" color={theme.text} />
+                    : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import CSV</Text></>
+                  }
+                </Pressable>
+                {/* NEW: Add Item button to create new inventory items */}
+                <Pressable
+                  onPress={() => openInventoryModal()}
+                  style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12, marginBottom: 0 }]}
+                >
+                  <Ionicons name="add" size={18} color={theme.text} />
+                </Pressable>
+              </View>
               <TextInput
                 style={[styles.searchInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
                 placeholder="Search inventory..."
@@ -1275,6 +1392,92 @@ const renderPrinter = ({ item }: { item: Printer }) => (
           <Text style={{ color: "#000", fontWeight: "800" }}>UNDO</Text>
         </Pressable>
       </Animated.View>
+
+      {/* NEW: Inventory Item Edit Modal */}
+      {/* This modal allows users to view and edit all inventory item fields */}
+      <Modal visible={showInventoryModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowInventoryModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingItem ? "Edit Item" : "Add New Item"}</Text>
+            <Pressable onPress={() => setShowInventoryModal(false)}>
+              <Ionicons name="close" size={24} color={theme.text} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Item Name Field */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Item Name *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. AA Batteries"
+              placeholderTextColor={theme.mutedText}
+              value={itemForm.name}
+              onChangeText={(v) => setItemForm((p) => ({ ...p, name: v }))}
+            />
+            
+            {/* Quantity Fields Row */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Current Quantity *</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor={theme.mutedText}
+                  value={itemForm.currentQuantity}
+                  onChangeText={(v) => setItemForm((p) => ({ ...p, currentQuantity: v }))}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Min Quantity</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor={theme.mutedText}
+                  value={itemForm.minQuantity}
+                  onChangeText={(v) => setItemForm((p) => ({ ...p, minQuantity: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Location Field */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. Storage Room A, Shelf 3"
+              placeholderTextColor={theme.mutedText}
+              value={itemForm.location}
+              onChangeText={(v) => setItemForm((p) => ({ ...p, location: v }))}
+            />
+
+            {/* Barcode Field */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode / SKU</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. 123456789012"
+              placeholderTextColor={theme.mutedText}
+              value={itemForm.barcode}
+              onChangeText={(v) => setItemForm((p) => ({ ...p, barcode: v }))}
+            />
+
+            {/* Notes Field */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100, textAlignVertical: "top" }]}
+              placeholder="Additional notes about this item..."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={itemForm.notes}
+              onChangeText={(v) => setItemForm((p) => ({ ...p, notes: v }))}
+            />
+
+            {/* Save Button */}
+            <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveItem}>
+              <Text style={styles.saveBtnText}>{editingItem ? "Update Item" : "Add Item"}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* Toner Modal */}
       <Modal visible={showTonerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowTonerModal(false)}>
