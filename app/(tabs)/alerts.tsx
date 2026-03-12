@@ -1,279 +1,729 @@
+// app/(tabs)/alerts.tsx
+// Activity Log + Alerts Screen with toggle between views
+// Fetches from Firestore 'alertsLog' collection, supports filtering and CSV export
+
+import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
   collection,
-  doc,
-  limit,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
-  where
+  Timestamp,
+  where,
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
-
-import { BRAND } from "../../constants/branding";
+import {
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
-import { usePushNotifications } from "../../hooks/usePushNotifications";
 import { useUserProfile } from "../../hooks/useUserProfile";
 
-type AlertType = "low" | "out" | "restock";
+// ─── Types ───────────────────────────────────────────────────────────
 
-type AlertDoc = {
-  siteId?: string;
-  type: AlertType;
-  title: string;
-  body: string;
-  itemId?: string;
-  itemName?: string;
-  qty?: number;
-  min?: number;
-  createdAt?: any;
-  updatedAt?: any;
-  readBy?: Record<string, boolean>;
-};
+interface ActivityEntry {
+  id: string;
+  siteId: string;
+  itemName: string;
+  itemId: string;
+  qty: number;
+  min: number;
+  prevState: string;
+  nextState: string;
+  status: string;
+  action: string;
+  itemType: "inventory" | "toner" | "printer";
+  createdAt: Timestamp | null;
+}
 
-type AlertRow = AlertDoc & { id: string };
+interface AlertEntry {
+  id: string;
+  itemName: string;
+  itemType: string;
+  status: string;
+  qty: number;
+  min: number;
+  createdAt: Timestamp | null;
+}
 
-type ActivityLogDoc = {
-  siteId?: string;
-  itemName?: string;
-  itemId?: string;
-  qty?: number;
-  min?: number;
-  prevState?: string;
-  nextState?: string;
-  status?: string;
-  createdAt?: any;
-};
+// ─── Constants ───────────────────────────────────────────────────────
 
-type ActivityLogRow = ActivityLogDoc & { id: string };
+type DateFilter = "today" | "7days" | "30days" | "all";
+type ActionFilter = "all" | "added" | "edited" | "deleted" | "deducted" | "linked" | "unlinked" | "disposed";
+
+const DATE_FILTERS: { label: string; value: DateFilter }[] = [
+  { label: "Today", value: "today" },
+  { label: "7 Days", value: "7days" },
+  { label: "30 Days", value: "30days" },
+  { label: "All", value: "all" },
+];
+
+const ACTION_FILTERS: { label: string; value: ActionFilter }[] = [
+  { label: "All", value: "all" },
+  { label: "Added", value: "added" },
+  { label: "Edited", value: "edited" },
+  { label: "Deleted", value: "deleted" },
+  { label: "Deducted", value: "deducted" },
+  { label: "Linked", value: "linked" },
+  { label: "Unlinked", value: "unlinked" },
+  { label: "Disposed", value: "disposed" },
+];
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; color: string } {
+  switch (action) {
+    case "added":
+      return { name: "add-circle", color: "#22c55e" };
+    case "edited":
+      return { name: "create", color: "#3b82f6" };
+    case "deleted":
+      return { name: "trash", color: "#ef4444" };
+    case "deducted":
+      return { name: "remove-circle", color: "#f97316" };
+    case "linked":
+      return { name: "link", color: "#8b5cf6" };
+    case "unlinked":
+      return { name: "unlink", color: "#f59e0b" };
+    case "disposed":
+      return { name: "close-circle", color: "#ef4444" };
+    default:
+      return { name: "ellipse", color: "#6b7280" };
+  }
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "ok":
+      return "#22c55e";
+    case "low":
+      return "#f97316";
+    case "critical":
+    case "out":
+      return "#ef4444";
+    default:
+      return "#6b7280";
+  }
+}
+
+function formatTimestamp(ts: Timestamp | null): string {
+  if (!ts) return "—";
+  const d = ts.toDate();
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatFullTimestamp(ts: Timestamp | null): string {
+  if (!ts) return "";
+  const d = ts.toDate();
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function getDateCutoff(filter: DateFilter): Date | null {
+  if (filter === "all") return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  if (filter === "today") return now;
+  if (filter === "7days") {
+    now.setDate(now.getDate() - 7);
+    return now;
+  }
+  if (filter === "30days") {
+    now.setDate(now.getDate() - 30);
+    return now;
+  }
+  return null;
+}
+
+// ─── Main Component ──────────────────────────────────────────────────
 
 export default function AlertsScreen() {
   const theme = useAppTheme();
-  const token = usePushNotifications() as string | null;
-  const { profile, loading: profileLoading } = useUserProfile();
-  const siteId = profile?.siteId ?? null;
+  const { siteId, loading: profileLoading } = useUserProfile();
 
-  const [activeTab, setActiveTab] = useState<"alerts" | "activity">("alerts");
-  const [alerts, setAlerts] = useState<AlertRow[]>([]);
-  const [viewMode, setViewMode] = useState<"unread" | "history">("unread");
-  const [sortMode, setSortMode] = useState<"newest" | "type">("newest");
-  const [activityLogs, setActivityLogs] = useState<ActivityLogRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // View toggle
+  const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
 
-  // 1. Fetch Alerts
+  // Activity log state
+  const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
+
+  // Alerts state
+  const [alerts, setAlerts] = useState<AlertEntry[]>([]);
+  const [loadingAlerts, setLoadingAlerts] = useState(true);
+
+  // Filters
+  const [dateFilter, setDateFilter] = useState<DateFilter>("7days");
+  const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
+
+  // ─── Fetch activities from alertsLog ───────────────────────────────
   useEffect(() => {
-    if (profileLoading || !siteId || activeTab !== "alerts") return;
-    setLoading(true);
+    if (!siteId) return;
 
-    const q = query(
-      collection(db, "alerts"),
-      where("siteId", "==", siteId),
-      orderBy("createdAt", "desc"),
-      limit(viewMode === "history" ? 500 : 200)
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-      setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as AlertRow)));
-      setLoading(false);
-    }, () => setLoading(false));
-
-    return () => unsub();
-  }, [siteId, profileLoading, viewMode, activeTab]);
-
-  // 2. Fetch Activity Logs (alertsLog collection)
-  useEffect(() => {
-    if (profileLoading || !siteId || activeTab !== "activity") return;
-    setLoading(true);
-
+    setLoadingActivities(true);
     const q = query(
       collection(db, "alertsLog"),
       where("siteId", "==", siteId),
-      orderBy("createdAt", "desc"),
-      limit(100)
+      orderBy("createdAt", "desc")
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      setActivityLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as ActivityLogRow)));
-      setLoading(false);
-    }, () => setLoading(false));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const items: ActivityEntry[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as ActivityEntry[];
+        setActivities(items);
+        setLoadingActivities(false);
+      },
+      (err) => {
+        console.error("Error fetching activities:", err);
+        setLoadingActivities(false);
+      }
+    );
 
     return () => unsub();
-  }, [siteId, profileLoading, activeTab]);
+  }, [siteId]);
 
-  const isUnread = (a: AlertRow) => !token || !(a.readBy && a.readBy[token]);
-
-  const badgeStyleFor = (state?: string) => {
-    const s = state?.toLowerCase();
-    if (s === "out") return { backgroundColor: "#ef4444" };
-    if (s === "low") return { backgroundColor: "#f59e0b" };
-    if (s === "ok" || s === "restock") return { backgroundColor: "#22c55e" };
-    return { backgroundColor: theme.mutedText };
-  };
-
-  const formatDate = (ts: any) => {
-    if (!ts || !ts.toDate) return "";
-    return ts.toDate().toLocaleString(undefined, {
-      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-    });
-  };
-
-  const filteredAlerts = useMemo(() => 
-    viewMode === "history" ? alerts : alerts.filter(isUnread)
-  , [alerts, viewMode, token]);
-
-  const sortedAlerts = useMemo(() => {
-    const list = [...filteredAlerts];
-    if (sortMode === "type") {
-      const rank: any = { out: 0, low: 1, restock: 2 };
-      return list.sort((a, b) => rank[a.type] - rank[b.type]);
+  // ─── Derive alerts from activities (items with critical/low status) ─
+  useEffect(() => {
+    // Build alerts from the latest state of each item
+    const latestByItem = new Map<string, ActivityEntry>();
+    for (const a of activities) {
+      if (!latestByItem.has(a.itemId)) {
+        latestByItem.set(a.itemId, a);
+      }
     }
-    return list;
-  }, [filteredAlerts, sortMode]);
+    const alertItems: AlertEntry[] = [];
+    for (const [, entry] of latestByItem) {
+      if (entry.nextState === "low" || entry.nextState === "critical" || entry.nextState === "out") {
+        alertItems.push({
+          id: entry.id,
+          itemName: entry.itemName,
+          itemType: entry.itemType,
+          status: entry.nextState,
+          qty: entry.qty,
+          min: entry.min,
+          createdAt: entry.createdAt,
+        });
+      }
+    }
+    // Sort alerts: critical/out first, then low
+    alertItems.sort((a, b) => {
+      const priority = (s: string) => (s === "critical" || s === "out" ? 0 : 1);
+      return priority(a.status) - priority(b.status);
+    });
+    setAlerts(alertItems);
+    setLoadingAlerts(false);
+  }, [activities]);
 
-  const markOneAsRead = async (alertId: string) => {
-    if (!token) return;
+  // ─── Filtered activities ───────────────────────────────────────────
+  const filteredActivities = useMemo(() => {
+    let result = [...activities];
+
+    // Date filter
+    const cutoff = getDateCutoff(dateFilter);
+    if (cutoff) {
+      result = result.filter((a) => {
+        if (!a.createdAt) return false;
+        return a.createdAt.toDate() >= cutoff;
+      });
+    }
+
+    // Action filter
+    if (actionFilter !== "all") {
+      result = result.filter((a) => a.action === actionFilter);
+    }
+
+    return result;
+  }, [activities, dateFilter, actionFilter]);
+
+  // ─── CSV Export ────────────────────────────────────────────────────
+  async function exportCSV() {
     try {
-      await setDoc(doc(db, "alerts", alertId), {
-        readBy: { [token]: true }, updatedAt: serverTimestamp(),
-      }, { merge: true });
-    } catch (e) { console.log(e); }
-  };
+      const header = "Timestamp,Action,Item Type,Item Name,Quantity,Min Qty,Prev State,New State\n";
+      const rows = filteredActivities.map((a) => {
+        const ts = a.createdAt ? formatFullTimestamp(a.createdAt) : "";
+        return `"${ts}","${a.action}","${a.itemType}","${a.itemName}",${a.qty},${a.min},"${a.prevState}","${a.nextState}"`;
+      });
+      const csv = header + rows.join("\n");
 
-  // UI Components
-  const TabButton = ({ id, label }: { id: "alerts" | "activity", label: string }) => {
-    const isActive = activeTab === id;
-    
-    // Contrast Fix: If the background (tint) is white, use black text.
-    const isWhiteBackground = theme.tint.toLowerCase() === '#ffffff' || theme.tint.toLowerCase() === '#fff';
-    const activeTextColor = isWhiteBackground ? '#000000' : '#ffffff';
+      if (Platform.OS === "web") {
+        // Web: download via blob
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "activity_log.csv";
+        link.click();
+      } else {
+        // Native: write to temp file and share
+        const fileUri = FileSystem.cacheDirectory + "activity_log.csv";
+        await FileSystem.writeAsStringAsync(fileUri, csv, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "text/csv",
+          dialogTitle: "Export Activity Log",
+          UTI: "public.comma-separated-values-text",
+        });
+      }
+    } catch (err) {
+      console.error("CSV export error:", err);
+    }
+  }
 
+  // ─── Render: Filter Chips ──────────────────────────────────────────
+  function FilterChips() {
     return (
-      <Pressable
-        onPress={() => setActiveTab(id)}
-        style={{
-          flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center",
-          backgroundColor: isActive ? theme.tint : "transparent",
-          borderWidth: 1, borderColor: isActive ? theme.tint : theme.border,
-        }}
-      >
-        <Text style={{ 
-          color: isActive ? activeTextColor : theme.text, 
-          fontWeight: "900", 
-          fontSize: 14,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5
-        }}>
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
-
-  const renderAlert = ({ item }: { item: AlertRow }) => (
-    <Pressable onPress={() => viewMode === "unread" && markOneAsRead(item.id)} disabled={viewMode === "history"}>
-      <View style={{ backgroundColor: theme.card, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: theme.border, marginBottom: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, ...badgeStyleFor(item.type) }}>
-            <Text style={{ color: "#000", fontWeight: "900", fontSize: 11 }}>{item.type.toUpperCase()}</Text>
-          </View>
-          {viewMode === "unread" && <View style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: BRAND.primary }} />}
-          <Text style={{ color: theme.mutedText, fontSize: 11 }}>{formatDate(item.createdAt)}</Text>
-        </View>
-        <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>{item.title}</Text>
-        <Text style={{ color: theme.mutedText, marginTop: 4, fontSize: 13 }}>{item.body}</Text>
-      </View>
-    </Pressable>
-  );
-
-  const renderActivity = ({ item }: { item: ActivityLogRow }) => (
-    <View style={{ backgroundColor: theme.card, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: theme.border, marginBottom: 8 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, ...badgeStyleFor(item.nextState) }}>
-          <Text style={{ color: "#000", fontWeight: "900", fontSize: 11 }}>{item.nextState?.toUpperCase() || "LOG"}</Text>
-        </View>
-        <Text style={{ color: theme.mutedText, fontSize: 11 }}>{formatDate(item.createdAt)}</Text>
-      </View>
-      <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>{item.itemName}</Text>
-      <Text style={{ color: theme.mutedText, marginTop: 4, fontSize: 13 }}>
-        Status changed from {item.prevState} to {item.nextState}
-      </Text>
-      <Text style={{ color: theme.mutedText, marginTop: 6, fontSize: 12 }}>
-        Current Qty: {item.qty} • Min: {item.min}
-      </Text>
-    </View>
-  );
-
-  return (
-    <View style={{ flex: 1, backgroundColor: theme.background, padding: 16 }}>
-      <Text style={{ color: theme.text, fontSize: 24, fontWeight: "900", marginBottom: 4 }}>Control Center</Text>
-      <Text style={{ color: theme.mutedText, fontSize: 13, marginBottom: 16 }}>Site: {siteId ?? "Unassigned"}</Text>
-
-      <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
-        <TabButton id="alerts" label="Alerts" />
-        <TabButton id="activity" label="Activity" />
-      </View>
-
-      {activeTab === "alerts" && (
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-          {[
-            { id: "unread", label: "Unread" },
-            { id: "history", label: "History" }
-          ].map((mode) => {
-            const isActive = viewMode === mode.id;
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        {/* Date filters */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <Text style={{ color: theme.mutedText, fontSize: 12, fontWeight: "600", alignSelf: "center", marginRight: 4 }}>
+            Date:
+          </Text>
+          {DATE_FILTERS.map((f) => {
+            const active = dateFilter === f.value;
             return (
-              <Pressable 
-                key={mode.id}
-                onPress={() => setViewMode(mode.id as any)} 
-                style={{ 
-                  paddingHorizontal: 20, 
-                  paddingVertical: 10, 
-                  borderRadius: 25, 
-                  backgroundColor: isActive ? theme.text : "transparent", 
-                  borderWidth: 1, 
-                  borderColor: isActive ? theme.text : theme.border 
-                }}
+              <Pressable
+                key={f.value}
+                onPress={() => setDateFilter(f.value)}
+                style={[
+                  styles.chipSmall,
+                  {
+                    backgroundColor: active ? theme.tint : "transparent",
+                    borderColor: active ? theme.tint : theme.border,
+                  },
+                ]}
               >
-                <Text style={{ 
-                  color: isActive ? theme.background : theme.text, 
-                  fontWeight: "800", 
-                  fontSize: 12 
-                }}>
-                  {mode.label}
+                <Text
+                  style={[
+                    styles.chipTextSmall,
+                    { color: active ? "#fff" : theme.mutedText },
+                  ]}
+                >
+                  {f.label}
                 </Text>
               </Pressable>
             );
           })}
         </View>
+
+        {/* Action filters */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+          <Text style={{ color: theme.mutedText, fontSize: 12, fontWeight: "600", alignSelf: "center", marginRight: 4 }}>
+            Action:
+          </Text>
+          {ACTION_FILTERS.map((f) => {
+            const active = actionFilter === f.value;
+            return (
+              <Pressable
+                key={f.value}
+                onPress={() => setActionFilter(f.value)}
+                style={[
+                  styles.chipSmall,
+                  {
+                    backgroundColor: active ? theme.tint : "transparent",
+                    borderColor: active ? theme.tint : theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipTextSmall,
+                    { color: active ? "#fff" : theme.mutedText },
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  // ─── Render: Activity Item ─────────────────────────────────────────
+  function renderActivityItem({ item }: { item: ActivityEntry }) {
+    const icon = getActionIcon(item.action);
+    const statusColor = getStatusColor(item.nextState);
+
+    return (
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
+        {/* Icon */}
+        <View
+          style={[
+            styles.iconCircle,
+            { backgroundColor: icon.color + "1A" },
+          ]}
+        >
+          <Ionicons name={icon.name} size={20} color={icon.color} />
+        </View>
+
+        {/* Content */}
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
+              {item.itemName}
+            </Text>
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+              {formatTimestamp(item.createdAt)}
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap", gap: 6 }}>
+            {/* Action badge */}
+            <View
+              style={[
+                styles.actionBadge,
+                { backgroundColor: icon.color + "1A" },
+              ]}
+            >
+              <Text style={{ color: icon.color, fontSize: 11, fontWeight: "700", textTransform: "capitalize" }}>
+                {item.action}
+              </Text>
+            </View>
+
+            {/* Item type */}
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+              {item.itemType}
+            </Text>
+
+            {/* Quantity info */}
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+              Qty: {item.qty}
+            </Text>
+          </View>
+
+          {/* State change */}
+          {item.prevState !== item.nextState && item.prevState && item.nextState && (
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+              <View style={[styles.stateDot, { backgroundColor: getStatusColor(item.prevState) }]} />
+              <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.prevState}</Text>
+              <Ionicons name="arrow-forward" size={10} color={theme.mutedText} style={{ marginHorizontal: 4 }} />
+              <View style={[styles.stateDot, { backgroundColor: statusColor }]} />
+              <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700" }}>{item.nextState}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // ─── Render: Alert Item ────────────────────────────────────────────
+  function renderAlertItem({ item }: { item: AlertEntry }) {
+    const statusColor = getStatusColor(item.status);
+    const isOut = item.status === "out" || item.status === "critical";
+
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.card,
+            borderColor: isOut ? "#ef444440" : theme.border,
+            borderLeftWidth: 3,
+            borderLeftColor: statusColor,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.iconCircle,
+            { backgroundColor: statusColor + "1A" },
+          ]}
+        >
+          <Ionicons
+            name={isOut ? "alert-circle" : "warning"}
+            size={20}
+            color={statusColor}
+          />
+        </View>
+
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
+            {item.itemName}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
+            <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
+              <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                {item.status}
+              </Text>
+            </View>
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+              {item.itemType} · Qty: {item.qty} / Min: {item.min}
+            </Text>
+          </View>
+          {item.createdAt && (
+            <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 3 }}>
+              Last updated {formatTimestamp(item.createdAt)}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // ─── Loading State ─────────────────────────────────────────────────
+  if (profileLoading) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.tint} />
+      </View>
+    );
+  }
+
+  // ─── Main Render ───────────────────────────────────────────────────
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme.text }]}>Alerts & Activity</Text>
+
+        {/* View Toggle */}
+        <View style={[styles.tabBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Pressable
+            onPress={() => setActiveView("alerts")}
+            style={[
+              styles.tab,
+              activeView === "alerts" && { backgroundColor: theme.tint, borderColor: theme.tint },
+            ]}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: activeView === "alerts" ? "#fff" : theme.mutedText },
+              ]}
+            >
+              Alerts{alerts.length > 0 ? ` (${alerts.length})` : ""}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveView("activity")}
+            style={[
+              styles.tab,
+              activeView === "activity" && { backgroundColor: theme.tint, borderColor: theme.tint },
+            ]}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: activeView === "activity" ? "#fff" : theme.mutedText },
+              ]}
+            >
+              Activity Log
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ─── Alerts View ─────────────────────────────────────────────── */}
+      {activeView === "alerts" && (
+        <>
+          {loadingAlerts ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color={theme.tint} />
+            </View>
+          ) : alerts.length === 0 ? (
+            <View style={styles.center}>
+              <Ionicons name="checkmark-circle" size={48} color="#22c55e" />
+              <Text style={{ color: theme.mutedText, fontSize: 16, fontWeight: "600", marginTop: 12 }}>
+                All clear!
+              </Text>
+              <Text style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>
+                No low stock alerts right now.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={alerts}
+              keyExtractor={(item) => item.id}
+              renderItem={renderAlertItem}
+              contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </>
       )}
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} />
-      ) : activeTab === "alerts" ? (
-        <FlatList
-          data={sortedAlerts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderAlert}
-          ListEmptyComponent={
-            <View style={{ alignItems: "center", marginTop: 40 }}>
-              <Text style={{ color: theme.text, fontWeight: "700" }}>No alerts found</Text>
+      {/* ─── Activity Log View ───────────────────────────────────────── */}
+      {activeView === "activity" && (
+        <>
+          {/* Filters */}
+          <FilterChips />
+
+          {/* Export button */}
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+            <Pressable
+              onPress={exportCSV}
+              style={[
+                styles.exportBtn,
+                { borderColor: theme.border },
+              ]}
+            >
+              <Ionicons name="download-outline" size={16} color={theme.tint} />
+              <Text style={{ color: theme.tint, fontSize: 13, fontWeight: "700", marginLeft: 6 }}>
+                Export CSV ({filteredActivities.length})
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Activity list */}
+          {loadingActivities ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color={theme.tint} />
             </View>
-          }
-        />
-      ) : (
-        <FlatList
-          data={activityLogs}
-          keyExtractor={(item) => item.id}
-          renderItem={renderActivity}
-          ListEmptyComponent={
-            <View style={{ alignItems: "center", marginTop: 40 }}>
-              <Text style={{ color: theme.text, fontWeight: "700" }}>No activity found</Text>
+          ) : filteredActivities.length === 0 ? (
+            <View style={styles.center}>
+              <Ionicons name="document-text-outline" size={48} color={theme.mutedText} />
+              <Text style={{ color: theme.mutedText, fontSize: 16, fontWeight: "600", marginTop: 12 }}>
+                No activities found
+              </Text>
+              <Text style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>
+                Try adjusting your filters.
+              </Text>
             </View>
-          }
-        />
+          ) : (
+            <FlatList
+              data={filteredActivities}
+              keyExtractor={(item) => item.id}
+              renderItem={renderActivityItem}
+              contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </>
       )}
     </View>
   );
 }
+
+// ─── Styles ──────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "900",
+    marginBottom: 16,
+    letterSpacing: -0.5,
+  },
+  tabBar: {
+    flexDirection: "row",
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  card: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    borderWidth: 1,
+  },
+  itemName: {
+    fontSize: 15,
+    fontWeight: "800",
+    flexShrink: 1,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  stateDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  chipSmall: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  chipTextSmall: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    alignSelf: "flex-start",
+  },
+});
