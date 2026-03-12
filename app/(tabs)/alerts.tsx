@@ -13,13 +13,17 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   collection,
+  doc,
   onSnapshot,
   query,
   Timestamp,
+  updateDoc,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Animated,
   FlatList,
   Platform,
   Pressable,
@@ -45,10 +49,12 @@ interface ActivityEntry {
   action: string;
   itemType: "inventory" | "toner" | "printer";
   createdAt: Timestamp | null;
+  dismissed: boolean;
 }
 
 interface AlertEntry {
   id: string;
+  itemId: string;
   itemName: string;
   itemType: string;
   status: string;
@@ -202,6 +208,76 @@ export default function AlertsScreen() {
   const [alerts, setAlerts] = useState<AlertEntry[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
 
+  // Dismissed alerts — tracks IDs currently animating out so we can fade them
+  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
+  // Track locally dismissed item IDs so they stay hidden even before Firestore round-trips
+  const [locallyDismissedItemIds, setLocallyDismissedItemIds] = useState<Set<string>>(new Set());
+  // Animation values for each alert card
+  const animValues = useRef<Map<string, Animated.Value>>(new Map());
+
+  const getAnimValue = useCallback((id: string) => {
+    if (!animValues.current.has(id)) {
+      animValues.current.set(id, new Animated.Value(1));
+    }
+    return animValues.current.get(id)!;
+  }, []);
+
+  // ─── Dismiss handler ──────────────────────────────────────────────
+  const handleDismissAlert = useCallback(
+    (alert: AlertEntry) => {
+      Alert.alert(
+        "Dismiss Alert",
+        `Mark "${alert.itemName}" alert as acknowledged?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Dismiss",
+            style: "destructive",
+            onPress: () => {
+              // Start fade-out animation
+              const anim = getAnimValue(alert.id);
+              setDismissingIds((prev) => new Set(prev).add(alert.id));
+
+              Animated.timing(anim, {
+                toValue: 0,
+                duration: 300,
+                useNativeDriver: true,
+              }).start(async () => {
+                // Optimistically hide from UI
+                setLocallyDismissedItemIds((prev) => new Set(prev).add(alert.itemId));
+                setDismissingIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(alert.id);
+                  return next;
+                });
+
+                // Update Firestore — mark the alertsLog entry as dismissed
+                try {
+                  await updateDoc(doc(db, "alertsLog", alert.id), {
+                    dismissed: true,
+                    dismissedAt: new Date(),
+                  });
+                  console.log("[AlertsScreen] Dismissed alert:", alert.id, alert.itemName);
+                } catch (err) {
+                  console.error("[AlertsScreen] Failed to dismiss alert:", err);
+                  // Revert local dismiss on error
+                  setLocallyDismissedItemIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(alert.itemId);
+                    return next;
+                  });
+                  // Reset animation
+                  anim.setValue(1);
+                }
+              });
+            },
+          },
+        ]
+      );
+    },
+    [getAnimValue]
+  );
+
   // Filters
   // FIX: Default to "all" instead of "7days" so activities always show on first load
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
@@ -243,6 +319,7 @@ export default function AlertsScreen() {
             action: data.action ?? "",
             itemType: data.itemType ?? "inventory",
             createdAt: data.createdAt ?? null,
+            dismissed: data.dismissed ?? false,
           } as ActivityEntry;
         });
 
@@ -277,8 +354,10 @@ export default function AlertsScreen() {
   // derived regardless of the casing written by logActivity().
   useEffect(() => {
     // Build alerts from the latest state of each item
+    // Only consider non-dismissed activity entries for alert derivation
+    const nonDismissedActivities = activities.filter((a) => !a.dismissed);
     const latestByItem = new Map<string, ActivityEntry>();
-    for (const a of activities) {
+    for (const a of nonDismissedActivities) {
       if (!latestByItem.has(a.itemId)) {
         latestByItem.set(a.itemId, a);
       }
@@ -287,8 +366,11 @@ export default function AlertsScreen() {
     for (const [, entry] of latestByItem) {
       const normalizedState = (entry.nextState || "").toLowerCase();
       if (normalizedState === "low" || normalizedState === "critical" || normalizedState === "out") {
+        // Skip locally dismissed items (optimistic UI)
+        if (locallyDismissedItemIds.has(entry.itemId)) continue;
         alertItems.push({
           id: entry.id,
+          itemId: entry.itemId,
           itemName: entry.itemName,
           itemType: entry.itemType,
           status: normalizedState,
@@ -307,7 +389,7 @@ export default function AlertsScreen() {
     console.log("[AlertsScreen] Derived alerts count:", alertItems.length);
     setAlerts(alertItems);
     setLoadingAlerts(false);
-  }, [activities]);
+  }, [activities, locallyDismissedItemIds]);
 
   // ─── Filtered activities ───────────────────────────────────────────
   const filteredActivities = useMemo(() => {
@@ -514,57 +596,85 @@ export default function AlertsScreen() {
     );
   }
 
-  // ─── Render: Alert Item ────────────────────────────────────────────
+  // ─── Render: Alert Item (tappable with dismiss animation) ──────────
   function renderAlertItem({ item }: { item: AlertEntry }) {
     const statusColor = getStatusColor(item.status);
     const isOut = item.status === "out" || item.status === "critical";
+    const isDismissing = dismissingIds.has(item.id);
+    const animOpacity = getAnimValue(item.id);
+    const animScale = animOpacity.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.95, 1],
+    });
+    const animTranslateX = animOpacity.interpolate({
+      inputRange: [0, 1],
+      outputRange: [60, 0],
+    });
 
     return (
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: theme.card,
-            borderColor: isOut ? "#ef444440" : theme.border,
-            borderLeftWidth: 3,
-            borderLeftColor: statusColor,
-          },
-        ]}
+      <Animated.View
+        style={{
+          opacity: animOpacity,
+          transform: [{ scale: animScale }, { translateX: animTranslateX }],
+        }}
       >
-        <View
-          style={[
-            styles.iconCircle,
-            { backgroundColor: statusColor + "1A" },
+        <Pressable
+          onPress={() => handleDismissAlert(item)}
+          disabled={isDismissing}
+          style={({ pressed }) => [
+            styles.card,
+            {
+              backgroundColor: pressed ? (statusColor + "12") : theme.card,
+              borderColor: isOut ? "#ef444440" : theme.border,
+              borderLeftWidth: 3,
+              borderLeftColor: statusColor,
+              transform: [{ scale: pressed ? 0.98 : 1 }],
+            },
           ]}
         >
-          <Ionicons
-            name={isOut ? "alert-circle" : "warning"}
-            size={20}
-            color={statusColor}
-          />
-        </View>
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: statusColor + "1A" },
+            ]}
+          >
+            <Ionicons
+              name={isOut ? "alert-circle" : "warning"}
+              size={20}
+              color={statusColor}
+            />
+          </View>
 
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
-            {item.itemName}
-          </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
-            <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
-              <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                {item.status}
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
+                {item.itemName}
+              </Text>
+              <Ionicons name="close-circle-outline" size={18} color={theme.mutedText} style={{ opacity: 0.5 }} />
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
+              <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
+                <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                  {item.status}
+                </Text>
+              </View>
+              <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+                {item.itemType} · Qty: {item.qty} / Min: {item.min}
               </Text>
             </View>
-            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
-              {item.itemType} · Qty: {item.qty} / Min: {item.min}
-            </Text>
+            {item.createdAt && (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 3 }}>
+                <Text style={{ color: theme.mutedText, fontSize: 10 }}>
+                  Last updated {formatTimestamp(item.createdAt)}
+                </Text>
+                <Text style={{ color: theme.mutedText, fontSize: 10, fontStyle: "italic" }}>
+                  Tap to dismiss
+                </Text>
+              </View>
+            )}
           </View>
-          {item.createdAt && (
-            <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 3 }}>
-              Last updated {formatTimestamp(item.createdAt)}
-            </Text>
-          )}
-        </View>
-      </View>
+        </Pressable>
+      </Animated.View>
     );
   }
 
@@ -784,3 +894,4 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
 });
+
