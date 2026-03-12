@@ -1455,56 +1455,52 @@ const renderPrinter = ({ item }: { item: Printer }) => (
   );
 
   // --- NEW: Render inventory item with tap-to-edit functionality ---
-  // Wrapped in Pressable to enable tapping to open the edit modal
+  // FIX: Removed outer Pressable wrapper to avoid nested Pressable touch conflicts.
+  // The item info area is now its own Pressable for editing, while dispose/delete buttons
+  // are sibling Pressable components that don't interfere with each other.
   const renderInventoryItem = ({ item }: { item: Item }) => (
-    <Pressable onPress={() => openInventoryModal(item)}>
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <Pressable onPress={() => openInventoryModal(item)} style={{ flex: 1 }}>
+        <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+          <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
+          <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
+        </View>
+        {item.barcode ? (
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-            <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
-            <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
+            <Ionicons name="barcode-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.barcode}</Text>
           </View>
-          {item.barcode ? (
-            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-              <Ionicons name="barcode-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
-              <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.barcode}</Text>
-            </View>
-          ) : null}
+        ) : null}
+      </Pressable>
+      <View style={styles.rightControls}>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={{ color: item.currentQuantity <= item.minQuantity ? "#ef4444" : theme.text, fontWeight: "800", fontSize: 18 }}>
+            {item.currentQuantity}
+          </Text>
+          <Text style={{ color: theme.mutedText, fontSize: 10 }}>STOCK</Text>
+          {item.currentQuantity <= item.minQuantity && (
+            <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
+          )}
         </View>
-        <View style={styles.rightControls}>
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ color: item.currentQuantity <= item.minQuantity ? "#ef4444" : theme.text, fontWeight: "800", fontSize: 18 }}>
-              {item.currentQuantity}
-            </Text>
-            <Text style={{ color: theme.mutedText, fontSize: 10 }}>STOCK</Text>
-            {item.currentQuantity <= item.minQuantity && (
-              <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
-            )}
-          </View>
-          {/* DISPOSE: Dispose button to open disposal modal */}
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              openDisposeModal(item);
-            }}
-            style={{ padding: 4 }}
-          >
-            <Ionicons name="archive-outline" size={20} color="#f97316" />
-          </Pressable>
-          {/* NEW: Stop propagation on delete button to prevent opening edit modal */}
-          <Pressable 
-            onPress={(e) => {
-              e.stopPropagation();
-              scheduleDelete(item);
-            }} 
-            style={{ padding: 4 }}
-          >
-            <Ionicons name="trash-outline" size={20} color="#ef4444" />
-          </Pressable>
-        </View>
+        {/* DISPOSE: Dispose button to open disposal modal */}
+        <Pressable
+          onPress={() => openDisposeModal(item)}
+          hitSlop={8}
+          style={{ padding: 6 }}
+        >
+          <Ionicons name="archive-outline" size={20} color="#f97316" />
+        </Pressable>
+        {/* Delete button */}
+        <Pressable
+          onPress={() => scheduleDelete(item)}
+          hitSlop={8}
+          style={{ padding: 6 }}
+        >
+          <Ionicons name="trash-outline" size={20} color="#ef4444" />
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 
   if (profileLoading || loading) {
