@@ -2,15 +2,18 @@
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { collection, doc, onSnapshot, orderBy, query, where, writeBatch } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 
@@ -42,6 +45,21 @@ export default function DisposalScreen() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // --- ADD RECORD: Manual disposal record modal state ---
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addForm, setAddForm] = useState({
+    itemName: "",
+    model: "",
+    amount: "",
+    vendor: "",
+    approxAmount: "",
+    multipleAmount: "",
+    approxAge: "",
+    description: "",
+    disposedBy: "",
+  });
 
   useEffect(() => {
     if (profileLoading) return;
@@ -305,6 +323,63 @@ export default function DisposalScreen() {
     }
   };
 
+  // ── Add Record helpers ───────────────────────────────────────────────────────
+
+  const openAddModal = () => {
+    setAddForm({
+      itemName: "",
+      model: "",
+      amount: "",
+      vendor: "",
+      approxAmount: "",
+      multipleAmount: "",
+      approxAge: "",
+      description: "",
+      disposedBy: "",
+    });
+    setShowAddModal(true);
+  };
+
+  const saveManualDisposal = async () => {
+    if (!addForm.itemName.trim()) {
+      Alert.alert("Error", "Item name is required.");
+      return;
+    }
+    if (!addForm.disposedBy.trim()) {
+      Alert.alert("Error", "Please enter who is disposing this item.");
+      return;
+    }
+
+    setAddSaving(true);
+
+    try {
+      await addDoc(collection(db, "disposals"), {
+        itemId: "",
+        itemName: addForm.itemName.trim(),
+        model: addForm.model.trim(),
+        quantity: parseInt(addForm.amount) || 1,
+        vendor: addForm.vendor.trim(),
+        approxValue: addForm.approxAmount.trim(),
+        totalValue: addForm.multipleAmount.trim(),
+        approxAge: addForm.approxAge.trim(),
+        notes: addForm.description.trim(),
+        disposedBy: addForm.disposedBy.trim(),
+        disposedByUid: uid || "",
+        siteId: siteId || "default",
+        reason: "other" as DisposalReason,
+        disposedAt: serverTimestamp(),
+      });
+
+      setShowAddModal(false);
+      Alert.alert("Success", "Disposal record added successfully.");
+    } catch (err: any) {
+      console.error("Error adding disposal record:", err);
+      Alert.alert("Error", "Failed to save disposal record. Please try again.");
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
   // ── Delete All ──────────────────────────────────────────────────────────────
 
   const deleteAllDisposals = () => {
@@ -360,6 +435,13 @@ export default function DisposalScreen() {
         </View>
 
         <View style={styles.headerButtons}>
+          <Pressable
+            style={[styles.exportButton, { backgroundColor: '#f97316' }]}
+            onPress={openAddModal}
+          >
+            <Text style={styles.exportButtonText}>Add Record</Text>
+          </Pressable>
+
           <Pressable
             style={[styles.exportButton, { backgroundColor: '#34C759' }, importing && styles.exportButtonDisabled]}
             onPress={importDisposalsFromCSV}
@@ -423,6 +505,133 @@ export default function DisposalScreen() {
           )}
         />
       )}
+      {/* ADD RECORD: Manual Disposal Record Modal */}
+      <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { if (!addSaving) setShowAddModal(false); }}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Add Disposal Record</Text>
+            <Pressable onPress={() => { if (!addSaving) setShowAddModal(false); }}>
+              <Text style={{ color: theme.tint, fontSize: 16, fontWeight: "700" }}>Cancel</Text>
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Item Name */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Item *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Item name"
+              placeholderTextColor={theme.mutedText}
+              value={addForm.itemName}
+              onChangeText={(v) => setAddForm((p) => ({ ...p, itemName: v }))}
+            />
+
+            {/* Model */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. HP LaserJet Pro"
+              placeholderTextColor={theme.mutedText}
+              value={addForm.model}
+              onChangeText={(v) => setAddForm((p) => ({ ...p, model: v }))}
+            />
+
+            {/* Amount and Approx Amount Row */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Amount</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="Qty"
+                  placeholderTextColor={theme.mutedText}
+                  value={addForm.amount}
+                  onChangeText={(v) => setAddForm((p) => ({ ...p, amount: v }))}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Approx Amount ($)</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="Unit value"
+                  placeholderTextColor={theme.mutedText}
+                  value={addForm.approxAmount}
+                  onChangeText={(v) => setAddForm((p) => ({ ...p, approxAmount: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Vendor */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Vendor</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. Amazon, Staples"
+              placeholderTextColor={theme.mutedText}
+              value={addForm.vendor}
+              onChangeText={(v) => setAddForm((p) => ({ ...p, vendor: v }))}
+            />
+
+            {/* Multiple Amount and Approx Age Row */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Multiple Amount ($)</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="Total value"
+                  placeholderTextColor={theme.mutedText}
+                  value={addForm.multipleAmount}
+                  onChangeText={(v) => setAddForm((p) => ({ ...p, multipleAmount: v }))}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Approx Age</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="e.g. 2 years"
+                  placeholderTextColor={theme.mutedText}
+                  value={addForm.approxAge}
+                  onChangeText={(v) => setAddForm((p) => ({ ...p, approxAge: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Description */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Description</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]}
+              placeholder="Reason for disposal, condition, etc."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={addForm.description}
+              onChangeText={(v) => setAddForm((p) => ({ ...p, description: v }))}
+            />
+
+            {/* Who is disposing it */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Who is disposing it? *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Your name"
+              placeholderTextColor={theme.mutedText}
+              value={addForm.disposedBy}
+              onChangeText={(v) => setAddForm((p) => ({ ...p, disposedBy: v }))}
+            />
+
+            {/* Save Button */}
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: "#f97316", opacity: addSaving ? 0.6 : 1 }]}
+              onPress={saveManualDisposal}
+              disabled={addSaving}
+            >
+              {addSaving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Record</Text>
+              )}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -449,4 +658,11 @@ const styles = StyleSheet.create({
   meta: { flexDirection: "row", gap: 8, marginTop: 8 },
   metaText: { fontSize: 12 },
   date: { fontSize: 11, marginTop: 6 },
+  modalContainer: { flex: 1, padding: 20 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "800" },
+  fieldLabel: { fontSize: 13, fontWeight: "600", marginBottom: 6, marginTop: 14 },
+  fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center", marginBottom: 20 },
+  saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
 });

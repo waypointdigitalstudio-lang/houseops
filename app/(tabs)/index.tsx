@@ -208,6 +208,22 @@ export default function IndexScreen() {
     notes: "",
   });
 
+  // --- DISPOSE: Disposal modal state ---
+  const [showDisposeModal, setShowDisposeModal] = useState(false);
+  const [disposingItem, setDisposingItem] = useState<Item | null>(null);
+  const [disposeSaving, setDisposeSaving] = useState(false);
+  const [disposeForm, setDisposeForm] = useState({
+    itemName: "",
+    model: "",
+    amount: "",
+    vendor: "",
+    approxAmount: "",
+    multipleAmount: "",
+    approxAge: "",
+    description: "",
+    disposedBy: "",
+  });
+
   // --- FIX: Inventory Undo delete state - using refs for timeouts and mounted tracking ---
   const [pendingDelete, setPendingDelete] = useState<{
     item: Item;
@@ -558,6 +574,90 @@ export default function IndexScreen() {
       Alert.alert("Error", "Failed to save inventory item.");
     }
   }, [itemForm, editingItem, siteId]);
+
+  // --- DISPOSE: Open disposal modal and auto-populate fields from inventory item ---
+  const openDisposeModal = useCallback((item: Item) => {
+    setDisposingItem(item);
+    setDisposeForm({
+      itemName: item.name || "",
+      model: "",
+      amount: String(item.currentQuantity ?? 1),
+      vendor: "",
+      approxAmount: "",
+      multipleAmount: "",
+      approxAge: "",
+      description: item.notes || "",
+      disposedBy: "",
+    });
+    setShowDisposeModal(true);
+  }, []);
+
+  // --- DISPOSE: Confirm disposal - save to disposals collection, delete from inventory, log activity ---
+  const confirmDispose = useCallback(async () => {
+    if (!disposingItem) return;
+
+    // Validate required fields
+    if (!disposeForm.itemName.trim()) {
+      Alert.alert("Error", "Item name is required.");
+      return;
+    }
+    if (!disposeForm.disposedBy.trim()) {
+      Alert.alert("Error", "Please enter who is disposing this item.");
+      return;
+    }
+
+    setDisposeSaving(true);
+
+    try {
+      // 1. Save disposal record to 'disposals' collection
+      const disposalData: Record<string, any> = {
+        itemId: disposingItem.id,
+        itemName: disposeForm.itemName.trim(),
+        model: disposeForm.model.trim(),
+        quantity: parseInt(disposeForm.amount) || 1,
+        vendor: disposeForm.vendor.trim(),
+        approxValue: disposeForm.approxAmount.trim(),
+        totalValue: disposeForm.multipleAmount.trim(),
+        approxAge: disposeForm.approxAge.trim(),
+        notes: disposeForm.description.trim(),
+        disposedBy: disposeForm.disposedBy.trim(),
+        disposedByUid: uid || "",
+        siteId: siteId || "default",
+        reason: "other" as const,
+        disposedAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(db, "disposals"), disposalData);
+
+      // 2. Delete the item from inventory using the undo-aware flow
+      // We use scheduleDelete so the user gets the undo banner
+      // But first close the modal
+      setShowDisposeModal(false);
+      setDisposingItem(null);
+      setDisposeSaving(false);
+
+      // Schedule the deletion with undo support
+      await scheduleDelete(disposingItem);
+
+      // 3. Log activity for the disposal
+      const prevStatus = getStockStatus(disposingItem.currentQuantity, disposingItem.minQuantity);
+      await logActivity({
+        siteId: siteId || "default",
+        itemName: disposeForm.itemName.trim(),
+        itemId: disposingItem.id,
+        qty: 0,
+        min: disposingItem.minQuantity,
+        prevState: prevStatus,
+        nextState: "OUT",
+        action: "disposed",
+        itemType: "inventory",
+      });
+    } catch (err) {
+      console.error("Error disposing item:", err);
+      Alert.alert("Error", "Failed to dispose item. Please try again.");
+      setDisposeSaving(false);
+    }
+  }, [disposingItem, disposeForm, uid, siteId, scheduleDelete]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => !hiddenIds.has(i.id));
@@ -1382,6 +1482,16 @@ const renderPrinter = ({ item }: { item: Printer }) => (
               <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
             )}
           </View>
+          {/* DISPOSE: Dispose button to open disposal modal */}
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              openDisposeModal(item);
+            }}
+            style={{ padding: 4 }}
+          >
+            <Ionicons name="archive-outline" size={20} color="#f97316" />
+          </Pressable>
           {/* NEW: Stop propagation on delete button to prevent opening edit modal */}
           <Pressable 
             onPress={(e) => {
@@ -1720,6 +1830,143 @@ const renderPrinter = ({ item }: { item: Printer }) => (
             {/* Save Button */}
             <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveItem}>
               <Text style={styles.saveBtnText}>{editingItem ? "Update Item" : "Add Item"}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* DISPOSE: Disposal Confirmation Modal */}
+      <Modal visible={showDisposeModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { if (!disposeSaving) { setShowDisposeModal(false); setDisposingItem(null); } }}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Dispose Item</Text>
+            <Pressable onPress={() => { if (!disposeSaving) { setShowDisposeModal(false); setDisposingItem(null); } }}>
+              <Ionicons name="close" size={24} color={theme.text} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Item Name */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Item *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Item name"
+              placeholderTextColor={theme.mutedText}
+              value={disposeForm.itemName}
+              onChangeText={(v) => setDisposeForm((p) => ({ ...p, itemName: v }))}
+            />
+
+            {/* Model */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Model</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. HP LaserJet Pro"
+              placeholderTextColor={theme.mutedText}
+              value={disposeForm.model}
+              onChangeText={(v) => setDisposeForm((p) => ({ ...p, model: v }))}
+            />
+
+            {/* Amount and Approx Amount Row */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Amount</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="Qty"
+                  placeholderTextColor={theme.mutedText}
+                  value={disposeForm.amount}
+                  onChangeText={(v) => setDisposeForm((p) => ({ ...p, amount: v }))}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Approx Amount ($)</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="Unit value"
+                  placeholderTextColor={theme.mutedText}
+                  value={disposeForm.approxAmount}
+                  onChangeText={(v) => setDisposeForm((p) => ({ ...p, approxAmount: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Vendor */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Vendor</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. Amazon, Staples"
+              placeholderTextColor={theme.mutedText}
+              value={disposeForm.vendor}
+              onChangeText={(v) => setDisposeForm((p) => ({ ...p, vendor: v }))}
+            />
+
+            {/* Multiple Amount and Approx Age Row */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Multiple Amount ($)</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  keyboardType="numeric"
+                  placeholder="Total value"
+                  placeholderTextColor={theme.mutedText}
+                  value={disposeForm.multipleAmount}
+                  onChangeText={(v) => setDisposeForm((p) => ({ ...p, multipleAmount: v }))}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Approx Age</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder="e.g. 2 years"
+                  placeholderTextColor={theme.mutedText}
+                  value={disposeForm.approxAge}
+                  onChangeText={(v) => setDisposeForm((p) => ({ ...p, approxAge: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Description */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Description</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]}
+              placeholder="Reason for disposal, condition, etc."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={disposeForm.description}
+              onChangeText={(v) => setDisposeForm((p) => ({ ...p, description: v }))}
+            />
+
+            {/* Who is disposing it */}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Who is disposing it? *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Your name"
+              placeholderTextColor={theme.mutedText}
+              value={disposeForm.disposedBy}
+              onChangeText={(v) => setDisposeForm((p) => ({ ...p, disposedBy: v }))}
+            />
+
+            {/* Confirm Dispose Button */}
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: "#ef4444", opacity: disposeSaving ? 0.6 : 1 }]}
+              onPress={confirmDispose}
+              disabled={disposeSaving}
+            >
+              {disposeSaving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Confirm Disposal</Text>
+              )}
+            </Pressable>
+
+            {/* Cancel Button */}
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: theme.border, marginTop: 10 }]}
+              onPress={() => { if (!disposeSaving) { setShowDisposeModal(false); setDisposingItem(null); } }}
+              disabled={disposeSaving}
+            >
+              <Text style={[styles.saveBtnText, { color: theme.text }]}>Cancel</Text>
             </Pressable>
           </ScrollView>
         </View>
