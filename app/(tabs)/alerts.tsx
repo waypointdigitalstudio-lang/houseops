@@ -339,15 +339,15 @@ export default function AlertsScreen() {
                 style={[
                   styles.chipSmall,
                   {
-                    backgroundColor: active ? theme.tint : "transparent",
-                    borderColor: active ? theme.tint : theme.border,
+                    backgroundColor: active ? theme.text : "transparent",
+                    borderColor: active ? theme.text : theme.border,
                   },
                 ]}
               >
                 <Text
                   style={[
                     styles.chipTextSmall,
-                    { color: active ? "#fff" : theme.mutedText },
+                    { color: active ? theme.background : theme.mutedText },
                   ]}
                 >
                   {f.label}
@@ -371,15 +371,15 @@ export default function AlertsScreen() {
                 style={[
                   styles.chipSmall,
                   {
-                    backgroundColor: active ? theme.tint : "transparent",
-                    borderColor: active ? theme.tint : theme.border,
+                    backgroundColor: active ? theme.text : "transparent",
+                    borderColor: active ? theme.text : theme.border,
                   },
                 ]}
               >
                 <Text
                   style={[
                     styles.chipTextSmall,
-                    { color: active ? "#fff" : theme.mutedText },
+                    { color: active ? theme.background : theme.mutedText },
                   ]}
                 >
                   {f.label}
@@ -522,7 +522,7 @@ export default function AlertsScreen() {
   if (profileLoading) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.tint} />
+        <ActivityIndicator size="large" color={theme.text} />
       </View>
     );
   }
@@ -540,13 +540,13 @@ export default function AlertsScreen() {
             onPress={() => setActiveView("alerts")}
             style={[
               styles.tab,
-              activeView === "alerts" && { backgroundColor: theme.tint, borderColor: theme.tint },
+              activeView === "alerts" && { backgroundColor: theme.text, borderColor: theme.text },
             ]}
           >
             <Text
               style={[
                 styles.tabText,
-                { color: activeView === "alerts" ? "#fff" : theme.mutedText },
+                { color: activeView === "alerts" ? theme.background : theme.mutedText },
               ]}
             >
               Alerts{alerts.length > 0 ? ` (${alerts.length})` : ""}
@@ -556,13 +556,13 @@ export default function AlertsScreen() {
             onPress={() => setActiveView("activity")}
             style={[
               styles.tab,
-              activeView === "activity" && { backgroundColor: theme.tint, borderColor: theme.tint },
+              activeView === "activity" && { backgroundColor: theme.text, borderColor: theme.text },
             ]}
           >
             <Text
               style={[
                 styles.tabText,
-                { color: activeView === "activity" ? "#fff" : theme.mutedText },
+                { color: activeView === "activity" ? theme.background : theme.mutedText },
               ]}
             >
               Activity Log
@@ -576,7 +576,7 @@ export default function AlertsScreen() {
         <>
           {loadingAlerts ? (
             <View style={styles.center}>
-              <ActivityIndicator size="large" color={theme.tint} />
+              <ActivityIndicator size="large" color={theme.text} />
             </View>
           ) : alerts.length === 0 ? (
             <View style={styles.center}>
@@ -615,8 +615,8 @@ export default function AlertsScreen() {
                 { borderColor: theme.border },
               ]}
             >
-              <Ionicons name="download-outline" size={16} color={theme.tint} />
-              <Text style={{ color: theme.tint, fontSize: 13, fontWeight: "700", marginLeft: 6 }}>
+              <Ionicons name="download-outline" size={16} color={theme.text} />
+              <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700", marginLeft: 6 }}>
                 Export CSV ({filteredActivities.length})
               </Text>
             </Pressable>
@@ -625,7 +625,7 @@ export default function AlertsScreen() {
           {/* Activity list */}
           {loadingActivities ? (
             <View style={styles.center}>
-              <ActivityIndicator size="large" color={theme.tint} />
+              <ActivityIndicator size="large" color={theme.text} />
             </View>
           ) : filteredActivities.length === 0 ? (
             <View style={styles.center}>
