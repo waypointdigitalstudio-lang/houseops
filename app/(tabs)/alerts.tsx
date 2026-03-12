@@ -3,6 +3,10 @@
 // Fetches from Firestore 'alertsLog' collection, supports filtering and CSV export
 // FIX: Removed orderBy from Firestore query to avoid composite index requirement
 // FIX: Fixed case-sensitivity mismatch — index.tsx writes UPPERCASE states (OK, LOW, OUT)
+// FIX: Query both real siteId AND "default" to catch docs written before siteId loaded
+// FIX: Changed default date filter to "all" so activities show on first load
+// FIX: Handle missing siteId gracefully after profile finishes loading
+// FIX: Added debug console.log statements to trace data flow
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -123,38 +127,49 @@ function getStatusColor(status: string): string {
 
 function formatTimestamp(ts: Timestamp | null): string {
   if (!ts) return "—";
-  const d = ts.toDate();
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
+  // Guard against non-Timestamp objects (e.g. serverTimestamp() pending writes)
+  if (typeof ts.toDate !== "function") return "—";
+  try {
+    const d = ts.toDate();
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
 
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
 
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-    hour: "numeric",
-    minute: "2-digit",
-  });
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
 }
 
 function formatFullTimestamp(ts: Timestamp | null): string {
   if (!ts) return "";
-  const d = ts.toDate();
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  if (typeof ts.toDate !== "function") return "";
+  try {
+    const d = ts.toDate();
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return "";
+  }
 }
 
 function getDateCutoff(filter: DateFilter): Date | null {
@@ -191,47 +206,105 @@ export default function AlertsScreen() {
   const [loadingAlerts, setLoadingAlerts] = useState(true);
 
   // Filters
-  const [dateFilter, setDateFilter] = useState<DateFilter>("7days");
+  // FIX: Default to "all" instead of "7days" so activities always show on first load
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
   // ─── Fetch activities from alertsLog ───────────────────────────────
   // FIX: Removed orderBy("createdAt","desc") from the Firestore query.
   // Using where() + orderBy() on different fields requires a composite index
-  // in Firestore. Without it, the query silently fails and returns 0 results,
-  // causing "No activities found". We now sort client-side instead.
+  // in Firestore. Without it, the query silently fails and returns 0 results.
+  //
+  // FIX: Also query for siteId "default" — index.tsx uses `siteId || "default"`
+  // when calling logActivity(), so if siteId was temporarily null/undefined
+  // during an action, the document was written with siteId: "default".
+  // We now query for BOTH the real siteId AND "default" to catch all docs.
+  //
+  // FIX: If siteId is falsy after profile loads, fall back to querying "default"
+  // instead of silently returning and showing an eternal spinner.
   useEffect(() => {
-    if (!siteId) return;
+    // Wait for profile to finish loading
+    if (profileLoading) return;
+
+    const effectiveSiteId = siteId || "";
+    console.log("[AlertsScreen] Profile loaded. siteId =", JSON.stringify(siteId), "| effectiveSiteId =", JSON.stringify(effectiveSiteId));
+
+    // If we still have no siteId after profile loaded, try querying "default"
+    // (index.tsx writes siteId || "default") and also show what we can
+    if (!effectiveSiteId) {
+      console.warn("[AlertsScreen] siteId is empty after profile loaded — querying 'default' as fallback");
+    }
 
     setLoadingActivities(true);
+
+    // Build the list of siteId values to query
+    const siteIdsToQuery: string[] = [];
+    if (effectiveSiteId && effectiveSiteId !== "default") {
+      siteIdsToQuery.push(effectiveSiteId);
+    }
+    // Always include "default" to catch docs written when siteId was unavailable
+    siteIdsToQuery.push("default");
+
+    console.log("[AlertsScreen] Querying alertsLog for siteIds:", siteIdsToQuery);
+
+    // Firestore 'in' query supports up to 10 values — we only have 2 max
     const q = query(
       collection(db, "alertsLog"),
-      where("siteId", "==", siteId)
+      where("siteId", "in", siteIdsToQuery)
     );
 
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        const items: ActivityEntry[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        })) as ActivityEntry[];
+        console.log("[AlertsScreen] onSnapshot fired. doc count =", snapshot.docs.length);
+
+        // Debug: log first 3 docs to see what fields/values exist
+        snapshot.docs.slice(0, 3).forEach((d, i) => {
+          console.log(`[AlertsScreen] doc[${i}] id=${d.id}`, JSON.stringify(d.data()));
+        });
+
+        const items: ActivityEntry[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            siteId: data.siteId ?? "",
+            itemName: data.itemName ?? data.name ?? "(unknown)",
+            itemId: data.itemId ?? "",
+            qty: data.qty ?? data.quantity ?? 0,
+            min: data.min ?? data.minQuantity ?? 0,
+            prevState: data.prevState ?? "",
+            nextState: data.nextState ?? "",
+            status: data.status ?? data.nextState ?? "",
+            action: data.action ?? "",
+            itemType: data.itemType ?? "inventory",
+            createdAt: data.createdAt ?? null,
+          } as ActivityEntry;
+        });
+
         // FIX: Sort client-side by createdAt descending (newest first)
+        // Handle null/pending timestamps gracefully
         items.sort((a, b) => {
-          const aTime = a.createdAt?.toMillis?.() ?? 0;
-          const bTime = b.createdAt?.toMillis?.() ?? 0;
+          const aTime = a.createdAt && typeof a.createdAt.toMillis === "function"
+            ? a.createdAt.toMillis()
+            : 0;
+          const bTime = b.createdAt && typeof b.createdAt.toMillis === "function"
+            ? b.createdAt.toMillis()
+            : 0;
           return bTime - aTime;
         });
+
+        console.log("[AlertsScreen] Parsed activities count:", items.length);
         setActivities(items);
         setLoadingActivities(false);
       },
       (err) => {
-        console.error("Error fetching activities:", err);
+        console.error("[AlertsScreen] Error fetching activities:", err);
         setLoadingActivities(false);
       }
     );
 
     return () => unsub();
-  }, [siteId]);
+  }, [siteId, profileLoading]);
 
   // ─── Derive alerts from activities (items with critical/low status) ─
   // FIX: index.tsx writes states in UPPERCASE ("OK", "LOW", "OUT"), so we
@@ -265,6 +338,8 @@ export default function AlertsScreen() {
       const priority = (s: string) => (s === "critical" || s === "out" ? 0 : 1);
       return priority(a.status) - priority(b.status);
     });
+
+    console.log("[AlertsScreen] Derived alerts count:", alertItems.length);
     setAlerts(alertItems);
     setLoadingAlerts(false);
   }, [activities]);
@@ -277,8 +352,13 @@ export default function AlertsScreen() {
     const cutoff = getDateCutoff(dateFilter);
     if (cutoff) {
       result = result.filter((a) => {
-        if (!a.createdAt) return false;
-        return a.createdAt.toDate() >= cutoff;
+        if (!a.createdAt) return true; // FIX: include items with null timestamps instead of excluding
+        if (typeof a.createdAt.toDate !== "function") return true; // pending serverTimestamp
+        try {
+          return a.createdAt.toDate() >= cutoff;
+        } catch {
+          return true;
+        }
       });
     }
 
@@ -287,6 +367,7 @@ export default function AlertsScreen() {
       result = result.filter((a) => a.action === actionFilter);
     }
 
+    console.log("[AlertsScreen] Filtered activities:", result.length, "dateFilter:", dateFilter, "actionFilter:", actionFilter);
     return result;
   }, [activities, dateFilter, actionFilter]);
 
