@@ -16,7 +16,6 @@ import {
   onSnapshot,
   query,
   Timestamp,
-  where,
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -30,7 +29,6 @@ import {
 } from "react-native";
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
-import { useUserProfile } from "../../hooks/useUserProfile";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -192,7 +190,6 @@ function getDateCutoff(filter: DateFilter): Date | null {
 
 export default function AlertsScreen() {
   const theme = useAppTheme();
-  const { siteId, loading: profileLoading } = useUserProfile();
 
   // View toggle
   const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
@@ -211,47 +208,15 @@ export default function AlertsScreen() {
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
   // ─── Fetch activities from alertsLog ───────────────────────────────
-  // FIX: Removed orderBy("createdAt","desc") from the Firestore query.
-  // Using where() + orderBy() on different fields requires a composite index
-  // in Firestore. Without it, the query silently fails and returns 0 results.
-  //
-  // FIX: Also query for siteId "default" — index.tsx uses `siteId || "default"`
-  // when calling logActivity(), so if siteId was temporarily null/undefined
-  // during an action, the document was written with siteId: "default".
-  // We now query for BOTH the real siteId AND "default" to catch all docs.
-  //
-  // FIX: If siteId is falsy after profile loads, fall back to querying "default"
-  // instead of silently returning and showing an eternal spinner.
+  // FIX: Fetch ALL documents from alertsLog — the Firestore documents do NOT
+  // contain a siteId field, so filtering by siteId returned 0 results.
+  // We now query the entire collection and sort/filter client-side.
   useEffect(() => {
-    // Wait for profile to finish loading
-    if (profileLoading) return;
-
-    const effectiveSiteId = siteId || "";
-    console.log("[AlertsScreen] Profile loaded. siteId =", JSON.stringify(siteId), "| effectiveSiteId =", JSON.stringify(effectiveSiteId));
-
-    // If we still have no siteId after profile loaded, try querying "default"
-    // (index.tsx writes siteId || "default") and also show what we can
-    if (!effectiveSiteId) {
-      console.warn("[AlertsScreen] siteId is empty after profile loaded — querying 'default' as fallback");
-    }
-
     setLoadingActivities(true);
 
-    // Build the list of siteId values to query
-    const siteIdsToQuery: string[] = [];
-    if (effectiveSiteId && effectiveSiteId !== "default") {
-      siteIdsToQuery.push(effectiveSiteId);
-    }
-    // Always include "default" to catch docs written when siteId was unavailable
-    siteIdsToQuery.push("default");
+    console.log("[AlertsScreen] Querying ALL docs from alertsLog (no siteId filter)");
 
-    console.log("[AlertsScreen] Querying alertsLog for siteIds:", siteIdsToQuery);
-
-    // Firestore 'in' query supports up to 10 values — we only have 2 max
-    const q = query(
-      collection(db, "alertsLog"),
-      where("siteId", "in", siteIdsToQuery)
-    );
+    const q = query(collection(db, "alertsLog"));
 
     const unsub = onSnapshot(
       q,
@@ -267,7 +232,7 @@ export default function AlertsScreen() {
           const data = d.data();
           return {
             id: d.id,
-            siteId: data.siteId ?? "",
+            siteId: data.siteId ?? "default",
             itemName: data.itemName ?? data.name ?? "(unknown)",
             itemId: data.itemId ?? "",
             qty: data.qty ?? data.quantity ?? 0,
@@ -304,7 +269,7 @@ export default function AlertsScreen() {
     );
 
     return () => unsub();
-  }, [siteId, profileLoading]);
+  }, []);
 
   // ─── Derive alerts from activities (items with critical/low status) ─
   // FIX: index.tsx writes states in UPPERCASE ("OK", "LOW", "OUT"), so we
@@ -599,15 +564,6 @@ export default function AlertsScreen() {
             </Text>
           )}
         </View>
-      </View>
-    );
-  }
-
-  // ─── Loading State ─────────────────────────────────────────────────
-  if (profileLoading) {
-    return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.text} />
       </View>
     );
   }
