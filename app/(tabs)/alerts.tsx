@@ -1,6 +1,8 @@
 // app/(tabs)/alerts.tsx
 // Activity Log + Alerts Screen with toggle between views
 // Fetches from Firestore 'alertsLog' collection, supports filtering and CSV export
+// FIX: Removed orderBy from Firestore query to avoid composite index requirement
+// FIX: Fixed case-sensitivity mismatch — index.tsx writes UPPERCASE states (OK, LOW, OUT)
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -8,7 +10,6 @@ import * as Sharing from "expo-sharing";
 import {
   collection,
   onSnapshot,
-  orderBy,
   query,
   Timestamp,
   where,
@@ -100,8 +101,10 @@ function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; 
   }
 }
 
+// FIX: Normalize to lowercase so it works with both "OK"/"LOW"/"OUT" (from index.tsx)
+// and "ok"/"low"/"out" (used in alerts derivation)
 function getStatusColor(status: string): string {
-  switch (status) {
+  switch (status.toLowerCase()) {
     case "ok":
       return "#22c55e";
     case "low":
@@ -188,23 +191,32 @@ export default function AlertsScreen() {
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
   // ─── Fetch activities from alertsLog ───────────────────────────────
+  // FIX: Removed orderBy("createdAt","desc") from the Firestore query.
+  // Using where() + orderBy() on different fields requires a composite index
+  // in Firestore. Without it, the query silently fails and returns 0 results,
+  // causing "No activities found". We now sort client-side instead.
   useEffect(() => {
     if (!siteId) return;
 
     setLoadingActivities(true);
     const q = query(
       collection(db, "alertsLog"),
-      where("siteId", "==", siteId),
-      orderBy("createdAt", "desc")
+      where("siteId", "==", siteId)
     );
 
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        const items: ActivityEntry[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
+        const items: ActivityEntry[] = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
         })) as ActivityEntry[];
+        // FIX: Sort client-side by createdAt descending (newest first)
+        items.sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() ?? 0;
+          const bTime = b.createdAt?.toMillis?.() ?? 0;
+          return bTime - aTime;
+        });
         setActivities(items);
         setLoadingActivities(false);
       },
@@ -218,6 +230,9 @@ export default function AlertsScreen() {
   }, [siteId]);
 
   // ─── Derive alerts from activities (items with critical/low status) ─
+  // FIX: index.tsx writes states in UPPERCASE ("OK", "LOW", "OUT"), so we
+  // normalize to lowercase before comparing. This ensures alerts are correctly
+  // derived regardless of the casing written by logActivity().
   useEffect(() => {
     // Build alerts from the latest state of each item
     const latestByItem = new Map<string, ActivityEntry>();
@@ -228,12 +243,13 @@ export default function AlertsScreen() {
     }
     const alertItems: AlertEntry[] = [];
     for (const [, entry] of latestByItem) {
-      if (entry.nextState === "low" || entry.nextState === "critical" || entry.nextState === "out") {
+      const normalizedState = (entry.nextState || "").toLowerCase();
+      if (normalizedState === "low" || normalizedState === "critical" || normalizedState === "out") {
         alertItems.push({
           id: entry.id,
           itemName: entry.itemName,
           itemType: entry.itemType,
-          status: entry.nextState,
+          status: normalizedState,
           qty: entry.qty,
           min: entry.min,
           createdAt: entry.createdAt,
@@ -433,8 +449,8 @@ export default function AlertsScreen() {
             </Text>
           </View>
 
-          {/* State change */}
-          {item.prevState !== item.nextState && item.prevState && item.nextState && (
+          {/* State change — FIX: normalize case for display consistency */}
+          {item.prevState && item.nextState && item.prevState.toLowerCase() !== item.nextState.toLowerCase() && (
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
               <View style={[styles.stateDot, { backgroundColor: getStatusColor(item.prevState) }]} />
               <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.prevState}</Text>
