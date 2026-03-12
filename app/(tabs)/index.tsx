@@ -1446,7 +1446,7 @@ export default function IndexScreen() {
         ) : (
           <Pressable
             hitSlop={8}
-            style={[styles.actionButton, { backgroundColor: theme.tint }]}
+            style={[styles.actionButton, { backgroundColor: "#2563eb" }]}
             onPress={() => {
               setSelectedPrinter(item);
               setTonerLinkSearch("");
