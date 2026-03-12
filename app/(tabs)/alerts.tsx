@@ -49,7 +49,8 @@ interface ActivityEntry {
   action: string;
   itemType: "inventory" | "toner" | "printer";
   createdAt: Timestamp | null;
-  dismissed: boolean;
+  dismissed: boolean;       // system field — set by cloud function after sending push notifications
+  userDismissed: boolean;   // FIX: user-initiated dismissal — set when user taps "Dismiss" in the UI
 }
 
 interface AlertEntry {
@@ -251,13 +252,16 @@ export default function AlertsScreen() {
                   return next;
                 });
 
-                // Update Firestore — mark the alertsLog entry as dismissed
+                // Update Firestore — mark the alertsLog entry as user-dismissed
+                // FIX: Write `userDismissed` (not `dismissed`) to avoid conflicts
+                // with the push notification cloud function which manages the
+                // `dismissed` field for its own purposes.
                 try {
                   await updateDoc(doc(db, "alertsLog", alert.id), {
-                    dismissed: true,
-                    dismissedAt: new Date(),
+                    userDismissed: true,
+                    userDismissedAt: new Date(),
                   });
-                  console.log("[AlertsScreen] Dismissed alert:", alert.id, alert.itemName);
+                  console.log("[AlertsScreen] User dismissed alert:", alert.id, alert.itemName);
                 } catch (err) {
                   console.error("[AlertsScreen] Failed to dismiss alert:", err);
                   // Revert local dismiss on error
@@ -320,6 +324,7 @@ export default function AlertsScreen() {
             itemType: data.itemType ?? "inventory",
             createdAt: data.createdAt ?? null,
             dismissed: data.dismissed ?? false,
+            userDismissed: data.userDismissed ?? false,  // FIX: read user-initiated dismissal field
           } as ActivityEntry;
         });
 
@@ -352,12 +357,24 @@ export default function AlertsScreen() {
   // FIX: index.tsx writes states in UPPERCASE ("OK", "LOW", "OUT"), so we
   // normalize to lowercase before comparing. This ensures alerts are correctly
   // derived regardless of the casing written by logActivity().
+  //
+  // BUG FIX: The previous code filtered by `dismissed` field, but the cloud
+  // function that sends push notifications sets `dismissed: true` on alertsLog
+  // entries AFTER sending (to avoid re-sending). This caused ALL LOW/OUT alerts
+  // to be filtered out, showing "All clear" even though items are at low stock.
+  //
+  // The fix: Only filter by `userDismissed` (set by user tap-to-dismiss in UI),
+  // NOT by `dismissed` (set by the push notification cloud function).
   useEffect(() => {
     // Build alerts from the latest state of each item
-    // Only consider non-dismissed activity entries for alert derivation
-    const nonDismissedActivities = activities.filter((a) => !a.dismissed);
+    // FIX: Do NOT filter by `dismissed` — that field is managed by the push
+    // notification cloud function and does NOT indicate user acknowledgment.
+    // Instead, only exclude entries the USER explicitly dismissed via UI.
+    const userVisibleActivities = activities.filter((a) => !a.userDismissed);
     const latestByItem = new Map<string, ActivityEntry>();
-    for (const a of nonDismissedActivities) {
+    for (const a of userVisibleActivities) {
+      // FIX: Skip entries with empty itemId — they can't be deduplicated properly
+      if (!a.itemId) continue;
       if (!latestByItem.has(a.itemId)) {
         latestByItem.set(a.itemId, a);
       }
@@ -366,7 +383,7 @@ export default function AlertsScreen() {
     for (const [, entry] of latestByItem) {
       const normalizedState = (entry.nextState || "").toLowerCase();
       if (normalizedState === "low" || normalizedState === "critical" || normalizedState === "out") {
-        // Skip locally dismissed items (optimistic UI)
+        // Skip locally dismissed items (optimistic UI before Firestore round-trip)
         if (locallyDismissedItemIds.has(entry.itemId)) continue;
         alertItems.push({
           id: entry.id,
@@ -386,7 +403,10 @@ export default function AlertsScreen() {
       return priority(a.status) - priority(b.status);
     });
 
-    console.log("[AlertsScreen] Derived alerts count:", alertItems.length);
+    console.log("[AlertsScreen] Derived alerts count:", alertItems.length,
+      "| Total activities:", activities.length,
+      "| User-visible (non-userDismissed):", userVisibleActivities.length,
+      "| Unique items:", latestByItem.size);
     setAlerts(alertItems);
     setLoadingAlerts(false);
   }, [activities, locallyDismissedItemIds]);
@@ -894,4 +914,3 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
 });
-
