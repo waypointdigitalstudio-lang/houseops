@@ -55,6 +55,10 @@ interface AlertEntry {
   createdAt: Timestamp | null;
 }
 
+// ─── Active-state accent color (works in both light & dark mode) ────
+const ACTIVE_BG = "#2563eb"; // blue-600
+const ACTIVE_TEXT = "#ffffff"; // always white on blue
+
 // ─── Constants ───────────────────────────────────────────────────────
 
 type DateFilter = "today" | "7days" | "30days" | "all";
@@ -339,15 +343,15 @@ export default function AlertsScreen() {
                 style={[
                   styles.chipSmall,
                   {
-                    backgroundColor: active ? theme.text : "transparent",
-                    borderColor: active ? theme.text : theme.border,
+                    backgroundColor: active ? ACTIVE_BG : "transparent",
+                    borderColor: active ? ACTIVE_BG : theme.border,
                   },
                 ]}
               >
                 <Text
                   style={[
                     styles.chipTextSmall,
-                    { color: active ? theme.background : theme.mutedText },
+                    { color: active ? ACTIVE_TEXT : theme.mutedText },
                   ]}
                 >
                   {f.label}
@@ -371,15 +375,15 @@ export default function AlertsScreen() {
                 style={[
                   styles.chipSmall,
                   {
-                    backgroundColor: active ? theme.text : "transparent",
-                    borderColor: active ? theme.text : theme.border,
+                    backgroundColor: active ? ACTIVE_BG : "transparent",
+                    borderColor: active ? ACTIVE_BG : theme.border,
                   },
                 ]}
               >
                 <Text
                   style={[
                     styles.chipTextSmall,
-                    { color: active ? theme.background : theme.mutedText },
+                    { color: active ? ACTIVE_TEXT : theme.mutedText },
                   ]}
                 >
                   {f.label}
@@ -540,13 +544,13 @@ export default function AlertsScreen() {
             onPress={() => setActiveView("alerts")}
             style={[
               styles.tab,
-              activeView === "alerts" && { backgroundColor: theme.text, borderColor: theme.text },
+              activeView === "alerts" && { backgroundColor: ACTIVE_BG, borderColor: ACTIVE_BG },
             ]}
           >
             <Text
               style={[
                 styles.tabText,
-                { color: activeView === "alerts" ? theme.background : theme.mutedText },
+                { color: activeView === "alerts" ? ACTIVE_TEXT : theme.mutedText },
               ]}
             >
               Alerts{alerts.length > 0 ? ` (${alerts.length})` : ""}
@@ -556,13 +560,13 @@ export default function AlertsScreen() {
             onPress={() => setActiveView("activity")}
             style={[
               styles.tab,
-              activeView === "activity" && { backgroundColor: theme.text, borderColor: theme.text },
+              activeView === "activity" && { backgroundColor: ACTIVE_BG, borderColor: ACTIVE_BG },
             ]}
           >
             <Text
               style={[
                 styles.tabText,
-                { color: activeView === "activity" ? theme.background : theme.mutedText },
+                { color: activeView === "activity" ? ACTIVE_TEXT : theme.mutedText },
               ]}
             >
               Activity Log
