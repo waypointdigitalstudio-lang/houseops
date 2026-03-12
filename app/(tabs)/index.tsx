@@ -1393,23 +1393,28 @@ export default function IndexScreen() {
     </Pressable>
   );
 
-const renderPrinter = ({ item }: { item: Printer }) => (
-    <Pressable onPress={() => {
-      setEditingPrinter(item);
-      setPrinterForm({
-        name: item.name || "",
-        location: item.location || "",
-        ipAddress: item.ipAddress || "",
-        assetNumber: item.assetNumber || "",
-        serial: item.serial || "",
-        tonerSeries: item.tonerSeries || "",
-        barcode: item.barcode || "",
-        notes: item.notes || "",
-      });
-      setShowPrinterModal(true);
-    }}>
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <View style={{ flex: 1 }}>
+  // FIX: Removed outer Pressable wrapper to avoid nested Pressable touch conflicts.
+  // The printer info area is now its own Pressable for editing, while LINK TONER / DEDUCT
+  // buttons are sibling Pressable components that don't interfere with each other.
+  const renderPrinter = ({ item }: { item: Printer }) => (
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <Pressable
+        style={{ flex: 1 }}
+        onPress={() => {
+          setEditingPrinter(item);
+          setPrinterForm({
+            name: item.name || "",
+            location: item.location || "",
+            ipAddress: item.ipAddress || "",
+            assetNumber: item.assetNumber || "",
+            serial: item.serial || "",
+            tonerSeries: item.tonerSeries || "",
+            barcode: item.barcode || "",
+            notes: item.notes || "",
+          });
+          setShowPrinterModal(true);
+        }}
+      >
         <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
           <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
@@ -1427,11 +1432,12 @@ const renderPrinter = ({ item }: { item: Printer }) => (
             <TonerStockBadge tonerId={item.tonerId} theme={theme} />
           </View>
         )}
-      </View>
+      </Pressable>
       <View style={{ alignItems: "flex-end", gap: 8 }}>
         <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
         {item.tonerId ? (
           <Pressable
+            hitSlop={8}
             style={[styles.actionButton, { backgroundColor: "#ef4444" }]}
             onPress={() => handleDeductToner(item)}
           >
@@ -1439,6 +1445,7 @@ const renderPrinter = ({ item }: { item: Printer }) => (
           </Pressable>
         ) : (
           <Pressable
+            hitSlop={8}
             style={[styles.actionButton, { backgroundColor: theme.tint }]}
             onPress={() => {
               setSelectedPrinter(item);
@@ -1451,7 +1458,6 @@ const renderPrinter = ({ item }: { item: Printer }) => (
         )}
       </View>
     </View>
-    </Pressable>
   );
 
   // --- NEW: Render inventory item with tap-to-edit functionality ---
