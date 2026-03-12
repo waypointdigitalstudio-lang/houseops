@@ -11,6 +11,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   increment,
   onSnapshot,
@@ -918,6 +919,45 @@ export default function IndexScreen() {
     }
   };
 
+  // UNLINK: Handle unlinking a toner from a printer
+  const handleUnlinkToner = async (printer: Printer) => {
+    if (!printer.tonerId) return;
+    const linkedToner = toners.find(t => t.id === printer.tonerId);
+    Alert.alert(
+      "Unlink Toner",
+      `Remove ${linkedToner?.model || "toner"} from ${printer.name}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unlink",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await updateDoc(doc(db, "printers", printer.id), { tonerId: deleteField() });
+
+              // ACTIVITY: Log the toner unlink activity
+              await logActivity({
+                siteId: siteId || "default",
+                itemName: `${linkedToner?.model || "Unknown Toner"} ✕ ${printer.name}`,
+                itemId: printer.id,
+                qty: linkedToner?.quantity ?? 0,
+                min: linkedToner?.minQuantity ?? 0,
+                prevState: "OK",
+                nextState: "OK",
+                action: "unlinked",
+                itemType: "printer",
+              });
+
+              Alert.alert("Unlinked!", `Toner removed from ${printer.name}.`);
+            } catch {
+              Alert.alert("Error", "Failed to unlink toner.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ACTIVITY: Updated handleDeductToner to log activity when toner quantity is deducted
   const handleDeductToner = async (printer: Printer) => {
     if (!printer.tonerId) return;
@@ -1436,13 +1476,22 @@ export default function IndexScreen() {
       <View style={{ alignItems: "flex-end", gap: 8 }}>
         <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
         {item.tonerId ? (
-          <Pressable
-            hitSlop={8}
-            style={[styles.actionButton, { backgroundColor: "#ef4444" }]}
-            onPress={() => handleDeductToner(item)}
-          >
-            <Text style={styles.actionButtonText}>DEDUCT 1</Text>
-          </Pressable>
+          <>
+            <Pressable
+              hitSlop={8}
+              style={[styles.actionButton, { backgroundColor: "#ef4444" }]}
+              onPress={() => handleDeductToner(item)}
+            >
+              <Text style={styles.actionButtonText}>DEDUCT 1</Text>
+            </Pressable>
+            <Pressable
+              hitSlop={8}
+              style={[styles.actionButton, { backgroundColor: "#f59e0b" }]}
+              onPress={() => handleUnlinkToner(item)}
+            >
+              <Text style={styles.actionButtonText}>UNLINK</Text>
+            </Pressable>
+          </>
         ) : (
           <Pressable
             hitSlop={8}
