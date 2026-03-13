@@ -31,6 +31,7 @@ import {
 } from "react-native";
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
+import { useUserProfile } from "../../hooks/useUserProfile";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -177,6 +178,20 @@ function formatFullTimestamp(ts: Timestamp | null): string {
   }
 }
 
+/** Infer an action label from prevState/nextState when the `action` field is missing */
+function inferActionFromStates(prev?: string, next?: string): string {
+  if (!prev && !next) return "added";
+  const p = (prev ?? "").toUpperCase();
+  const n = (next ?? "").toUpperCase();
+  // Stock went from a bad state to OK → "added" (restocked)
+  if ((p === "LOW" || p === "OUT" || p === "CRITICAL") && n === "OK") return "added";
+  // Stock went from OK to a bad state → "deducted"
+  if (p === "OK" && (n === "LOW" || n === "OUT" || n === "CRITICAL")) return "deducted";
+  // Both bad but different → "edited"
+  if (p !== n) return "edited";
+  return "edited";
+}
+
 function getDateCutoff(filter: DateFilter): Date | null {
   if (filter === "all") return null;
   const now = new Date();
@@ -197,6 +212,9 @@ function getDateCutoff(filter: DateFilter): Date | null {
 
 export default function AlertsScreen() {
   const theme = useAppTheme();
+  // FIX: Get siteId from user profile — needed to scope Firestore queries
+  // so they pass security rules (unscoped queries are rejected)
+  const { siteId, loading: profileLoading } = useUserProfile();
 
   // View toggle
   const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
@@ -228,15 +246,24 @@ export default function AlertsScreen() {
   }, []);
 
   // ─── Fetch alerts from items collection ───────────────────────────
-  // Query items where isLowStock == true. We also do a client-side check
-  // for alertState in case isLowStock hasn't been updated yet.
+  // FIX: Query items for the user's site and compute low-stock status from
+  // actual quantities (currentQuantity <= minQuantity) instead of relying
+  // on the `isLowStock` boolean which can become stale when stock is
+  // replenished but the field is never reset to false.
+  // FIX: Must filter by siteId to satisfy Firestore security rules.
   useEffect(() => {
+    if (!siteId) {
+      setAlerts([]);
+      setLoadingAlerts(false);
+      return;
+    }
+
     setLoadingAlerts(true);
 
-    console.log("[AlertsScreen] Subscribing to items collection (isLowStock == true)");
+    console.log("[AlertsScreen] Subscribing to items for siteId:", siteId);
 
-    // Primary query: items with isLowStock == true
-    const q = query(collection(db, "items"), where("isLowStock", "==", true));
+    // FIX: Filter by siteId (matches useLowStockCount behavior & Firestore rules)
+    const q = query(collection(db, "items"), where("siteId", "==", siteId));
 
     const unsub = onSnapshot(
       q,
@@ -247,13 +274,27 @@ export default function AlertsScreen() {
 
         for (const d of snapshot.docs) {
           const data = d.data();
-          const alertState = (data.alertState ?? data.lastAlertState ?? "OK").toUpperCase();
-          const isLowStock = data.isLowStock ?? false;
 
-          // Include if isLowStock is true OR alertState indicates a problem
-          if (isLowStock || alertState === "LOW" || alertState === "CRITICAL" || alertState === "OUT") {
-            // Skip items the user has locally dismissed (optimistic UI)
-            if (locallyDismissedItemIds.has(d.id)) continue;
+          // Skip items the user has dismissed (persisted in Firestore)
+          if (data.userDismissedAlert === true) continue;
+          // Skip items the user has locally dismissed (optimistic UI)
+          if (locallyDismissedItemIds.has(d.id)) continue;
+
+          // FIX: Compute low-stock from actual quantities instead of isLowStock field
+          const currentQty = data.currentQuantity ?? data.quantity ?? 0;
+          const minQty = data.minQuantity ?? data.min ?? 0;
+
+          // Only include items that are actually low on stock
+          if (minQty > 0 && currentQty <= minQty) {
+            // Determine alert severity from actual quantities
+            let alertState: string;
+            if (currentQty <= 0) {
+              alertState = "OUT";
+            } else if (currentQty <= Math.floor(minQty / 2)) {
+              alertState = "CRITICAL";
+            } else {
+              alertState = "LOW";
+            }
 
             alertItems.push({
               id: d.id,
@@ -262,10 +303,10 @@ export default function AlertsScreen() {
               location: data.location ?? "",
               siteId: data.siteId ?? "",
               alertState: alertState,
-              currentQuantity: data.currentQuantity ?? data.quantity ?? 0,
-              minQuantity: data.minQuantity ?? data.min ?? 0,
+              currentQuantity: currentQty,
+              minQuantity: minQty,
               lastAlertAt: data.lastAlertAt ?? data.updatedAt ?? null,
-              isLowStock: isLowStock,
+              isLowStock: true,
               userDismissed: false,
             });
           }
@@ -293,7 +334,7 @@ export default function AlertsScreen() {
     );
 
     return () => unsub();
-  }, [locallyDismissedItemIds]);
+  }, [siteId, locallyDismissedItemIds]);
 
   // ─── Dismiss handler (updates the item document) ──────────────────
   const handleDismissAlert = useCallback(
@@ -350,13 +391,20 @@ export default function AlertsScreen() {
     [getAnimValue]
   );
 
-  // ─── Fetch activities from alertsLog (UNCHANGED) ─────────────────
+  // ─── Fetch activities from alertsLog ────────────────────────────
+  // FIX: Filter by siteId to satisfy Firestore security rules
   useEffect(() => {
+    if (!siteId) {
+      setActivities([]);
+      setLoadingActivities(false);
+      return;
+    }
+
     setLoadingActivities(true);
 
-    console.log("[AlertsScreen] Querying ALL docs from alertsLog (no siteId filter)");
+    console.log("[AlertsScreen] Querying alertsLog for siteId:", siteId);
 
-    const q = query(collection(db, "alertsLog"));
+    const q = query(collection(db, "alertsLog"), where("siteId", "==", siteId));
 
     const unsub = onSnapshot(
       q,
@@ -375,7 +423,11 @@ export default function AlertsScreen() {
             prevState: data.prevState ?? "",
             nextState: data.nextState ?? "",
             status: data.status ?? data.nextState ?? "",
-            action: data.action ?? "",
+            // FIX: Older alertsLog entries (from cloud functions) may lack the
+            // `action` field. Infer it from state changes when missing.
+            action: data.action
+              ? data.action
+              : inferActionFromStates(data.prevState, data.nextState),
             itemType: data.itemType ?? "inventory",
             createdAt: data.createdAt ?? null,
             dismissed: data.dismissed ?? false,
@@ -405,7 +457,7 @@ export default function AlertsScreen() {
     );
 
     return () => unsub();
-  }, []);
+  }, [siteId]);
 
   // ─── Filtered activities (UNCHANGED) ──────────────────────────────
   const filteredActivities = useMemo(() => {
@@ -696,6 +748,10 @@ export default function AlertsScreen() {
     );
   }
 
+  // ─── Effective loading states (combine profile + data loading) ─────
+  const isAlertsLoading = profileLoading || loadingAlerts;
+  const isActivitiesLoading = profileLoading || loadingActivities;
+
   // ─── Main Render ───────────────────────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
@@ -743,7 +799,7 @@ export default function AlertsScreen() {
       {/* ─── Alerts View ─────────────────────────────────────────────── */}
       {activeView === "alerts" && (
         <>
-          {loadingAlerts ? (
+          {isAlertsLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
             </View>
@@ -792,7 +848,7 @@ export default function AlertsScreen() {
           </View>
 
           {/* Activity list */}
-          {loadingActivities ? (
+          {isActivitiesLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
             </View>
