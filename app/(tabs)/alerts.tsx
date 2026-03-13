@@ -1,7 +1,7 @@
 // app/(tabs)/alerts.tsx
 // Alerts & Activity Log Screen
 //
-// v8 - 2026-03-13 — Simple dismiss feature
+// v9 - 2026-03-13 — Fixed dismiss → Firestore update
 // ------------------------------------------
 // - Tap an alert card to dismiss it
 // - Stores userDismissedAlert + userDismissedAlertQuantity in Firestore
@@ -9,6 +9,8 @@
 // - Fade-out animation on dismiss
 // - No "Reset Dismissed" button needed
 // - Activity Log fully preserved
+// - FIX: Trigger Firestore update immediately on tap (before animation)
+// - FIX: Added Alert.alert for visible success/failure feedback (debug)
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -25,12 +27,14 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { useAppTheme } from "../../constants/theme";
@@ -257,22 +261,39 @@ function AlertCard({
   onDismiss: (item: AlertEntry) => void;
 }) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const dismissingRef = useRef(false); // prevent double-tap
   const statusColor = getStatusColor(item.alertState);
   const isOut = item.alertState === "OUT" || item.alertState === "CRITICAL";
 
   const handlePress = useCallback(() => {
+    // Guard against double-tap
+    if (dismissingRef.current) {
+      console.log(`[AlertCard] Already dismissing "${item.itemName}" — ignoring duplicate tap`);
+      return;
+    }
+    dismissingRef.current = true;
+
+    console.log(`[AlertCard] ✅ TAP DETECTED on "${item.itemName}" (id=${item.itemId})`);
+
+    // ⚡ Fire the dismiss handler IMMEDIATELY — don't wait for animation
+    onDismiss(item);
+
+    // Then play the fade-out animation (purely visual)
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
-      onDismiss(item);
+      console.log(`[AlertCard] Fade-out animation complete for "${item.itemName}"`);
     });
   }, [item, onDismiss, fadeAnim]);
 
   return (
     <Animated.View style={{ opacity: fadeAnim }}>
-      <Pressable onPress={handlePress}>
+      <TouchableOpacity
+        activeOpacity={0.6}
+        onPress={handlePress}
+      >
         <View
           style={[
             styles.card,
@@ -334,7 +355,7 @@ function AlertCard({
             </Text>
           </View>
         </View>
-      </Pressable>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -467,25 +488,52 @@ export default function AlertsScreen() {
   // ─── Dismiss handler ──────────────────────────────────────────────
   const handleDismiss = useCallback(
     async (item: AlertEntry) => {
-      console.log(`[AlertsScreen] Dismissing "${item.itemName}" (id=${item.itemId}, qty=${item.currentQuantity})`);
+      console.log(`[AlertsScreen] ===== DISMISS START =====`);
+      console.log(`[AlertsScreen] Item: "${item.itemName}"`);
+      console.log(`[AlertsScreen] itemId: "${item.itemId}"`);
+      console.log(`[AlertsScreen] currentQuantity: ${item.currentQuantity}`);
+      console.log(`[AlertsScreen] Firestore path: items/${item.itemId}`);
+
+      // Validate itemId before proceeding
+      if (!item.itemId) {
+        console.error(`[AlertsScreen] ❌ INVALID itemId — cannot dismiss`);
+        Alert.alert("Dismiss Error", "Invalid item ID. Cannot dismiss this alert.");
+        return;
+      }
 
       // Immediately hide locally
       setLocallyDismissedIds((prev) => {
         const next = new Set(prev);
         next.add(item.itemId);
+        console.log(`[AlertsScreen] Locally dismissed IDs:`, Array.from(next));
         return next;
       });
 
       // Persist to Firestore
       try {
         const itemRef = doc(db, "items", item.itemId);
+        console.log(`[AlertsScreen] Calling updateDoc on items/${item.itemId} ...`);
+
         await updateDoc(itemRef, {
           userDismissedAlert: true,
           userDismissedAlertQuantity: item.currentQuantity,
         });
-        console.log(`[AlertsScreen] Dismiss persisted for "${item.itemName}"`);
-      } catch (err) {
-        console.error(`[AlertsScreen] Error dismissing "${item.itemName}":`, err);
+
+        console.log(`[AlertsScreen] ✅ Dismiss persisted for "${item.itemName}" (userDismissedAlert=true, qty=${item.currentQuantity})`);
+
+        // DEBUG: visible confirmation — remove this Alert.alert once confirmed working
+        // Alert.alert("Dismissed ✅", `"${item.itemName}" dismissed at qty ${item.currentQuantity}`);
+      } catch (err: any) {
+        console.error(`[AlertsScreen] ❌ Error dismissing "${item.itemName}":`, err);
+        console.error(`[AlertsScreen] Error code:`, err?.code);
+        console.error(`[AlertsScreen] Error message:`, err?.message);
+
+        // Show error to user so they know it failed
+        Alert.alert(
+          "Dismiss Failed",
+          `Could not dismiss "${item.itemName}". Error: ${err?.message ?? "Unknown error"}. Please try again.`
+        );
+
         // If Firestore write fails, un-hide locally so user can retry
         setLocallyDismissedIds((prev) => {
           const next = new Set(prev);
@@ -493,6 +541,7 @@ export default function AlertsScreen() {
           return next;
         });
       }
+      console.log(`[AlertsScreen] ===== DISMISS END =====`);
     },
     []
   );
