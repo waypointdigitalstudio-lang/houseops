@@ -14,13 +14,30 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import { db } from "../firebaseConfig";
 
+/** Returns a numeric severity level for alert states (higher = worse) */
+function getSeverityLevel(state: string): number {
+  switch (state.toUpperCase()) {
+    case "OUT":
+      return 3;
+    case "CRITICAL":
+      return 2;
+    case "LOW":
+      return 1;
+    case "OK":
+    default:
+      return 0;
+  }
+}
+
 /**
  * Returns the live count of items that are currently low on stock.
  *
  * An item is considered "low stock" when:
  *   currentQuantity <= minQuantity  AND  minQuantity > 0
  *
- * Items where `userDismissedAlert === true` are excluded from the count.
+ * Items where `userDismissedAlert === true` are excluded from the count,
+ * UNLESS the current severity is worse than the dismissed severity
+ * (smart auto-reset: e.g. dismissed at LOW, now CRITICAL → counted).
  *
  * @param siteId - The site to filter items by. If falsy, returns 0.
  * @returns The number of actionable low-stock items.
@@ -67,14 +84,6 @@ export function useLowStockCount(siteId?: string | null): number {
         for (const d of snapshot.docs) {
           const data = d.data();
 
-          // Skip items the user has already dismissed
-          if (data.userDismissedAlert === true) {
-            console.log(
-              `[useLowStockCount]   SKIP (dismissed): ${data.name ?? d.id}`
-            );
-            continue;
-          }
-
           // Use ONLY the canonical quantity fields - do NOT fall back to
           // `quantity` or `min` which may come from alertsLog-style data.
           const currentQty: number =
@@ -87,9 +96,38 @@ export function useLowStockCount(siteId?: string | null): number {
           const isLow = minQty > 0 && currentQty <= minQty;
 
           if (isLow) {
+            // Determine current alert severity
+            let alertState: string;
+            if (currentQty <= 0) {
+              alertState = "OUT";
+            } else if (currentQty <= Math.floor(minQty / 2)) {
+              alertState = "CRITICAL";
+            } else {
+              alertState = "LOW";
+            }
+
+            // Smart auto-reset: If dismissed, only skip if current severity
+            // is the same or better than what was dismissed. If worse → count it.
+            if (data.userDismissedAlert === true) {
+              const dismissedState = typeof data.userDismissedAlertState === "string"
+                ? data.userDismissedAlertState
+                : "OK"; // fallback for legacy dismissals without state
+              if (getSeverityLevel(alertState) > getSeverityLevel(dismissedState)) {
+                console.log(
+                  `[useLowStockCount]   AUTO-RESET (dismissed at ${dismissedState}, now ${alertState}): "${data.name ?? d.id}"`
+                );
+                // Fall through — count the item
+              } else {
+                console.log(
+                  `[useLowStockCount]   SKIP (dismissed at ${dismissedState}, now ${alertState}): ${data.name ?? d.id}`
+                );
+                continue;
+              }
+            }
+
             lowCount++;
             console.log(
-              `[useLowStockCount]   LOW: "${data.name ?? d.id}" qty=${currentQty} min=${minQty}`
+              `[useLowStockCount]   LOW: "${data.name ?? d.id}" qty=${currentQty} min=${minQty} state=${alertState}`
             );
           }
         }
