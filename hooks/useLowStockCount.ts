@@ -2,8 +2,10 @@
 // Shared hook that returns the real-time count of low-stock items.
 // Used by _layout.tsx to set the tab badge and by alerts.tsx for consistency.
 //
-// FIX v2 - 2026-03-13
+// FIX v3 - 2026-03-13
 // --------------------
+// - Extracted calculateAlertState() for consistent severity logic with alerts.tsx.
+//   Uses minQty * 0.5 (not Math.floor) for CRITICAL threshold.
 // - Only uses the canonical `currentQuantity` and `minQuantity` fields from
 //   the items collection. No fallback to `quantity` or `min`.
 // - Added a listener-generation guard to prevent stale onSnapshot callbacks
@@ -30,6 +32,22 @@ function getSeverityLevel(state: string): number {
 }
 
 /**
+ * Calculates the alert severity from actual quantity values.
+ * Must stay in sync with the same function in alerts.tsx.
+ *
+ * - OUT:      currentQuantity <= 0
+ * - CRITICAL: currentQuantity > 0 AND currentQuantity <= (minQuantity * 0.5)
+ * - LOW:      currentQuantity > (minQuantity * 0.5) AND currentQuantity <= minQuantity
+ * - OK:       currentQuantity > minQuantity
+ */
+function calculateAlertState(currentQty: number, minQty: number): string {
+  if (currentQty <= 0) return "OUT";
+  if (currentQty <= minQty * 0.5) return "CRITICAL";
+  if (currentQty <= minQty) return "LOW";
+  return "OK";
+}
+
+/**
  * Returns the live count of items that are currently low on stock.
  *
  * An item is considered "low stock" when:
@@ -45,7 +63,7 @@ function getSeverityLevel(state: string): number {
 export function useLowStockCount(siteId?: string | null): number {
   const [count, setCount] = useState(0);
 
-  // Generation counter - incremented on every effect run so stale listeners
+  // Generation counter — incremented on every effect run so stale listeners
   // from a previous mount/run can detect they are outdated and bail out.
   const generationRef = useRef(0);
 
@@ -54,9 +72,9 @@ export function useLowStockCount(siteId?: string | null): number {
     // will see a mismatch and skip the setState call.
     const thisGeneration = ++generationRef.current;
 
-    // If no siteId, nothing to count - reset to 0 immediately
+    // If no siteId, nothing to count — reset to 0 immediately
     if (!siteId) {
-      console.log("[useLowStockCount] No siteId provided - returning 0");
+      console.log("[useLowStockCount] No siteId provided — returning 0");
       setCount(0);
       return;
     }
@@ -70,10 +88,10 @@ export function useLowStockCount(siteId?: string | null): number {
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        // Guard: if a newer effect has started, this listener is stale - bail
+        // Guard: if a newer effect has started, this listener is stale — bail
         if (generationRef.current !== thisGeneration) {
           console.log(
-            `[useLowStockCount] Stale snapshot callback (gen=${thisGeneration}, current=${generationRef.current}) - ignoring`
+            `[useLowStockCount] Stale snapshot callback (gen=${thisGeneration}, current=${generationRef.current}) — ignoring`
           );
           return;
         }
@@ -84,7 +102,7 @@ export function useLowStockCount(siteId?: string | null): number {
         for (const d of snapshot.docs) {
           const data = d.data();
 
-          // Use ONLY the canonical quantity fields - do NOT fall back to
+          // Use ONLY the canonical quantity fields — do NOT fall back to
           // `quantity` or `min` which may come from alertsLog-style data.
           const currentQty: number =
             typeof data.currentQuantity === "number"
@@ -96,15 +114,8 @@ export function useLowStockCount(siteId?: string | null): number {
           const isLow = minQty > 0 && currentQty <= minQty;
 
           if (isLow) {
-            // Determine current alert severity
-            let alertState: string;
-            if (currentQty <= 0) {
-              alertState = "OUT";
-            } else if (currentQty <= Math.floor(minQty / 2)) {
-              alertState = "CRITICAL";
-            } else {
-              alertState = "LOW";
-            }
+            // Determine current alert severity using shared logic
+            const alertState = calculateAlertState(currentQty, minQty);
 
             // Smart auto-reset: If dismissed, only skip if current severity
             // is the same or better than what was dismissed. If worse → count it.

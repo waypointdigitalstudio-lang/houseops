@@ -4,6 +4,15 @@
 // deriving alerts from `alertsLog`. This is more reliable because the items
 // collection holds the current stock state (isLowStock, alertState, etc.).
 // Activity Log view remains unchanged — still queries alertsLog collection.
+//
+// FIX v3 - 2026-03-13
+// --------------------
+// - Moved locallyDismissedItemIds filtering OUT of the onSnapshot callback
+//   and into a useMemo. This prevents re-subscribing on every dismiss and
+//   avoids stale-closure issues.
+// - Added generation guard (like useLowStockCount) to prevent stale callbacks.
+// - Fixed CRITICAL threshold: now uses minQty * 0.5 (not Math.floor).
+// - Enhanced debug logging throughout.
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -65,7 +74,8 @@ interface AlertEntry {
   minQuantity: number;
   lastAlertAt: Timestamp | null;
   isLowStock: boolean;
-  userDismissed: boolean; // locally tracked for dismiss animation
+  userDismissedAlert: boolean;       // from Firestore
+  userDismissedAlertState: string;   // from Firestore (severity when dismissed)
 }
 
 // ─── Active-state accent color ──────────────────────────────────────
@@ -118,7 +128,10 @@ function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; 
   }
 }
 
-/** Returns a numeric severity level for alert states (higher = worse) */
+/**
+ * Returns a numeric severity level for alert states (higher = worse).
+ * OUT=3, CRITICAL=2, LOW=1, OK=0
+ */
 function getSeverityLevel(state: string): number {
   switch (state.toUpperCase()) {
     case "OUT":
@@ -131,6 +144,21 @@ function getSeverityLevel(state: string): number {
     default:
       return 0;
   }
+}
+
+/**
+ * Calculates the alert severity from actual quantity values.
+ *
+ * - OUT:      currentQuantity <= 0
+ * - CRITICAL: currentQuantity > 0 AND currentQuantity <= (minQuantity * 0.5)
+ * - LOW:      currentQuantity > (minQuantity * 0.5) AND currentQuantity <= minQuantity
+ * - OK:       currentQuantity > minQuantity
+ */
+function calculateAlertState(currentQty: number, minQty: number): string {
+  if (currentQty <= 0) return "OUT";
+  if (currentQty <= minQty * 0.5) return "CRITICAL";
+  if (currentQty <= minQty) return "LOW";
+  return "OK";
 }
 
 function getStatusColor(status: string): string {
@@ -198,11 +226,8 @@ function inferActionFromStates(prev?: string, next?: string): string {
   if (!prev && !next) return "added";
   const p = (prev ?? "").toUpperCase();
   const n = (next ?? "").toUpperCase();
-  // Stock went from a bad state to OK → "added" (restocked)
   if ((p === "LOW" || p === "OUT" || p === "CRITICAL") && n === "OK") return "added";
-  // Stock went from OK to a bad state → "deducted"
   if (p === "OK" && (n === "LOW" || n === "OUT" || n === "CRITICAL")) return "deducted";
-  // Both bad but different → "edited"
   if (p !== n) return "edited";
   return "edited";
 }
@@ -227,15 +252,14 @@ function getDateCutoff(filter: DateFilter): Date | null {
 
 export default function AlertsScreen() {
   const theme = useAppTheme();
-  // FIX: Get siteId from user profile — needed to scope Firestore queries
-  // so they pass security rules (unscoped queries are rejected)
   const { siteId, loading: profileLoading } = useUserProfile();
 
   // View toggle
   const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
 
   // ─── Alerts state (from items collection) ─────────────────────────
-  const [alerts, setAlerts] = useState<AlertEntry[]>([]);
+  // rawAlerts: ALL low-stock items from Firestore (no dismiss filtering)
+  const [rawAlerts, setRawAlerts] = useState<AlertEntry[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
 
   // Dismissed alerts — tracks IDs currently animating out
@@ -244,6 +268,9 @@ export default function AlertsScreen() {
   const [locallyDismissedItemIds, setLocallyDismissedItemIds] = useState<Set<string>>(new Set());
   // Animation values for each alert card
   const animValues = useRef<Map<string, Animated.Value>>(new Map());
+
+  // Generation counter to prevent stale snapshot callbacks
+  const alertGenRef = useRef(0);
 
   // ─── Activity log state (from alertsLog collection, unchanged) ────
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
@@ -260,77 +287,60 @@ export default function AlertsScreen() {
     return animValues.current.get(id)!;
   }, []);
 
-  // ─── Fetch alerts from items collection ───────────────────────────
-  // FIX: Query items for the user's site and compute low-stock status from
-  // actual quantities (currentQuantity <= minQuantity) instead of relying
-  // on the `isLowStock` boolean which can become stale when stock is
-  // replenished but the field is never reset to false.
-  // FIX: Must filter by siteId to satisfy Firestore security rules.
+  // ─── Fetch ALL low-stock items from items collection ──────────────
+  // FIX v3: No longer depends on locallyDismissedItemIds — that filtering
+  // is done in the useMemo below. This prevents re-subscribing on dismiss.
   useEffect(() => {
+    const thisGeneration = ++alertGenRef.current;
+
     if (!siteId) {
-      setAlerts([]);
+      setRawAlerts([]);
       setLoadingAlerts(false);
       return;
     }
 
     setLoadingAlerts(true);
 
-    console.log("[AlertsScreen] Subscribing to items for siteId:", siteId);
+    console.log(`[AlertsScreen] Subscribing to items (siteId="${siteId}", gen=${thisGeneration})`);
 
-    // FIX: Filter by siteId (matches useLowStockCount behavior & Firestore rules)
     const q = query(collection(db, "items"), where("siteId", "==", siteId));
 
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        console.log("[AlertsScreen] items snapshot fired. doc count =", snapshot.docs.length);
+        // Guard: if a newer effect has started, this listener is stale
+        if (alertGenRef.current !== thisGeneration) {
+          console.log(
+            `[AlertsScreen] Stale snapshot (gen=${thisGeneration}, current=${alertGenRef.current}) — ignoring`
+          );
+          return;
+        }
+
+        console.log(`[AlertsScreen] items snapshot fired (gen=${thisGeneration}). doc count =`, snapshot.docs.length);
 
         const alertItems: AlertEntry[] = [];
 
         for (const d of snapshot.docs) {
           const data = d.data();
 
-          // Skip items the user has locally dismissed (optimistic UI)
-          if (locallyDismissedItemIds.has(d.id)) continue;
-
-          // FIX v2: Use ONLY canonical quantity fields — no fallback to
-          // `quantity`/`min` which could match alertsLog-style data.
           const currentQty: number =
             typeof data.currentQuantity === "number" ? data.currentQuantity : 0;
           const minQty: number =
             typeof data.minQuantity === "number" ? data.minQuantity : 0;
 
+          // Debug: log every item's quantities
+          console.log(
+            `[AlertsScreen]   Item "${data.name ?? d.id}": qty=${currentQty}, min=${minQty}, ` +
+            `userDismissed=${data.userDismissedAlert ?? false}, dismissedState=${data.userDismissedAlertState ?? "n/a"}`
+          );
+
           // Only include items that are actually low on stock
           if (minQty > 0 && currentQty <= minQty) {
-            // Determine alert severity from actual quantities
-            let alertState: string;
-            if (currentQty <= 0) {
-              alertState = "OUT";
-            } else if (currentQty <= Math.floor(minQty / 2)) {
-              alertState = "CRITICAL";
-            } else {
-              alertState = "LOW";
-            }
+            const alertState = calculateAlertState(currentQty, minQty);
 
-            // Smart auto-reset: If user dismissed this alert, check if
-            // the current severity is WORSE than what was dismissed.
-            // If worse → show the alert again (auto-reset the dismissal).
-            // If same or better → respect the dismissal, skip.
-            if (data.userDismissedAlert === true) {
-              const dismissedState = typeof data.userDismissedAlertState === "string"
-                ? data.userDismissedAlertState
-                : "OK"; // fallback for legacy dismissals without state
-              if (getSeverityLevel(alertState) > getSeverityLevel(dismissedState)) {
-                console.log(
-                  `[AlertsScreen] Auto-reset dismissed alert for "${data.name}": ` +
-                  `dismissed at ${dismissedState}, now ${alertState} (worse)`
-                );
-                // Fall through — show the alert
-              } else {
-                // Same or better severity — keep dismissed
-                continue;
-              }
-            }
+            console.log(
+              `[AlertsScreen]   → LOW STOCK: "${data.name ?? d.id}" state=${alertState} (qty=${currentQty}, min=${minQty})`
+            );
 
             alertItems.push({
               id: d.id,
@@ -338,39 +348,81 @@ export default function AlertsScreen() {
               itemName: data.name ?? "(unknown)",
               location: data.location ?? "",
               siteId: data.siteId ?? "",
-              alertState: alertState,
+              alertState,
               currentQuantity: currentQty,
               minQuantity: minQty,
               lastAlertAt: data.lastAlertAt ?? data.updatedAt ?? null,
               isLowStock: true,
-              userDismissed: false,
+              userDismissedAlert: data.userDismissedAlert === true,
+              userDismissedAlertState: typeof data.userDismissedAlertState === "string"
+                ? data.userDismissedAlertState
+                : "OK",
             });
           }
         }
 
-        // Sort: OUT/CRITICAL first, then LOW
-        alertItems.sort((a, b) => {
-          const priority = (s: string) => (s === "CRITICAL" || s === "OUT" ? 0 : 1);
-          return priority(a.alertState) - priority(b.alertState);
-        });
+        // Sort: OUT first, then CRITICAL, then LOW
+        alertItems.sort((a, b) => getSeverityLevel(b.alertState) - getSeverityLevel(a.alertState));
 
-        console.log("[AlertsScreen] Alert items from items collection:", alertItems.length);
-        if (alertItems.length > 0) {
-          console.log("[AlertsScreen] First alert:", alertItems[0].itemName, alertItems[0].alertState,
-            "qty:", alertItems[0].currentQuantity, "min:", alertItems[0].minQuantity);
-        }
+        console.log(`[AlertsScreen] Total low-stock items (before dismiss filter): ${alertItems.length}`);
 
-        setAlerts(alertItems);
+        setRawAlerts(alertItems);
         setLoadingAlerts(false);
       },
       (err) => {
         console.error("[AlertsScreen] Error fetching items for alerts:", err);
-        setLoadingAlerts(false);
+        if (alertGenRef.current === thisGeneration) {
+          setLoadingAlerts(false);
+        }
       }
     );
 
-    return () => unsub();
-  }, [siteId, locallyDismissedItemIds]);
+    return () => {
+      console.log(`[AlertsScreen] Unsubscribing items listener (gen=${thisGeneration})`);
+      unsub();
+    };
+  }, [siteId]); // FIX v3: only depends on siteId — no locallyDismissedItemIds
+
+  // ─── Filtered alerts (dismiss logic applied at render time) ───────
+  // FIX v3: Smart dismiss + local dismiss filtering is now a useMemo.
+  // This avoids re-subscribing to Firestore on every dismiss.
+  const alerts = useMemo(() => {
+    const result: AlertEntry[] = [];
+
+    for (const item of rawAlerts) {
+      // Skip items the user has locally dismissed (optimistic UI)
+      if (locallyDismissedItemIds.has(item.itemId)) {
+        console.log(`[AlertsScreen] Filtered out (locally dismissed): "${item.itemName}"`);
+        continue;
+      }
+
+      // Smart auto-reset: If user dismissed this alert in Firestore,
+      // check if the current severity is WORSE than what was dismissed.
+      // If worse → show the alert again (auto-reset the dismissal).
+      // If same or better → respect the dismissal, skip.
+      if (item.userDismissedAlert) {
+        const currentSeverity = getSeverityLevel(item.alertState);
+        const dismissedSeverity = getSeverityLevel(item.userDismissedAlertState);
+
+        if (currentSeverity > dismissedSeverity) {
+          console.log(
+            `[AlertsScreen] Auto-reset: "${item.itemName}" dismissed at ${item.userDismissedAlertState}, now ${item.alertState} (worse) → SHOWING`
+          );
+          // Fall through — show the alert
+        } else {
+          console.log(
+            `[AlertsScreen] Filtered out (dismissed at ${item.userDismissedAlertState}, now ${item.alertState}): "${item.itemName}"`
+          );
+          continue;
+        }
+      }
+
+      result.push(item);
+    }
+
+    console.log(`[AlertsScreen] Final visible alerts: ${result.length} (from ${rawAlerts.length} raw)`);
+    return result;
+  }, [rawAlerts, locallyDismissedItemIds]);
 
   // ─── Dismiss handler (updates the item document) ──────────────────
   const handleDismissAlert = useCallback(
@@ -406,9 +458,11 @@ export default function AlertsScreen() {
                   await updateDoc(doc(db, "items", alert.itemId), {
                     userDismissedAlert: true,
                     userDismissedAlertAt: new Date(),
-                    userDismissedAlertState: alert.alertState, // e.g. "LOW", "CRITICAL", "OUT"
+                    userDismissedAlertState: alert.alertState,
                   });
-                  console.log("[AlertsScreen] User dismissed item alert:", alert.itemId, alert.itemName, "at state:", alert.alertState);
+                  console.log(
+                    `[AlertsScreen] Dismissed: "${alert.itemName}" (${alert.itemId}) at state=${alert.alertState}`
+                  );
                 } catch (err) {
                   console.error("[AlertsScreen] Failed to dismiss item alert:", err);
                   // Revert local dismiss on error
@@ -430,9 +484,6 @@ export default function AlertsScreen() {
   );
 
   // ─── Fetch activities from alertsLog ────────────────────────────
-  // NOTE: alertsLog documents do NOT have a siteId field, so we query ALL
-  // documents without filtering by siteId.  The items collection DOES have
-  // siteId and is filtered above.
   useEffect(() => {
     setLoadingActivities(true);
 
@@ -457,8 +508,6 @@ export default function AlertsScreen() {
             prevState: data.prevState ?? "",
             nextState: data.nextState ?? "",
             status: data.status ?? data.nextState ?? "",
-            // FIX: Older alertsLog entries (from cloud functions) may lack the
-            // `action` field. Infer it from state changes when missing.
             action: data.action
               ? data.action
               : inferActionFromStates(data.prevState, data.nextState),
@@ -491,7 +540,7 @@ export default function AlertsScreen() {
     );
 
     return () => unsub();
-  }, []); // no siteId dependency — alertsLog docs don't have siteId
+  }, []);
 
   // ─── Filtered activities (UNCHANGED) ──────────────────────────────
   const filteredActivities = useMemo(() => {
@@ -1002,3 +1051,4 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
 });
+
