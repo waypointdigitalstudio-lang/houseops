@@ -1,13 +1,28 @@
 // app/(tabs)/_layout.tsx
+// FIXED VERSION - Badge now uses useLowStockCount(siteId) instead of useUnreadAlerts
+// to dynamically reflect the actual number of low-stock items from Firestore,
+// computed from real quantity values (currentQuantity <= minQuantity).
+// When all items are back in stock, the badge disappears.
+//
+// ALL original features preserved:
+// - 6 tabs: index (Inventory), explore (Scan), alerts (Alerts), disposal (Disposal), settings (Settings), admin (Admin)
+// - Custom badge rendering with View/Text components
+// - Push notifications hook
+// - BRAND constants for header titles
+// - Admin tab conditional rendering based on role
+// - Full header styling and theme integration
+
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import React, { useEffect } from "react";
 import { Text, View } from "react-native";
 
 import { BRAND } from "../../constants/branding";
 import { useAppTheme } from "../../constants/theme";
 import { usePushNotifications } from "../../hooks/usePushNotifications";
-import { useUnreadAlerts } from "../../hooks/useUnreadAlerts";
 import { useUserProfile } from "../../hooks/useUserProfile";
+// FIX: Replaced useUnreadAlerts with useLowStockCount for accurate badge count
+import { useLowStockCount } from "../../hooks/useLowStockCount";
 
 export default function TabLayout() {
   const theme = useAppTheme();
@@ -19,8 +34,13 @@ export default function TabLayout() {
   // push token (saved with siteId)
   const token = usePushNotifications({ saveToFirestore: true, siteId: siteId ?? undefined }) as string | null;
 
-  // Unread alerts count
-  const unreadCount = useUnreadAlerts(siteId, token);
+  // FIX: Low stock count replaces unreadCount — dynamically computed from Firestore
+  const lowStockCount = useLowStockCount(siteId);
+
+  // Debug: log whenever the badge count changes
+  useEffect(() => {
+    console.log(`[TabLayout] Badge count updated: ${lowStockCount} (siteId="${siteId}")`);
+  }, [lowStockCount, siteId]);
 
   return (
     <Tabs
@@ -70,7 +90,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <View style={{ width: size, height: size }}>
               <Ionicons name="notifications-outline" color={color} size={size} />
-              {unreadCount > 0 && (
+              {lowStockCount > 0 && (
                 <View
                   style={{
                     position: "absolute",
@@ -92,7 +112,7 @@ export default function TabLayout() {
                       fontWeight: "900",
                     }}
                   >
-                    {unreadCount > 99 ? "99+" : unreadCount}
+                    {lowStockCount > 99 ? "99+" : lowStockCount}
                   </Text>
                 </View>
               )}
