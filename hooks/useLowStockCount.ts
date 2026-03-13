@@ -11,6 +11,13 @@
 // - Added a listener-generation guard to prevent stale onSnapshot callbacks
 //   from updating state after the effect has been cleaned up.
 // - Count is always computed fresh from the snapshot (never accumulated).
+//
+// FIX v4 - 2026-03-13  (Auto-clear dismissed alerts)
+// --------------------
+// - Dismissal is auto-cleared (alert counted again) if ANY of:
+//     1. 24 hours have passed since `userDismissedAlertAt`
+//     2. Current quantity > `userDismissedAlertQuantity` (restocked)
+//     3. Current severity is worse than dismissed severity (already had this)
 
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
@@ -47,6 +54,9 @@ function calculateAlertState(currentQty: number, minQty: number): string {
   return "OK";
 }
 
+/** Auto-clear dismissed alerts after this many milliseconds (24 hours) */
+const DISMISS_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Returns the live count of items that are currently low on stock.
  *
@@ -54,8 +64,10 @@ function calculateAlertState(currentQty: number, minQty: number): string {
  *   currentQuantity <= minQuantity  AND  minQuantity > 0
  *
  * Items where `userDismissedAlert === true` are excluded from the count,
- * UNLESS the current severity is worse than the dismissed severity
- * (smart auto-reset: e.g. dismissed at LOW, now CRITICAL → counted).
+ * UNLESS the dismissal is auto-cleared by any of:
+ *   1. 24 hours have passed since `userDismissedAlertAt`
+ *   2. Current quantity > `userDismissedAlertQuantity` (item restocked)
+ *   3. Current severity is worse than dismissed severity
  *
  * @param siteId - The site to filter items by. If falsy, returns 0.
  * @returns The number of actionable low-stock items.
@@ -117,15 +129,46 @@ export function useLowStockCount(siteId?: string | null): number {
             // Determine current alert severity using shared logic
             const alertState = calculateAlertState(currentQty, minQty);
 
-            // Smart auto-reset: If dismissed, only skip if current severity
-            // is the same or better than what was dismissed. If worse → count it.
+            // Auto-clear logic: If dismissed, check if dismissal should be cleared.
+            // Count the item if ANY auto-clear condition is met.
             if (data.userDismissedAlert === true) {
               const dismissedState = typeof data.userDismissedAlertState === "string"
                 ? data.userDismissedAlertState
                 : "OK"; // fallback for legacy dismissals without state
-              if (getSeverityLevel(alertState) > getSeverityLevel(dismissedState)) {
+              let autoClearReason: string | null = null;
+
+              // Check 1: Time-based expiry (24 hours)
+              const dismissedAt = data.userDismissedAlertAt;
+              if (dismissedAt) {
+                let dismissedTime = 0;
+                if (typeof dismissedAt.toDate === "function") {
+                  dismissedTime = dismissedAt.toDate().getTime();
+                } else if (typeof dismissedAt.getTime === "function") {
+                  dismissedTime = dismissedAt.getTime();
+                }
+                if (dismissedTime > 0 && Date.now() - dismissedTime >= DISMISS_EXPIRY_MS) {
+                  autoClearReason = `24h expired`;
+                }
+              }
+
+              // Check 2: Restock detection (quantity increased since dismissal)
+              const dismissedQty = data.userDismissedAlertQuantity;
+              if (
+                !autoClearReason &&
+                typeof dismissedQty === "number" &&
+                currentQty > dismissedQty
+              ) {
+                autoClearReason = `restocked (was ${dismissedQty}, now ${currentQty})`;
+              }
+
+              // Check 3: Severity worsened
+              if (!autoClearReason && getSeverityLevel(alertState) > getSeverityLevel(dismissedState)) {
+                autoClearReason = `severity worsened (${dismissedState} → ${alertState})`;
+              }
+
+              if (autoClearReason) {
                 console.log(
-                  `[useLowStockCount]   AUTO-RESET (dismissed at ${dismissedState}, now ${alertState}): "${data.name ?? d.id}"`
+                  `[useLowStockCount]   AUTO-CLEAR (${autoClearReason}): "${data.name ?? d.id}"`
                 );
                 // Fall through — count the item
               } else {

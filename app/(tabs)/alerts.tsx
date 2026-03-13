@@ -13,6 +13,14 @@
 // - Added generation guard (like useLowStockCount) to prevent stale callbacks.
 // - Fixed CRITICAL threshold: now uses minQty * 0.5 (not Math.floor).
 // - Enhanced debug logging throughout.
+//
+// FIX v4 - 2026-03-13  (Auto-clear dismissed alerts)
+// --------------------
+// - Dismiss now stores `userDismissedAlertQuantity` (qty at dismissal).
+// - Alert reappears (auto-clear) if ANY of:
+//     1. 24 hours have passed since dismissal
+//     2. Current quantity > quantity at dismissal (item restocked)
+//     3. Current severity is worse than dismissed severity (already had this)
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -78,11 +86,16 @@ interface AlertEntry {
   isLowStock: boolean;
   userDismissedAlert: boolean;       // from Firestore
   userDismissedAlertState: string;   // from Firestore (severity when dismissed)
+  userDismissedAlertAt: Timestamp | null;   // timestamp when alert was dismissed
+  userDismissedAlertQuantity: number | null; // quantity at time of dismissal
 }
 
 // ─── Active-state accent color ──────────────────────────────────────
 const ACTIVE_BG = "#2563eb"; // blue-600
 const ACTIVE_TEXT = "#ffffff";
+
+/** Auto-clear dismissed alerts after this many milliseconds (24 hours) */
+const DISMISS_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -363,6 +376,11 @@ export default function AlertsScreen() {
               userDismissedAlertState: typeof data.userDismissedAlertState === "string"
                 ? data.userDismissedAlertState
                 : "OK",
+              userDismissedAlertAt: data.userDismissedAlertAt ?? null,
+              userDismissedAlertQuantity:
+                typeof data.userDismissedAlertQuantity === "number"
+                  ? data.userDismissedAlertQuantity
+                  : null,
             });
           }
         }
@@ -402,17 +420,47 @@ export default function AlertsScreen() {
         continue;
       }
 
-      // Smart auto-reset: If user dismissed this alert in Firestore,
-      // check if the current severity is WORSE than what was dismissed.
-      // If worse → show the alert again (auto-reset the dismissal).
-      // If same or better → respect the dismissal, skip.
+      // Auto-clear logic: If user dismissed this alert in Firestore,
+      // check if the dismissal should be cleared (alert shown again).
+      // Show alert if ANY of these conditions are true:
+      //   1. 24 hours have passed since dismissal
+      //   2. Current quantity > quantity at dismissal (item restocked)
+      //   3. Current severity is worse than dismissed severity
       if (item.userDismissedAlert) {
         const currentSeverity = getSeverityLevel(item.alertState);
         const dismissedSeverity = getSeverityLevel(item.userDismissedAlertState);
+        let autoClearReason: string | null = null;
 
-        if (currentSeverity > dismissedSeverity) {
+        // Check 1: Time-based expiry (24 hours)
+        if (item.userDismissedAlertAt) {
+          let dismissedTime = 0;
+          if (typeof (item.userDismissedAlertAt as any).toDate === "function") {
+            dismissedTime = (item.userDismissedAlertAt as Timestamp).toDate().getTime();
+          } else if (typeof (item.userDismissedAlertAt as any).getTime === "function") {
+            dismissedTime = (item.userDismissedAlertAt as any).getTime();
+          }
+          if (dismissedTime > 0 && Date.now() - dismissedTime >= DISMISS_EXPIRY_MS) {
+            autoClearReason = `24h expired (dismissed ${Math.round((Date.now() - dismissedTime) / 3600000)}h ago)`;
+          }
+        }
+
+        // Check 2: Restock detection (quantity increased since dismissal)
+        if (
+          !autoClearReason &&
+          item.userDismissedAlertQuantity !== null &&
+          item.currentQuantity > item.userDismissedAlertQuantity
+        ) {
+          autoClearReason = `restocked (was ${item.userDismissedAlertQuantity}, now ${item.currentQuantity})`;
+        }
+
+        // Check 3: Severity worsened (existing smart auto-reset)
+        if (!autoClearReason && currentSeverity > dismissedSeverity) {
+          autoClearReason = `severity worsened (${item.userDismissedAlertState} → ${item.alertState})`;
+        }
+
+        if (autoClearReason) {
           console.log(
-            `[AlertsScreen] Auto-reset: "${item.itemName}" dismissed at ${item.userDismissedAlertState}, now ${item.alertState} (worse) → SHOWING`
+            `[AlertsScreen] Auto-clear: "${item.itemName}" — ${autoClearReason} → SHOWING`
           );
           // Fall through — show the alert
         } else {
@@ -465,6 +513,7 @@ export default function AlertsScreen() {
                     userDismissedAlert: true,
                     userDismissedAlertAt: new Date(),
                     userDismissedAlertState: alert.alertState,
+                    userDismissedAlertQuantity: alert.currentQuantity,
                   });
                   console.log(
                     `[AlertsScreen] Dismissed: "${alert.itemName}" (${alert.itemId}) at state=${alert.alertState}`
@@ -523,6 +572,7 @@ export default function AlertsScreen() {
                   userDismissedAlert: deleteField(),
                   userDismissedAlertState: deleteField(),
                   userDismissedAlertAt: deleteField(),
+                  userDismissedAlertQuantity: deleteField(),
                 })
               );
 
