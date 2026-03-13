@@ -2,26 +2,27 @@
 // Shared hook that returns the real-time count of low-stock items.
 // Used by _layout.tsx to set the tab badge.
 //
-// SIMPLIFIED v7 - 2026-03-13
-// ---------------------------
-// - REMOVED all dismiss/auto-clear logic entirely
-// - Simply counts items where currentQuantity <= minQuantity
-// - Clean, reliable, no sync issues
+// v8 - 2026-03-13 — Dismiss-aware counting
+// ------------------------------------------
+// Counts items where currentQuantity <= minQuantity AND the alert is visible:
+//   - Not dismissed (userDismissedAlert is false/undefined), OR
+//   - Quantity changed since dismissal (currentQuantity !== userDismissedAlertQuantity)
 
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import { db } from "../firebaseConfig";
 
 /**
- * Returns the live count of items that are currently low on stock.
+ * Returns the live count of items that have visible low-stock alerts.
  *
- * An item is considered "low stock" when:
- *   currentQuantity <= minQuantity  AND  minQuantity > 0
- *
- * No dismiss filtering — if it's low stock, it counts.
+ * An item is counted when:
+ *   1. currentQuantity <= minQuantity  AND  minQuantity > 0
+ *   2. AND one of:
+ *      a. userDismissedAlert is false/undefined (not dismissed)
+ *      b. currentQuantity !== userDismissedAlertQuantity (quantity changed since dismiss)
  *
  * @param siteId - The site to filter items by. If falsy, returns 0.
- * @returns The number of low-stock items.
+ * @returns The number of visible low-stock alerts.
  */
 export function useLowStockCount(siteId?: string | null): number {
   const [count, setCount] = useState(0);
@@ -68,13 +69,23 @@ export function useLowStockCount(siteId?: string | null): number {
           const minQty: number =
             typeof data.minQuantity === "number" ? data.minQuantity : 0;
 
+          // Must be low stock first
           if (minQty > 0 && currentQty <= minQty) {
-            lowCount++;
+            const dismissed: boolean = data.userDismissedAlert === true;
+            const dismissedQty =
+              typeof data.userDismissedAlertQuantity === "number"
+                ? data.userDismissedAlertQuantity
+                : null;
+
+            // Show (count) if: not dismissed, OR quantity changed since dismissal
+            if (!dismissed || dismissedQty === null || currentQty !== dismissedQty) {
+              lowCount++;
+            }
           }
         }
 
         console.log(
-          `[useLowStockCount] Snapshot (gen=${thisGeneration}): ${snapshot.docs.length} items, ${lowCount} low-stock`
+          `[useLowStockCount] Snapshot (gen=${thisGeneration}): ${snapshot.docs.length} items, ${lowCount} visible low-stock`
         );
 
         setCount(lowCount);

@@ -1,34 +1,31 @@
 // app/(tabs)/alerts.tsx
 // Alerts & Activity Log Screen
 //
-// SIMPLIFIED v7 - 2026-03-13
-// ---------------------------
-// - REMOVED all dismiss functionality entirely:
-//   - No swipe-to-dismiss
-//   - No handleDismissAlert
-//   - No "Reset Dismissed" button
-//   - No userDismissedAlert filtering
-//   - No locallyDismissedItemIds state
-//   - No dismiss animations
-//   - No auto-clear logic
-// - Alerts now simply show ALL items where currentQuantity <= minQuantity
-// - Activity Log functionality is fully preserved
-// - Date and action filters preserved
-// - Export CSV preserved
+// v8 - 2026-03-13 — Simple dismiss feature
+// ------------------------------------------
+// - Tap an alert card to dismiss it
+// - Stores userDismissedAlert + userDismissedAlertQuantity in Firestore
+// - Alert reappears if currentQuantity changes from when it was dismissed
+// - Fade-out animation on dismiss
+// - No "Reset Dismissed" button needed
+// - Activity Log fully preserved
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   collection,
+  doc,
   onSnapshot,
   query,
   Timestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Platform,
   Pressable,
@@ -42,7 +39,7 @@ import { useUserProfile } from "../../hooks/useUserProfile";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-/** Activity log entry from alertsLog collection (unchanged) */
+/** Activity log entry from alertsLog collection */
 interface ActivityEntry {
   id: string;
   siteId: string;
@@ -72,6 +69,9 @@ interface AlertEntry {
   minQuantity: number;
   lastAlertAt: Timestamp | null;
   isLowStock: boolean;
+  // Dismiss fields from Firestore
+  userDismissedAlert: boolean;
+  userDismissedAlertQuantity: number | null;
 }
 
 // ─── Active-state accent color ──────────────────────────────────────
@@ -124,10 +124,6 @@ function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; 
   }
 }
 
-/**
- * Returns a numeric severity level for alert states (higher = worse).
- * OUT=3, CRITICAL=2, LOW=1, OK=0
- */
 function getSeverityLevel(state: string): number {
   switch (state.toUpperCase()) {
     case "OUT":
@@ -142,14 +138,6 @@ function getSeverityLevel(state: string): number {
   }
 }
 
-/**
- * Calculates the alert severity from actual quantity values.
- *
- * - OUT:      currentQuantity <= 0
- * - CRITICAL: currentQuantity > 0 AND currentQuantity <= (minQuantity * 0.5)
- * - LOW:      currentQuantity > (minQuantity * 0.5) AND currentQuantity <= minQuantity
- * - OK:       currentQuantity > minQuantity
- */
 function calculateAlertState(currentQty: number, minQty: number): string {
   if (currentQty <= 0) return "OUT";
   if (currentQty <= minQty * 0.5) return "CRITICAL";
@@ -217,7 +205,6 @@ function formatFullTimestamp(ts: Timestamp | null): string {
   }
 }
 
-/** Infer an action label from prevState/nextState when the `action` field is missing */
 function inferActionFromStates(prev?: string, next?: string): string {
   if (!prev && !next) return "added";
   const p = (prev ?? "").toUpperCase();
@@ -244,6 +231,114 @@ function getDateCutoff(filter: DateFilter): Date | null {
   return null;
 }
 
+/**
+ * Determines whether a low-stock alert should be visible to the user.
+ *
+ * An alert is shown if:
+ *   1. It was never dismissed (userDismissedAlert is false/undefined), OR
+ *   2. The quantity has changed since it was dismissed
+ *      (currentQuantity !== userDismissedAlertQuantity)
+ */
+function shouldShowAlert(item: AlertEntry): boolean {
+  if (!item.userDismissedAlert) return true;
+  if (item.userDismissedAlertQuantity === null || item.userDismissedAlertQuantity === undefined) return true;
+  return item.currentQuantity !== item.userDismissedAlertQuantity;
+}
+
+// ─── Animated Alert Card Component ──────────────────────────────────
+
+function AlertCard({
+  item,
+  theme,
+  onDismiss,
+}: {
+  item: AlertEntry;
+  theme: ReturnType<typeof useAppTheme>;
+  onDismiss: (item: AlertEntry) => void;
+}) {
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const statusColor = getStatusColor(item.alertState);
+  const isOut = item.alertState === "OUT" || item.alertState === "CRITICAL";
+
+  const handlePress = useCallback(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      onDismiss(item);
+    });
+  }, [item, onDismiss, fadeAnim]);
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim }}>
+      <Pressable onPress={handlePress}>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.card,
+              borderColor: isOut ? "#ef444440" : theme.border,
+              borderLeftWidth: 3,
+              borderLeftColor: statusColor,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: statusColor + "1A" },
+            ]}
+          >
+            <Ionicons
+              name={isOut ? "alert-circle" : "warning"}
+              size={20}
+              color={statusColor}
+            />
+          </View>
+
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
+                {item.itemName}
+              </Text>
+            </View>
+
+            {/* Location */}
+            {item.location ? (
+              <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                📍 {item.location}
+              </Text>
+            ) : null}
+
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
+              <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
+                <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                  {item.alertState}
+                </Text>
+              </View>
+              <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+                Qty: {item.currentQuantity} / Min: {item.minQuantity}
+              </Text>
+            </View>
+
+            {item.lastAlertAt && (
+              <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 3 }}>
+                Last alert {formatTimestamp(item.lastAlertAt)}
+              </Text>
+            )}
+
+            {/* Tap to dismiss hint */}
+            <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 4, fontStyle: "italic", opacity: 0.7 }}>
+              Tap to dismiss
+            </Text>
+          </View>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export default function AlertsScreen() {
@@ -257,10 +352,13 @@ export default function AlertsScreen() {
   const [alerts, setAlerts] = useState<AlertEntry[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
 
+  // Track locally dismissed IDs to hide them instantly (before Firestore round-trip)
+  const [locallyDismissedIds, setLocallyDismissedIds] = useState<Set<string>>(new Set());
+
   // Generation counter to prevent stale snapshot callbacks
   const alertGenRef = useRef(0);
 
-  // ─── Activity log state (from alertsLog collection, unchanged) ────
+  // ─── Activity log state (from alertsLog collection) ────────────
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
 
@@ -268,8 +366,7 @@ export default function AlertsScreen() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
-  // ─── Fetch ALL low-stock items from items collection ──────────────
-  // Simple: just get items where currentQuantity <= minQuantity, no dismiss logic
+  // ─── Fetch low-stock items with dismiss filtering ─────────────────
   useEffect(() => {
     const thisGeneration = ++alertGenRef.current;
 
@@ -280,6 +377,8 @@ export default function AlertsScreen() {
     }
 
     setLoadingAlerts(true);
+    // Clear locally dismissed set on re-subscribe since Firestore will have the truth
+    setLocallyDismissedIds(new Set());
 
     console.log(`[AlertsScreen] Subscribing to items (siteId="${siteId}", gen=${thisGeneration})`);
 
@@ -288,7 +387,6 @@ export default function AlertsScreen() {
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        // Guard: if a newer effect has started, this listener is stale
         if (alertGenRef.current !== thisGeneration) {
           console.log(
             `[AlertsScreen] Stale snapshot (gen=${thisGeneration}, current=${alertGenRef.current}) — ignoring`
@@ -312,11 +410,7 @@ export default function AlertsScreen() {
           if (minQty > 0 && currentQty <= minQty) {
             const alertState = calculateAlertState(currentQty, minQty);
 
-            console.log(
-              `[AlertsScreen]   LOW STOCK: "${data.name ?? d.id}" state=${alertState} (qty=${currentQty}, min=${minQty})`
-            );
-
-            alertItems.push({
+            const entry: AlertEntry = {
               id: d.id,
               itemId: d.id,
               itemName: data.name ?? "(unknown)",
@@ -327,14 +421,31 @@ export default function AlertsScreen() {
               minQuantity: minQty,
               lastAlertAt: data.lastAlertAt ?? data.updatedAt ?? null,
               isLowStock: true,
-            });
+              userDismissedAlert: data.userDismissedAlert ?? false,
+              userDismissedAlertQuantity:
+                typeof data.userDismissedAlertQuantity === "number"
+                  ? data.userDismissedAlertQuantity
+                  : null,
+            };
+
+            // Apply dismiss filter: show if not dismissed, or if quantity changed
+            if (shouldShowAlert(entry)) {
+              console.log(
+                `[AlertsScreen]   VISIBLE: "${entry.itemName}" state=${alertState} (qty=${currentQty}, min=${minQty})`
+              );
+              alertItems.push(entry);
+            } else {
+              console.log(
+                `[AlertsScreen]   DISMISSED: "${entry.itemName}" (dismissed at qty=${entry.userDismissedAlertQuantity}, current=${currentQty})`
+              );
+            }
           }
         }
 
         // Sort: OUT first, then CRITICAL, then LOW
         alertItems.sort((a, b) => getSeverityLevel(b.alertState) - getSeverityLevel(a.alertState));
 
-        console.log(`[AlertsScreen] Total low-stock alerts: ${alertItems.length}`);
+        console.log(`[AlertsScreen] Total visible alerts: ${alertItems.length}`);
 
         setAlerts(alertItems);
         setLoadingAlerts(false);
@@ -353,11 +464,50 @@ export default function AlertsScreen() {
     };
   }, [siteId]);
 
+  // ─── Dismiss handler ──────────────────────────────────────────────
+  const handleDismiss = useCallback(
+    async (item: AlertEntry) => {
+      console.log(`[AlertsScreen] Dismissing "${item.itemName}" (id=${item.itemId}, qty=${item.currentQuantity})`);
+
+      // Immediately hide locally
+      setLocallyDismissedIds((prev) => {
+        const next = new Set(prev);
+        next.add(item.itemId);
+        return next;
+      });
+
+      // Persist to Firestore
+      try {
+        const itemRef = doc(db, "items", item.itemId);
+        await updateDoc(itemRef, {
+          userDismissedAlert: true,
+          userDismissedAlertQuantity: item.currentQuantity,
+        });
+        console.log(`[AlertsScreen] Dismiss persisted for "${item.itemName}"`);
+      } catch (err) {
+        console.error(`[AlertsScreen] Error dismissing "${item.itemName}":`, err);
+        // If Firestore write fails, un-hide locally so user can retry
+        setLocallyDismissedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.itemId);
+          return next;
+        });
+      }
+    },
+    []
+  );
+
+  // ─── Visible alerts (exclude locally dismissed) ───────────────────
+  const visibleAlerts = useMemo(() => {
+    if (locallyDismissedIds.size === 0) return alerts;
+    return alerts.filter((a) => !locallyDismissedIds.has(a.id));
+  }, [alerts, locallyDismissedIds]);
+
   // ─── Fetch activities from alertsLog ────────────────────────────
   useEffect(() => {
     setLoadingActivities(true);
 
-    console.log("[AlertsScreen] Querying alertsLog (no siteId filter — field doesn't exist on these docs)");
+    console.log("[AlertsScreen] Querying alertsLog");
 
     const q = query(collection(db, "alertsLog"));
 
@@ -388,7 +538,6 @@ export default function AlertsScreen() {
           } as ActivityEntry;
         });
 
-        // Sort client-side by createdAt descending (newest first)
         items.sort((a, b) => {
           const aTime = a.createdAt && typeof a.createdAt.toMillis === "function"
             ? a.createdAt.toMillis()
@@ -412,7 +561,7 @@ export default function AlertsScreen() {
     return () => unsub();
   }, []);
 
-  // ─── Filtered activities (UNCHANGED) ──────────────────────────────
+  // ─── Filtered activities ──────────────────────────────────────────
   const filteredActivities = useMemo(() => {
     let result = [...activities];
 
@@ -436,7 +585,7 @@ export default function AlertsScreen() {
     return result;
   }, [activities, dateFilter, actionFilter]);
 
-  // ─── CSV Export (UNCHANGED) ───────────────────────────────────────
+  // ─── CSV Export ───────────────────────────────────────────────────
   async function exportCSV() {
     try {
       const header = "Timestamp,Action,Item Type,Item Name,Quantity,Min Qty,Prev State,New State\n";
@@ -469,7 +618,7 @@ export default function AlertsScreen() {
     }
   }
 
-  // ─── Render: Filter Chips (for Activity Log, UNCHANGED) ───────────
+  // ─── Render: Filter Chips (for Activity Log) ─────────────────────
   function FilterChips() {
     return (
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
@@ -540,7 +689,7 @@ export default function AlertsScreen() {
     );
   }
 
-  // ─── Render: Activity Item (UNCHANGED) ────────────────────────────
+  // ─── Render: Activity Item ────────────────────────────────────────
   function renderActivityItem({ item }: { item: ActivityEntry }) {
     const icon = getActionIcon(item.action);
     const statusColor = getStatusColor(item.nextState);
@@ -612,72 +761,15 @@ export default function AlertsScreen() {
     );
   }
 
-  // ─── Render: Alert Item (simple, no dismiss) ──────────────────────
-  function renderAlertItem({ item }: { item: AlertEntry }) {
-    const statusColor = getStatusColor(item.alertState);
-    const isOut = item.alertState === "OUT" || item.alertState === "CRITICAL";
+  // ─── Render: Alert Item (with fade-out dismiss) ───────────────────
+  const renderAlertItem = useCallback(
+    ({ item }: { item: AlertEntry }) => (
+      <AlertCard item={item} theme={theme} onDismiss={handleDismiss} />
+    ),
+    [theme, handleDismiss]
+  );
 
-    return (
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: theme.card,
-            borderColor: isOut ? "#ef444440" : theme.border,
-            borderLeftWidth: 3,
-            borderLeftColor: statusColor,
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.iconCircle,
-            { backgroundColor: statusColor + "1A" },
-          ]}
-        >
-          <Ionicons
-            name={isOut ? "alert-circle" : "warning"}
-            size={20}
-            color={statusColor}
-          />
-        </View>
-
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
-              {item.itemName}
-            </Text>
-          </View>
-
-          {/* Location */}
-          {item.location ? (
-            <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
-              📍 {item.location}
-            </Text>
-          ) : null}
-
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
-            <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
-              <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                {item.alertState}
-              </Text>
-            </View>
-            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
-              Qty: {item.currentQuantity} / Min: {item.minQuantity}
-            </Text>
-          </View>
-
-          {item.lastAlertAt && (
-            <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 3 }}>
-              Last alert {formatTimestamp(item.lastAlertAt)}
-            </Text>
-          )}
-        </View>
-      </View>
-    );
-  }
-
-  // ─── Effective loading states (combine profile + data loading) ─────
+  // ─── Effective loading states ─────────────────────────────────────
   const isAlertsLoading = profileLoading || loadingAlerts;
   const isActivitiesLoading = profileLoading || loadingActivities;
 
@@ -703,7 +795,7 @@ export default function AlertsScreen() {
                 { color: activeView === "alerts" ? ACTIVE_TEXT : theme.mutedText },
               ]}
             >
-              Alerts{alerts.length > 0 ? ` (${alerts.length})` : ""}
+              Alerts{visibleAlerts.length > 0 ? ` (${visibleAlerts.length})` : ""}
             </Text>
           </Pressable>
           <Pressable
@@ -732,7 +824,7 @@ export default function AlertsScreen() {
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
             </View>
-          ) : alerts.length === 0 ? (
+          ) : visibleAlerts.length === 0 ? (
             <View style={styles.center}>
               <Ionicons name="checkmark-circle" size={48} color="#22c55e" />
               <Text style={{ color: theme.mutedText, fontSize: 16, fontWeight: "600", marginTop: 12 }}>
@@ -744,7 +836,7 @@ export default function AlertsScreen() {
             </View>
           ) : (
             <FlatList
-              data={alerts}
+              data={visibleAlerts}
               keyExtractor={(item) => item.id}
               renderItem={renderAlertItem}
               contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
@@ -754,13 +846,11 @@ export default function AlertsScreen() {
         </>
       )}
 
-      {/* ─── Activity Log View (UNCHANGED) ───────────────────────────── */}
+      {/* ─── Activity Log View ───────────────────────────────────────── */}
       {activeView === "activity" && (
         <>
-          {/* Filters */}
           <FilterChips />
 
-          {/* Export button */}
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
             <Pressable
               onPress={exportCSV}
@@ -776,7 +866,6 @@ export default function AlertsScreen() {
             </Pressable>
           </View>
 
-          {/* Activity list */}
           {isActivitiesLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
