@@ -1,24 +1,34 @@
 // app/(tabs)/alerts.tsx
 // Alerts & Activity Log Screen
+//
+// SIMPLIFIED v7 - 2026-03-13
+// ---------------------------
+// - REMOVED all dismiss functionality entirely:
+//   - No swipe-to-dismiss
+//   - No handleDismissAlert
+//   - No "Reset Dismissed" button
+//   - No userDismissedAlert filtering
+//   - No locallyDismissedItemIds state
+//   - No dismiss animations
+//   - No auto-clear logic
+// - Alerts now simply show ALL items where currentQuantity <= minQuantity
+// - Activity Log functionality is fully preserved
+// - Date and action filters preserved
+// - Export CSV preserved
+
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   collection,
-  deleteField,
-  doc,
-  getDocs,
   onSnapshot,
   query,
   Timestamp,
-  updateDoc,
   where,
 } from "firebase/firestore";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  Animated,
   FlatList,
   Platform,
   Pressable,
@@ -62,18 +72,11 @@ interface AlertEntry {
   minQuantity: number;
   lastAlertAt: Timestamp | null;
   isLowStock: boolean;
-  userDismissedAlert: boolean;       // from Firestore
-  userDismissedAlertState: string;   // from Firestore (severity when dismissed)
-  userDismissedAlertAt: Timestamp | null;   // timestamp when alert was dismissed
-  userDismissedAlertQuantity: number | null; // quantity at time of dismissal
 }
 
 // ─── Active-state accent color ──────────────────────────────────────
 const ACTIVE_BG = "#2563eb"; // blue-600
 const ACTIVE_TEXT = "#ffffff";
-
-/** Auto-clear dismissed alerts after this many milliseconds (24 hours) */
-const DISMISS_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -251,20 +254,8 @@ export default function AlertsScreen() {
   const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
 
   // ─── Alerts state (from items collection) ─────────────────────────
-  // rawAlerts: ALL low-stock items from Firestore (no dismiss filtering)
-  const [rawAlerts, setRawAlerts] = useState<AlertEntry[]>([]);
+  const [alerts, setAlerts] = useState<AlertEntry[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
-
-  // Dismissed alerts — tracks IDs currently animating out
-  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
-  // Track locally dismissed item IDs so they stay hidden even before Firestore round-trips
-  const [locallyDismissedItemIds, setLocallyDismissedItemIds] = useState<Set<string>>(new Set());
-  // Animation values for each alert card
-  const animValues = useRef<Map<string, Animated.Value>>(new Map());
-
-  // Reset dismissed alerts state
-  const [resettingDismissed, setResettingDismissed] = useState(false);
-  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
 
   // Generation counter to prevent stale snapshot callbacks
   const alertGenRef = useRef(0);
@@ -277,21 +268,13 @@ export default function AlertsScreen() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
-  const getAnimValue = useCallback((id: string) => {
-    if (!animValues.current.has(id)) {
-      animValues.current.set(id, new Animated.Value(1));
-    }
-    return animValues.current.get(id)!;
-  }, []);
-
   // ─── Fetch ALL low-stock items from items collection ──────────────
-  // FIX v3: No longer depends on locallyDismissedItemIds — that filtering
-  // is done in the useMemo below. This prevents re-subscribing on dismiss.
+  // Simple: just get items where currentQuantity <= minQuantity, no dismiss logic
   useEffect(() => {
     const thisGeneration = ++alertGenRef.current;
 
     if (!siteId) {
-      setRawAlerts([]);
+      setAlerts([]);
       setLoadingAlerts(false);
       return;
     }
@@ -325,18 +308,12 @@ export default function AlertsScreen() {
           const minQty: number =
             typeof data.minQuantity === "number" ? data.minQuantity : 0;
 
-          // Debug: log every item's quantities
-          console.log(
-            `[AlertsScreen]   Item "${data.name ?? d.id}": qty=${currentQty}, min=${minQty}, ` +
-            `userDismissed=${data.userDismissedAlert ?? false}, dismissedState=${data.userDismissedAlertState ?? "n/a"}`
-          );
-
           // Only include items that are actually low on stock
           if (minQty > 0 && currentQty <= minQty) {
             const alertState = calculateAlertState(currentQty, minQty);
 
             console.log(
-              `[AlertsScreen]   → LOW STOCK: "${data.name ?? d.id}" state=${alertState} (qty=${currentQty}, min=${minQty})`
+              `[AlertsScreen]   LOW STOCK: "${data.name ?? d.id}" state=${alertState} (qty=${currentQty}, min=${minQty})`
             );
 
             alertItems.push({
@@ -350,15 +327,6 @@ export default function AlertsScreen() {
               minQuantity: minQty,
               lastAlertAt: data.lastAlertAt ?? data.updatedAt ?? null,
               isLowStock: true,
-              userDismissedAlert: data.userDismissedAlert === true,
-              userDismissedAlertState: typeof data.userDismissedAlertState === "string"
-                ? data.userDismissedAlertState
-                : "OK",
-              userDismissedAlertAt: data.userDismissedAlertAt ?? null,
-              userDismissedAlertQuantity:
-                typeof data.userDismissedAlertQuantity === "number"
-                  ? data.userDismissedAlertQuantity
-                  : null,
             });
           }
         }
@@ -366,9 +334,9 @@ export default function AlertsScreen() {
         // Sort: OUT first, then CRITICAL, then LOW
         alertItems.sort((a, b) => getSeverityLevel(b.alertState) - getSeverityLevel(a.alertState));
 
-        console.log(`[AlertsScreen] Total low-stock items (before dismiss filter): ${alertItems.length}`);
+        console.log(`[AlertsScreen] Total low-stock alerts: ${alertItems.length}`);
 
-        setRawAlerts(alertItems);
+        setAlerts(alertItems);
         setLoadingAlerts(false);
       },
       (err) => {
@@ -383,239 +351,6 @@ export default function AlertsScreen() {
       console.log(`[AlertsScreen] Unsubscribing items listener (gen=${thisGeneration})`);
       unsub();
     };
-  }, [siteId]); // FIX v3: only depends on siteId — no locallyDismissedItemIds
-
-  // ─── Sync locallyDismissedItemIds with Firestore ───────────────────
-  // FIX v6: Once Firestore confirms dismissal (userDismissedAlert === true),
-  // remove the item from locallyDismissedItemIds so the auto-clear logic
-  // in the useMemo below can properly evaluate it — matching useLowStockCount.
-  useEffect(() => {
-    if (locallyDismissedItemIds.size === 0) return;
-
-    const confirmedIds = new Set<string>();
-    for (const item of rawAlerts) {
-      if (locallyDismissedItemIds.has(item.itemId) && item.userDismissedAlert) {
-        confirmedIds.add(item.itemId);
-      }
-    }
-
-    if (confirmedIds.size > 0) {
-      console.log(
-        `[AlertsScreen] FIX v6: Clearing ${confirmedIds.size} locally-dismissed IDs now confirmed by Firestore:`,
-        [...confirmedIds]
-      );
-      setLocallyDismissedItemIds((prev) => {
-        const next = new Set(prev);
-        for (const id of confirmedIds) next.delete(id);
-        return next;
-      });
-    }
-  }, [rawAlerts, locallyDismissedItemIds]);
-
-  // ─── Filtered alerts (dismiss logic applied at render time) ───────
-  // FIX v3: Smart dismiss + local dismiss filtering is now a useMemo.
-  // FIX v6: locallyDismissedItemIds is now ONLY used as an optimistic hint
-  // when Firestore hasn't confirmed the dismissal yet. Once Firestore has
-  // userDismissedAlert === true, the auto-clear logic decides visibility —
-  // matching useLowStockCount exactly.
-  const alerts = useMemo(() => {
-    const result: AlertEntry[] = [];
-
-    for (const item of rawAlerts) {
-      // ── Firestore-confirmed dismissals: let auto-clear decide ──────
-      // This block matches useLowStockCount's logic exactly.
-      if (item.userDismissedAlert) {
-        // FIX v5: ALWAYS calculate current state from live quantities — never
-        // trust the Firestore `alertState` field which may be stale.
-        const calculatedCurrentState = calculateAlertState(
-          item.currentQuantity,
-          item.minQuantity
-        );
-        const currentSeverity = getSeverityLevel(calculatedCurrentState);
-        const dismissedSeverity = getSeverityLevel(item.userDismissedAlertState);
-        let autoClearReason: string | null = null;
-
-        // Debug: log exact values being compared
-        console.log(
-          `[AlertsScreen] Auto-reset check for "${item.itemName}": ` +
-          `qty=${item.currentQuantity}, min=${item.minQuantity} → ` +
-          `CALCULATED state="${calculatedCurrentState}" (severity=${currentSeverity}), ` +
-          `DISMISSED state="${item.userDismissedAlertState}" (severity=${dismissedSeverity})`
-        );
-
-        // Check 1: Time-based expiry (24 hours)
-        if (item.userDismissedAlertAt) {
-          let dismissedTime = 0;
-          if (typeof (item.userDismissedAlertAt as any).toDate === "function") {
-            dismissedTime = (item.userDismissedAlertAt as Timestamp).toDate().getTime();
-          } else if (typeof (item.userDismissedAlertAt as any).getTime === "function") {
-            dismissedTime = (item.userDismissedAlertAt as any).getTime();
-          }
-          if (dismissedTime > 0 && Date.now() - dismissedTime >= DISMISS_EXPIRY_MS) {
-            autoClearReason = `24h expired (dismissed ${Math.round((Date.now() - dismissedTime) / 3600000)}h ago)`;
-          }
-        }
-
-        // Check 2: Restock detection (quantity increased since dismissal)
-        if (
-          !autoClearReason &&
-          item.userDismissedAlertQuantity !== null &&
-          item.currentQuantity > item.userDismissedAlertQuantity
-        ) {
-          autoClearReason = `restocked (was ${item.userDismissedAlertQuantity}, now ${item.currentQuantity})`;
-        }
-
-        // Check 3: Severity worsened — compare CALCULATED current state vs
-        // the state that was stored at dismissal time. This catches the case
-        // where e.g. item was dismissed at LOW and has since gone to OUT.
-        if (!autoClearReason && currentSeverity > dismissedSeverity) {
-          autoClearReason = `severity worsened (dismissed="${item.userDismissedAlertState}"→calculated="${calculatedCurrentState}")`;
-        }
-
-        if (autoClearReason) {
-          console.log(
-            `[AlertsScreen] ✅ Auto-clear: "${item.itemName}" — ${autoClearReason} → SHOWING alert`
-          );
-          // Fall through — show the alert
-        } else {
-          console.log(
-            `[AlertsScreen] ⛔ Filtered out (dismissed="${item.userDismissedAlertState}", calculated="${calculatedCurrentState}", same or better): "${item.itemName}"`
-          );
-          continue;
-        }
-      }
-      // ── Optimistic local dismiss (Firestore hasn't confirmed yet) ──
-      // Only used briefly between the dismiss tap and Firestore round-trip.
-      else if (locallyDismissedItemIds.has(item.itemId)) {
-        console.log(`[AlertsScreen] Filtered out (locally dismissed, pending Firestore confirmation): "${item.itemName}"`);
-        continue;
-      }
-
-      result.push(item);
-    }
-
-    console.log(`[AlertsScreen] Final visible alerts: ${result.length} (from ${rawAlerts.length} raw)`);
-    return result;
-  }, [rawAlerts, locallyDismissedItemIds]);
-
-  // ─── Dismiss handler (updates the item document) ──────────────────
-  const handleDismissAlert = useCallback(
-    (alert: AlertEntry) => {
-      Alert.alert(
-        "Dismiss Alert",
-        `Mark "${alert.itemName}" alert as acknowledged?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Dismiss",
-            style: "destructive",
-            onPress: () => {
-              const anim = getAnimValue(alert.id);
-              setDismissingIds((prev) => new Set(prev).add(alert.id));
-
-              Animated.timing(anim, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true,
-              }).start(async () => {
-                // Optimistically hide from UI
-                setLocallyDismissedItemIds((prev) => new Set(prev).add(alert.itemId));
-                setDismissingIds((prev) => {
-                  const next = new Set(prev);
-                  next.delete(alert.id);
-                  return next;
-                });
-
-                // Update the item document in Firestore to mark dismissed
-                // Store the current alert state so we can auto-reset if it worsens
-                try {
-                  await updateDoc(doc(db, "items", alert.itemId), {
-                    userDismissedAlert: true,
-                    userDismissedAlertAt: new Date(),
-                    userDismissedAlertState: alert.alertState,
-                    userDismissedAlertQuantity: alert.currentQuantity,
-                  });
-                  console.log(
-                    `[AlertsScreen] Dismissed: "${alert.itemName}" (${alert.itemId}) at state=${alert.alertState}`
-                  );
-                } catch (err) {
-                  console.error("[AlertsScreen] Failed to dismiss item alert:", err);
-                  // Revert local dismiss on error
-                  setLocallyDismissedItemIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(alert.itemId);
-                    return next;
-                  });
-                  // Reset animation
-                  anim.setValue(1);
-                }
-              });
-            },
-          },
-        ]
-      );
-    },
-    [getAnimValue]
-  );
-
-  // ─── Reset Dismissed Alerts handler ─────────────────────────────
-  const handleResetDismissedAlerts = useCallback(() => {
-    Alert.alert(
-      "Reset Dismissed Alerts",
-      "Reset all dismissed alerts? This will make all hidden alerts visible again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset All",
-          style: "destructive",
-          onPress: async () => {
-            if (!siteId) return;
-            setResettingDismissed(true);
-            setResetSuccessMsg(null);
-
-            try {
-              // Query items for this site that have been dismissed
-              const q = query(
-                collection(db, "items"),
-                where("siteId", "==", siteId),
-                where("userDismissedAlert", "==", true)
-              );
-              const snapshot = await getDocs(q);
-
-              console.log(
-                `[AlertsScreen] Resetting dismissed alerts: found ${snapshot.docs.length} dismissed items`
-              );
-
-              // Update each document to remove dismissal fields
-              const updatePromises = snapshot.docs.map((d) =>
-                updateDoc(doc(db, "items", d.id), {
-                  userDismissedAlert: deleteField(),
-                  userDismissedAlertState: deleteField(),
-                  userDismissedAlertAt: deleteField(),
-                  userDismissedAlertQuantity: deleteField(),
-                })
-              );
-
-              await Promise.all(updatePromises);
-
-              // Clear local dismiss tracking too
-              setLocallyDismissedItemIds(new Set());
-
-              console.log("[AlertsScreen] All dismissed alerts reset successfully");
-              setResetSuccessMsg(`${snapshot.docs.length} dismissed alert${snapshot.docs.length !== 1 ? "s" : ""} reset!`);
-
-              // Auto-hide success message after 3 seconds
-              setTimeout(() => setResetSuccessMsg(null), 3000);
-            } catch (err) {
-              console.error("[AlertsScreen] Failed to reset dismissed alerts:", err);
-              Alert.alert("Error", "Failed to reset dismissed alerts. Please try again.");
-            } finally {
-              setResettingDismissed(false);
-            }
-          },
-        },
-      ]
-    );
   }, [siteId]);
 
   // ─── Fetch activities from alertsLog ────────────────────────────
@@ -877,92 +612,68 @@ export default function AlertsScreen() {
     );
   }
 
-  // ─── Render: Alert Item (now driven by items collection) ──────────
+  // ─── Render: Alert Item (simple, no dismiss) ──────────────────────
   function renderAlertItem({ item }: { item: AlertEntry }) {
     const statusColor = getStatusColor(item.alertState);
     const isOut = item.alertState === "OUT" || item.alertState === "CRITICAL";
-    const isDismissing = dismissingIds.has(item.id);
-    const animOpacity = getAnimValue(item.id);
-    const animScale = animOpacity.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0.95, 1],
-    });
-    const animTranslateX = animOpacity.interpolate({
-      inputRange: [0, 1],
-      outputRange: [60, 0],
-    });
 
     return (
-      <Animated.View
-        style={{
-          opacity: animOpacity,
-          transform: [{ scale: animScale }, { translateX: animTranslateX }],
-        }}
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.card,
+            borderColor: isOut ? "#ef444440" : theme.border,
+            borderLeftWidth: 3,
+            borderLeftColor: statusColor,
+          },
+        ]}
       >
-        <Pressable
-          onPress={() => handleDismissAlert(item)}
-          disabled={isDismissing}
-          style={({ pressed }) => [
-            styles.card,
-            {
-              backgroundColor: pressed ? (statusColor + "12") : theme.card,
-              borderColor: isOut ? "#ef444440" : theme.border,
-              borderLeftWidth: 3,
-              borderLeftColor: statusColor,
-              transform: [{ scale: pressed ? 0.98 : 1 }],
-            },
+        <View
+          style={[
+            styles.iconCircle,
+            { backgroundColor: statusColor + "1A" },
           ]}
         >
-          <View
-            style={[
-              styles.iconCircle,
-              { backgroundColor: statusColor + "1A" },
-            ]}
-          >
-            <Ionicons
-              name={isOut ? "alert-circle" : "warning"}
-              size={20}
-              color={statusColor}
-            />
+          <Ionicons
+            name={isOut ? "alert-circle" : "warning"}
+            size={20}
+            color={statusColor}
+          />
+        </View>
+
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
+              {item.itemName}
+            </Text>
           </View>
 
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
-                {item.itemName}
-              </Text>
-              <Ionicons name="close-circle-outline" size={18} color={theme.mutedText} style={{ opacity: 0.5 }} />
-            </View>
+          {/* Location */}
+          {item.location ? (
+            <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+              📍 {item.location}
+            </Text>
+          ) : null}
 
-            {/* Location */}
-            {item.location ? (
-              <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
-                📍 {item.location}
-              </Text>
-            ) : null}
-
-            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
-              <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
-                <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                  {item.alertState}
-                </Text>
-              </View>
-              <Text style={{ color: theme.mutedText, fontSize: 11 }}>
-                Qty: {item.currentQuantity} / Min: {item.minQuantity}
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
+            <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
+              <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                {item.alertState}
               </Text>
             </View>
-
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 3 }}>
-              <Text style={{ color: theme.mutedText, fontSize: 10 }}>
-                {item.lastAlertAt ? `Last alert ${formatTimestamp(item.lastAlertAt)}` : ""}
-              </Text>
-              <Text style={{ color: theme.mutedText, fontSize: 10, fontStyle: "italic" }}>
-                Tap to dismiss
-              </Text>
-            </View>
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>
+              Qty: {item.currentQuantity} / Min: {item.minQuantity}
+            </Text>
           </View>
-        </Pressable>
-      </Animated.View>
+
+          {item.lastAlertAt && (
+            <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 3 }}>
+              Last alert {formatTimestamp(item.lastAlertAt)}
+            </Text>
+          )}
+        </View>
+      </View>
     );
   }
 
@@ -1017,43 +728,6 @@ export default function AlertsScreen() {
       {/* ─── Alerts View ─────────────────────────────────────────────── */}
       {activeView === "alerts" && (
         <>
-          {/* Reset Dismissed Alerts button — only visible when there are dismissed items */}
-          {!isAlertsLoading && rawAlerts.some((a) => a.userDismissedAlert || locallyDismissedItemIds.has(a.itemId)) && (
-            <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-              <Pressable
-                onPress={handleResetDismissedAlerts}
-                disabled={resettingDismissed}
-                style={({ pressed }) => [
-                  styles.resetBtn,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: pressed ? theme.border + "30" : "transparent",
-                    opacity: resettingDismissed ? 0.5 : 1,
-                  },
-                ]}
-              >
-                {resettingDismissed ? (
-                  <ActivityIndicator size="small" color={theme.text} style={{ marginRight: 6 }} />
-                ) : (
-                  <Ionicons name="refresh-outline" size={16} color={theme.text} style={{ marginRight: 6 }} />
-                )}
-                <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
-                  {resettingDismissed ? "Resetting…" : "Reset Dismissed"}
-                </Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Success message banner */}
-          {resetSuccessMsg && (
-            <View style={[styles.successBanner, { backgroundColor: "#22c55e20", borderColor: "#22c55e40" }]}>
-              <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
-              <Text style={{ color: "#22c55e", fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
-                {resetSuccessMsg}
-              </Text>
-            </View>
-          )}
-
           {isAlertsLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
@@ -1221,26 +895,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: "dashed",
     alignSelf: "flex-start",
-  },
-  resetBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    alignSelf: "flex-start",
-  },
-  successBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
   },
 });

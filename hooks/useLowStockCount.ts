@@ -1,41 +1,16 @@
 // hooks/useLowStockCount.ts
+// Shared hook that returns the real-time count of low-stock items.
+// Used by _layout.tsx to set the tab badge.
+//
+// SIMPLIFIED v7 - 2026-03-13
+// ---------------------------
+// - REMOVED all dismiss/auto-clear logic entirely
+// - Simply counts items where currentQuantity <= minQuantity
+// - Clean, reliable, no sync issues
+
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import { db } from "../firebaseConfig";
-
-/** Returns a numeric severity level for alert states (higher = worse) */
-function getSeverityLevel(state: string): number {
-  switch (state.toUpperCase()) {
-    case "OUT":
-      return 3;
-    case "CRITICAL":
-      return 2;
-    case "LOW":
-      return 1;
-    case "OK":
-    default:
-      return 0;
-  }
-}
-
-/**
- * Calculates the alert severity from actual quantity values.
- * Must stay in sync with the same function in alerts.tsx.
- *
- * - OUT:      currentQuantity <= 0
- * - CRITICAL: currentQuantity > 0 AND currentQuantity <= (minQuantity * 0.5)
- * - LOW:      currentQuantity > (minQuantity * 0.5) AND currentQuantity <= minQuantity
- * - OK:       currentQuantity > minQuantity
- */
-function calculateAlertState(currentQty: number, minQty: number): string {
-  if (currentQty <= 0) return "OUT";
-  if (currentQty <= minQty * 0.5) return "CRITICAL";
-  if (currentQty <= minQty) return "LOW";
-  return "OK";
-}
-
-/** Auto-clear dismissed alerts after this many milliseconds (24 hours) */
-const DISMISS_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Returns the live count of items that are currently low on stock.
@@ -43,14 +18,10 @@ const DISMISS_EXPIRY_MS = 24 * 60 * 60 * 1000;
  * An item is considered "low stock" when:
  *   currentQuantity <= minQuantity  AND  minQuantity > 0
  *
- * Items where `userDismissedAlert === true` are excluded from the count,
- * UNLESS the dismissal is auto-cleared by any of:
- *   1. 24 hours have passed since `userDismissedAlertAt`
- *   2. Current quantity > `userDismissedAlertQuantity` (item restocked)
- *   3. Current severity is worse than dismissed severity
+ * No dismiss filtering — if it's low stock, it counts.
  *
  * @param siteId - The site to filter items by. If falsy, returns 0.
- * @returns The number of actionable low-stock items.
+ * @returns The number of low-stock items.
  */
 export function useLowStockCount(siteId?: string | null): number {
   const [count, setCount] = useState(0);
@@ -60,11 +31,8 @@ export function useLowStockCount(siteId?: string | null): number {
   const generationRef = useRef(0);
 
   useEffect(() => {
-    // Bump the generation so any in-flight callback from a prior listener
-    // will see a mismatch and skip the setState call.
     const thisGeneration = ++generationRef.current;
 
-    // If no siteId, nothing to count — reset to 0 immediately
     if (!siteId) {
       console.log("[useLowStockCount] No siteId provided — returning 0");
       setCount(0);
@@ -89,13 +57,10 @@ export function useLowStockCount(siteId?: string | null): number {
         }
 
         let lowCount = 0;
-        const totalDocs = snapshot.docs.length;
 
         for (const d of snapshot.docs) {
           const data = d.data();
 
-          // Use ONLY the canonical quantity fields — do NOT fall back to
-          // `quantity` or `min` which may come from alertsLog-style data.
           const currentQty: number =
             typeof data.currentQuantity === "number"
               ? data.currentQuantity
@@ -103,86 +68,13 @@ export function useLowStockCount(siteId?: string | null): number {
           const minQty: number =
             typeof data.minQuantity === "number" ? data.minQuantity : 0;
 
-          const isLow = minQty > 0 && currentQty <= minQty;
-
-          if (isLow) {
-            // Determine current alert severity using shared logic
-            const alertState = calculateAlertState(currentQty, minQty);
-
-            // Auto-clear logic: If dismissed, check if dismissal should be cleared.
-            // Count the item if ANY auto-clear condition is met.
-            if (data.userDismissedAlert === true) {
-              const dismissedState = typeof data.userDismissedAlertState === "string"
-                ? data.userDismissedAlertState
-                : "OK"; // fallback for legacy dismissals without state
-
-              // FIX v5: ALWAYS calculate current state from live quantities — never
-              // trust the Firestore `alertState` field which may be stale.
-              const calculatedCurrentState = calculateAlertState(currentQty, minQty);
-              const currentSeverity = getSeverityLevel(calculatedCurrentState);
-              const dismissedSeverity = getSeverityLevel(dismissedState);
-              let autoClearReason: string | null = null;
-
-              // Debug: log exact values being compared
-              console.log(
-                `[useLowStockCount]   Auto-reset check "${data.name ?? d.id}": ` +
-                `qty=${currentQty}, min=${minQty} → ` +
-                `CALCULATED="${calculatedCurrentState}" (sev=${currentSeverity}), ` +
-                `DISMISSED="${dismissedState}" (sev=${dismissedSeverity})`
-              );
-
-              // Check 1: Time-based expiry (24 hours)
-              const dismissedAt = data.userDismissedAlertAt;
-              if (dismissedAt) {
-                let dismissedTime = 0;
-                if (typeof dismissedAt.toDate === "function") {
-                  dismissedTime = dismissedAt.toDate().getTime();
-                } else if (typeof dismissedAt.getTime === "function") {
-                  dismissedTime = dismissedAt.getTime();
-                }
-                if (dismissedTime > 0 && Date.now() - dismissedTime >= DISMISS_EXPIRY_MS) {
-                  autoClearReason = `24h expired`;
-                }
-              }
-
-              // Check 2: Restock detection (quantity increased since dismissal)
-              const dismissedQty = data.userDismissedAlertQuantity;
-              if (
-                !autoClearReason &&
-                typeof dismissedQty === "number" &&
-                currentQty > dismissedQty
-              ) {
-                autoClearReason = `restocked (was ${dismissedQty}, now ${currentQty})`;
-              }
-
-              // Check 3: Severity worsened — compare CALCULATED current state vs
-              // the state stored at dismissal time (e.g. dismissed at LOW, now OUT).
-              if (!autoClearReason && currentSeverity > dismissedSeverity) {
-                autoClearReason = `severity worsened (dismissed="${dismissedState}"→calculated="${calculatedCurrentState}")`;
-              }
-
-              if (autoClearReason) {
-                console.log(
-                  `[useLowStockCount]   ✅ AUTO-CLEAR (${autoClearReason}): "${data.name ?? d.id}"`
-                );
-                // Fall through — count the item
-              } else {
-                console.log(
-                  `[useLowStockCount]   ⛔ SKIP (dismissed="${dismissedState}", calculated="${calculatedCurrentState}", same or better): "${data.name ?? d.id}"`
-                );
-                continue;
-              }
-            }
-
+          if (minQty > 0 && currentQty <= minQty) {
             lowCount++;
-            console.log(
-              `[useLowStockCount]   LOW: "${data.name ?? d.id}" qty=${currentQty} min=${minQty} state=${alertState}`
-            );
           }
         }
 
         console.log(
-          `[useLowStockCount] Snapshot complete (gen=${thisGeneration}): ${totalDocs} items, ${lowCount} low-stock`
+          `[useLowStockCount] Snapshot (gen=${thisGeneration}): ${snapshot.docs.length} items, ${lowCount} low-stock`
         );
 
         setCount(lowCount);
@@ -195,7 +87,6 @@ export function useLowStockCount(siteId?: string | null): number {
       }
     );
 
-    // Cleanup: unsubscribe when effect re-runs or component unmounts
     return () => {
       console.log(`[useLowStockCount] Unsubscribing (gen=${thisGeneration})`);
       unsub();
