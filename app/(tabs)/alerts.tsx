@@ -19,7 +19,9 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   collection,
+  deleteField,
   doc,
+  getDocs,
   onSnapshot,
   query,
   Timestamp,
@@ -269,6 +271,10 @@ export default function AlertsScreen() {
   // Animation values for each alert card
   const animValues = useRef<Map<string, Animated.Value>>(new Map());
 
+  // Reset dismissed alerts state
+  const [resettingDismissed, setResettingDismissed] = useState(false);
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
+
   // Generation counter to prevent stale snapshot callbacks
   const alertGenRef = useRef(0);
 
@@ -482,6 +488,65 @@ export default function AlertsScreen() {
     },
     [getAnimValue]
   );
+
+  // ─── Reset Dismissed Alerts handler ─────────────────────────────
+  const handleResetDismissedAlerts = useCallback(() => {
+    Alert.alert(
+      "Reset Dismissed Alerts",
+      "Reset all dismissed alerts? This will make all hidden alerts visible again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset All",
+          style: "destructive",
+          onPress: async () => {
+            if (!siteId) return;
+            setResettingDismissed(true);
+            setResetSuccessMsg(null);
+
+            try {
+              // Query items for this site that have been dismissed
+              const q = query(
+                collection(db, "items"),
+                where("siteId", "==", siteId),
+                where("userDismissedAlert", "==", true)
+              );
+              const snapshot = await getDocs(q);
+
+              console.log(
+                `[AlertsScreen] Resetting dismissed alerts: found ${snapshot.docs.length} dismissed items`
+              );
+
+              // Update each document to remove dismissal fields
+              const updatePromises = snapshot.docs.map((d) =>
+                updateDoc(doc(db, "items", d.id), {
+                  userDismissedAlert: deleteField(),
+                  userDismissedAlertState: deleteField(),
+                  userDismissedAlertAt: deleteField(),
+                })
+              );
+
+              await Promise.all(updatePromises);
+
+              // Clear local dismiss tracking too
+              setLocallyDismissedItemIds(new Set());
+
+              console.log("[AlertsScreen] All dismissed alerts reset successfully");
+              setResetSuccessMsg(`${snapshot.docs.length} dismissed alert${snapshot.docs.length !== 1 ? "s" : ""} reset!`);
+
+              // Auto-hide success message after 3 seconds
+              setTimeout(() => setResetSuccessMsg(null), 3000);
+            } catch (err) {
+              console.error("[AlertsScreen] Failed to reset dismissed alerts:", err);
+              Alert.alert("Error", "Failed to reset dismissed alerts. Please try again.");
+            } finally {
+              setResettingDismissed(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [siteId]);
 
   // ─── Fetch activities from alertsLog ────────────────────────────
   useEffect(() => {
@@ -882,6 +947,43 @@ export default function AlertsScreen() {
       {/* ─── Alerts View ─────────────────────────────────────────────── */}
       {activeView === "alerts" && (
         <>
+          {/* Reset Dismissed Alerts button — only visible when there are dismissed items */}
+          {!isAlertsLoading && rawAlerts.some((a) => a.userDismissedAlert || locallyDismissedItemIds.has(a.itemId)) && (
+            <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+              <Pressable
+                onPress={handleResetDismissedAlerts}
+                disabled={resettingDismissed}
+                style={({ pressed }) => [
+                  styles.resetBtn,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: pressed ? theme.border + "30" : "transparent",
+                    opacity: resettingDismissed ? 0.5 : 1,
+                  },
+                ]}
+              >
+                {resettingDismissed ? (
+                  <ActivityIndicator size="small" color={theme.text} style={{ marginRight: 6 }} />
+                ) : (
+                  <Ionicons name="refresh-outline" size={16} color={theme.text} style={{ marginRight: 6 }} />
+                )}
+                <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+                  {resettingDismissed ? "Resetting…" : "Reset Dismissed"}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* Success message banner */}
+          {resetSuccessMsg && (
+            <View style={[styles.successBanner, { backgroundColor: "#22c55e20", borderColor: "#22c55e40" }]}>
+              <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+              <Text style={{ color: "#22c55e", fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
+                {resetSuccessMsg}
+              </Text>
+            </View>
+          )}
+
           {isAlertsLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
@@ -1050,5 +1152,25 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     alignSelf: "flex-start",
   },
+  resetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    alignSelf: "flex-start",
+  },
+  successBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
 });
-
