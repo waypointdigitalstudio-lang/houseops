@@ -392,19 +392,15 @@ export default function AlertsScreen() {
   );
 
   // ─── Fetch activities from alertsLog ────────────────────────────
-  // FIX: Filter by siteId to satisfy Firestore security rules
+  // NOTE: alertsLog documents do NOT have a siteId field, so we query ALL
+  // documents without filtering by siteId.  The items collection DOES have
+  // siteId and is filtered above.
   useEffect(() => {
-    if (!siteId) {
-      setActivities([]);
-      setLoadingActivities(false);
-      return;
-    }
-
     setLoadingActivities(true);
 
-    console.log("[AlertsScreen] Querying alertsLog for siteId:", siteId);
+    console.log("[AlertsScreen] Querying alertsLog (no siteId filter — field doesn't exist on these docs)");
 
-    const q = query(collection(db, "alertsLog"), where("siteId", "==", siteId));
+    const q = query(collection(db, "alertsLog"));
 
     const unsub = onSnapshot(
       q,
@@ -457,7 +453,7 @@ export default function AlertsScreen() {
     );
 
     return () => unsub();
-  }, [siteId]);
+  }, []); // no siteId dependency — alertsLog docs don't have siteId
 
   // ─── Filtered activities (UNCHANGED) ──────────────────────────────
   const filteredActivities = useMemo(() => {
