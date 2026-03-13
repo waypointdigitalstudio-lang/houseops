@@ -118,6 +118,21 @@ function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; 
   }
 }
 
+/** Returns a numeric severity level for alert states (higher = worse) */
+function getSeverityLevel(state: string): number {
+  switch (state.toUpperCase()) {
+    case "OUT":
+      return 3;
+    case "CRITICAL":
+      return 2;
+    case "LOW":
+      return 1;
+    case "OK":
+    default:
+      return 0;
+  }
+}
+
 function getStatusColor(status: string): string {
   switch (status.toUpperCase()) {
     case "OK":
@@ -275,14 +290,15 @@ export default function AlertsScreen() {
         for (const d of snapshot.docs) {
           const data = d.data();
 
-          // Skip items the user has dismissed (persisted in Firestore)
-          if (data.userDismissedAlert === true) continue;
           // Skip items the user has locally dismissed (optimistic UI)
           if (locallyDismissedItemIds.has(d.id)) continue;
 
-          // FIX: Compute low-stock from actual quantities instead of isLowStock field
-          const currentQty = data.currentQuantity ?? data.quantity ?? 0;
-          const minQty = data.minQuantity ?? data.min ?? 0;
+          // FIX v2: Use ONLY canonical quantity fields — no fallback to
+          // `quantity`/`min` which could match alertsLog-style data.
+          const currentQty: number =
+            typeof data.currentQuantity === "number" ? data.currentQuantity : 0;
+          const minQty: number =
+            typeof data.minQuantity === "number" ? data.minQuantity : 0;
 
           // Only include items that are actually low on stock
           if (minQty > 0 && currentQty <= minQty) {
@@ -294,6 +310,26 @@ export default function AlertsScreen() {
               alertState = "CRITICAL";
             } else {
               alertState = "LOW";
+            }
+
+            // Smart auto-reset: If user dismissed this alert, check if
+            // the current severity is WORSE than what was dismissed.
+            // If worse → show the alert again (auto-reset the dismissal).
+            // If same or better → respect the dismissal, skip.
+            if (data.userDismissedAlert === true) {
+              const dismissedState = typeof data.userDismissedAlertState === "string"
+                ? data.userDismissedAlertState
+                : "OK"; // fallback for legacy dismissals without state
+              if (getSeverityLevel(alertState) > getSeverityLevel(dismissedState)) {
+                console.log(
+                  `[AlertsScreen] Auto-reset dismissed alert for "${data.name}": ` +
+                  `dismissed at ${dismissedState}, now ${alertState} (worse)`
+                );
+                // Fall through — show the alert
+              } else {
+                // Same or better severity — keep dismissed
+                continue;
+              }
             }
 
             alertItems.push({
@@ -365,12 +401,14 @@ export default function AlertsScreen() {
                 });
 
                 // Update the item document in Firestore to mark dismissed
+                // Store the current alert state so we can auto-reset if it worsens
                 try {
                   await updateDoc(doc(db, "items", alert.itemId), {
                     userDismissedAlert: true,
                     userDismissedAlertAt: new Date(),
+                    userDismissedAlertState: alert.alertState, // e.g. "LOW", "CRITICAL", "OUT"
                   });
-                  console.log("[AlertsScreen] User dismissed item alert:", alert.itemId, alert.itemName);
+                  console.log("[AlertsScreen] User dismissed item alert:", alert.itemId, alert.itemName, "at state:", alert.alertState);
                 } catch (err) {
                   console.error("[AlertsScreen] Failed to dismiss item alert:", err);
                   // Revert local dismiss on error
