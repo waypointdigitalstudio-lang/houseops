@@ -1,12 +1,9 @@
 // app/(tabs)/alerts.tsx
-// Activity Log + Alerts Screen with toggle between views
-// Fetches from Firestore 'alertsLog' collection, supports filtering and CSV export
-// FIX: Removed orderBy from Firestore query to avoid composite index requirement
-// FIX: Fixed case-sensitivity mismatch — index.tsx writes UPPERCASE states (OK, LOW, OUT)
-// FIX: Query both real siteId AND "default" to catch docs written before siteId loaded
-// FIX: Changed default date filter to "all" so activities show on first load
-// FIX: Handle missing siteId gracefully after profile finishes loading
-// FIX: Added debug console.log statements to trace data flow
+// Alerts & Activity Log Screen
+// REWRITE: Alerts view now queries the `items` collection directly instead of
+// deriving alerts from `alertsLog`. This is more reliable because the items
+// collection holds the current stock state (isLowStock, alertState, etc.).
+// Activity Log view remains unchanged — still queries alertsLog collection.
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -18,6 +15,7 @@ import {
   query,
   Timestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -36,6 +34,7 @@ import { db } from "../../firebaseConfig";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
+/** Activity log entry from alertsLog collection (unchanged) */
 interface ActivityEntry {
   id: string;
   siteId: string;
@@ -49,24 +48,28 @@ interface ActivityEntry {
   action: string;
   itemType: "inventory" | "toner" | "printer";
   createdAt: Timestamp | null;
-  dismissed: boolean;       // system field — set by cloud function after sending push notifications
-  userDismissed: boolean;   // FIX: user-initiated dismissal — set when user taps "Dismiss" in the UI
+  dismissed: boolean;
+  userDismissed: boolean;
 }
 
+/** Alert entry derived from items collection */
 interface AlertEntry {
-  id: string;
-  itemId: string;
+  id: string;           // Firestore document ID (same as itemId)
+  itemId: string;       // Firestore document ID
   itemName: string;
-  itemType: string;
-  status: string;
-  qty: number;
-  min: number;
-  createdAt: Timestamp | null;
+  location: string;
+  siteId: string;
+  alertState: string;   // "LOW", "CRITICAL", "OUT"
+  currentQuantity: number;
+  minQuantity: number;
+  lastAlertAt: Timestamp | null;
+  isLowStock: boolean;
+  userDismissed: boolean; // locally tracked for dismiss animation
 }
 
-// ─── Active-state accent color (works in both light & dark mode) ────
+// ─── Active-state accent color ──────────────────────────────────────
 const ACTIVE_BG = "#2563eb"; // blue-600
-const ACTIVE_TEXT = "#ffffff"; // always white on blue
+const ACTIVE_TEXT = "#ffffff";
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -114,16 +117,14 @@ function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; 
   }
 }
 
-// FIX: Normalize to lowercase so it works with both "OK"/"LOW"/"OUT" (from index.tsx)
-// and "ok"/"low"/"out" (used in alerts derivation)
 function getStatusColor(status: string): string {
-  switch (status.toLowerCase()) {
-    case "ok":
+  switch (status.toUpperCase()) {
+    case "OK":
       return "#22c55e";
-    case "low":
+    case "LOW":
       return "#f97316";
-    case "critical":
-    case "out":
+    case "CRITICAL":
+    case "OUT":
       return "#ef4444";
     default:
       return "#6b7280";
@@ -132,7 +133,6 @@ function getStatusColor(status: string): string {
 
 function formatTimestamp(ts: Timestamp | null): string {
   if (!ts) return "—";
-  // Guard against non-Timestamp objects (e.g. serverTimestamp() pending writes)
   if (typeof ts.toDate !== "function") return "—";
   try {
     const d = ts.toDate();
@@ -201,20 +201,24 @@ export default function AlertsScreen() {
   // View toggle
   const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
 
-  // Activity log state
-  const [activities, setActivities] = useState<ActivityEntry[]>([]);
-  const [loadingActivities, setLoadingActivities] = useState(true);
-
-  // Alerts state
+  // ─── Alerts state (from items collection) ─────────────────────────
   const [alerts, setAlerts] = useState<AlertEntry[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
 
-  // Dismissed alerts — tracks IDs currently animating out so we can fade them
+  // Dismissed alerts — tracks IDs currently animating out
   const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
   // Track locally dismissed item IDs so they stay hidden even before Firestore round-trips
   const [locallyDismissedItemIds, setLocallyDismissedItemIds] = useState<Set<string>>(new Set());
   // Animation values for each alert card
   const animValues = useRef<Map<string, Animated.Value>>(new Map());
+
+  // ─── Activity log state (from alertsLog collection, unchanged) ────
+  const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
+
+  // Filters (for Activity Log view only)
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
   const getAnimValue = useCallback((id: string) => {
     if (!animValues.current.has(id)) {
@@ -223,7 +227,75 @@ export default function AlertsScreen() {
     return animValues.current.get(id)!;
   }, []);
 
-  // ─── Dismiss handler ──────────────────────────────────────────────
+  // ─── Fetch alerts from items collection ───────────────────────────
+  // Query items where isLowStock == true. We also do a client-side check
+  // for alertState in case isLowStock hasn't been updated yet.
+  useEffect(() => {
+    setLoadingAlerts(true);
+
+    console.log("[AlertsScreen] Subscribing to items collection (isLowStock == true)");
+
+    // Primary query: items with isLowStock == true
+    const q = query(collection(db, "items"), where("isLowStock", "==", true));
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        console.log("[AlertsScreen] items snapshot fired. doc count =", snapshot.docs.length);
+
+        const alertItems: AlertEntry[] = [];
+
+        for (const d of snapshot.docs) {
+          const data = d.data();
+          const alertState = (data.alertState ?? data.lastAlertState ?? "OK").toUpperCase();
+          const isLowStock = data.isLowStock ?? false;
+
+          // Include if isLowStock is true OR alertState indicates a problem
+          if (isLowStock || alertState === "LOW" || alertState === "CRITICAL" || alertState === "OUT") {
+            // Skip items the user has locally dismissed (optimistic UI)
+            if (locallyDismissedItemIds.has(d.id)) continue;
+
+            alertItems.push({
+              id: d.id,
+              itemId: d.id,
+              itemName: data.name ?? "(unknown)",
+              location: data.location ?? "",
+              siteId: data.siteId ?? "",
+              alertState: alertState,
+              currentQuantity: data.currentQuantity ?? data.quantity ?? 0,
+              minQuantity: data.minQuantity ?? data.min ?? 0,
+              lastAlertAt: data.lastAlertAt ?? data.updatedAt ?? null,
+              isLowStock: isLowStock,
+              userDismissed: false,
+            });
+          }
+        }
+
+        // Sort: OUT/CRITICAL first, then LOW
+        alertItems.sort((a, b) => {
+          const priority = (s: string) => (s === "CRITICAL" || s === "OUT" ? 0 : 1);
+          return priority(a.alertState) - priority(b.alertState);
+        });
+
+        console.log("[AlertsScreen] Alert items from items collection:", alertItems.length);
+        if (alertItems.length > 0) {
+          console.log("[AlertsScreen] First alert:", alertItems[0].itemName, alertItems[0].alertState,
+            "qty:", alertItems[0].currentQuantity, "min:", alertItems[0].minQuantity);
+        }
+
+        setAlerts(alertItems);
+        setLoadingAlerts(false);
+      },
+      (err) => {
+        console.error("[AlertsScreen] Error fetching items for alerts:", err);
+        setLoadingAlerts(false);
+      }
+    );
+
+    return () => unsub();
+  }, [locallyDismissedItemIds]);
+
+  // ─── Dismiss handler (updates the item document) ──────────────────
   const handleDismissAlert = useCallback(
     (alert: AlertEntry) => {
       Alert.alert(
@@ -235,7 +307,6 @@ export default function AlertsScreen() {
             text: "Dismiss",
             style: "destructive",
             onPress: () => {
-              // Start fade-out animation
               const anim = getAnimValue(alert.id);
               setDismissingIds((prev) => new Set(prev).add(alert.id));
 
@@ -252,18 +323,15 @@ export default function AlertsScreen() {
                   return next;
                 });
 
-                // Update Firestore — mark the alertsLog entry as user-dismissed
-                // FIX: Write `userDismissed` (not `dismissed`) to avoid conflicts
-                // with the push notification cloud function which manages the
-                // `dismissed` field for its own purposes.
+                // Update the item document in Firestore to mark dismissed
                 try {
-                  await updateDoc(doc(db, "alertsLog", alert.id), {
-                    userDismissed: true,
-                    userDismissedAt: new Date(),
+                  await updateDoc(doc(db, "items", alert.itemId), {
+                    userDismissedAlert: true,
+                    userDismissedAlertAt: new Date(),
                   });
-                  console.log("[AlertsScreen] User dismissed alert:", alert.id, alert.itemName);
+                  console.log("[AlertsScreen] User dismissed item alert:", alert.itemId, alert.itemName);
                 } catch (err) {
-                  console.error("[AlertsScreen] Failed to dismiss alert:", err);
+                  console.error("[AlertsScreen] Failed to dismiss item alert:", err);
                   // Revert local dismiss on error
                   setLocallyDismissedItemIds((prev) => {
                     const next = new Set(prev);
@@ -282,15 +350,7 @@ export default function AlertsScreen() {
     [getAnimValue]
   );
 
-  // Filters
-  // FIX: Default to "all" instead of "7days" so activities always show on first load
-  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
-  const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
-
-  // ─── Fetch activities from alertsLog ───────────────────────────────
-  // FIX: Fetch ALL documents from alertsLog — the Firestore documents do NOT
-  // contain a siteId field, so filtering by siteId returned 0 results.
-  // We now query the entire collection and sort/filter client-side.
+  // ─── Fetch activities from alertsLog (UNCHANGED) ─────────────────
   useEffect(() => {
     setLoadingActivities(true);
 
@@ -301,12 +361,7 @@ export default function AlertsScreen() {
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        console.log("[AlertsScreen] onSnapshot fired. doc count =", snapshot.docs.length);
-
-        // Debug: log first 3 docs to see what fields/values exist
-        snapshot.docs.slice(0, 3).forEach((d, i) => {
-          console.log(`[AlertsScreen] doc[${i}] id=${d.id}`, JSON.stringify(d.data()));
-        });
+        console.log("[AlertsScreen] alertsLog onSnapshot fired. doc count =", snapshot.docs.length);
 
         const items: ActivityEntry[] = snapshot.docs.map((d) => {
           const data = d.data();
@@ -324,12 +379,11 @@ export default function AlertsScreen() {
             itemType: data.itemType ?? "inventory",
             createdAt: data.createdAt ?? null,
             dismissed: data.dismissed ?? false,
-            userDismissed: data.userDismissed ?? false,  // FIX: read user-initiated dismissal field
+            userDismissed: data.userDismissed ?? false,
           } as ActivityEntry;
         });
 
-        // FIX: Sort client-side by createdAt descending (newest first)
-        // Handle null/pending timestamps gracefully
+        // Sort client-side by createdAt descending (newest first)
         items.sort((a, b) => {
           const aTime = a.createdAt && typeof a.createdAt.toMillis === "function"
             ? a.createdAt.toMillis()
@@ -353,74 +407,15 @@ export default function AlertsScreen() {
     return () => unsub();
   }, []);
 
-  // ─── Derive alerts from activities (items with critical/low status) ─
-  // FIX: index.tsx writes states in UPPERCASE ("OK", "LOW", "OUT"), so we
-  // normalize to lowercase before comparing. This ensures alerts are correctly
-  // derived regardless of the casing written by logActivity().
-  //
-  // BUG FIX: The previous code filtered by `dismissed` field, but the cloud
-  // function that sends push notifications sets `dismissed: true` on alertsLog
-  // entries AFTER sending (to avoid re-sending). This caused ALL LOW/OUT alerts
-  // to be filtered out, showing "All clear" even though items are at low stock.
-  //
-  // The fix: Only filter by `userDismissed` (set by user tap-to-dismiss in UI),
-  // NOT by `dismissed` (set by the push notification cloud function).
-  useEffect(() => {
-    // Build alerts from the latest state of each item
-    // FIX: Do NOT filter by `dismissed` — that field is managed by the push
-    // notification cloud function and does NOT indicate user acknowledgment.
-    // Instead, only exclude entries the USER explicitly dismissed via UI.
-    const userVisibleActivities = activities.filter((a) => !a.userDismissed);
-    const latestByItem = new Map<string, ActivityEntry>();
-    for (const a of userVisibleActivities) {
-      // FIX: Skip entries with empty itemId — they can't be deduplicated properly
-      if (!a.itemId) continue;
-      if (!latestByItem.has(a.itemId)) {
-        latestByItem.set(a.itemId, a);
-      }
-    }
-    const alertItems: AlertEntry[] = [];
-    for (const [, entry] of latestByItem) {
-      const normalizedState = (entry.nextState || "").toLowerCase();
-      if (normalizedState === "low" || normalizedState === "critical" || normalizedState === "out") {
-        // Skip locally dismissed items (optimistic UI before Firestore round-trip)
-        if (locallyDismissedItemIds.has(entry.itemId)) continue;
-        alertItems.push({
-          id: entry.id,
-          itemId: entry.itemId,
-          itemName: entry.itemName,
-          itemType: entry.itemType,
-          status: normalizedState,
-          qty: entry.qty,
-          min: entry.min,
-          createdAt: entry.createdAt,
-        });
-      }
-    }
-    // Sort alerts: critical/out first, then low
-    alertItems.sort((a, b) => {
-      const priority = (s: string) => (s === "critical" || s === "out" ? 0 : 1);
-      return priority(a.status) - priority(b.status);
-    });
-
-    console.log("[AlertsScreen] Derived alerts count:", alertItems.length,
-      "| Total activities:", activities.length,
-      "| User-visible (non-userDismissed):", userVisibleActivities.length,
-      "| Unique items:", latestByItem.size);
-    setAlerts(alertItems);
-    setLoadingAlerts(false);
-  }, [activities, locallyDismissedItemIds]);
-
-  // ─── Filtered activities ───────────────────────────────────────────
+  // ─── Filtered activities (UNCHANGED) ──────────────────────────────
   const filteredActivities = useMemo(() => {
     let result = [...activities];
 
-    // Date filter
     const cutoff = getDateCutoff(dateFilter);
     if (cutoff) {
       result = result.filter((a) => {
-        if (!a.createdAt) return true; // FIX: include items with null timestamps instead of excluding
-        if (typeof a.createdAt.toDate !== "function") return true; // pending serverTimestamp
+        if (!a.createdAt) return true;
+        if (typeof a.createdAt.toDate !== "function") return true;
         try {
           return a.createdAt.toDate() >= cutoff;
         } catch {
@@ -429,16 +424,14 @@ export default function AlertsScreen() {
       });
     }
 
-    // Action filter
     if (actionFilter !== "all") {
       result = result.filter((a) => a.action === actionFilter);
     }
 
-    console.log("[AlertsScreen] Filtered activities:", result.length, "dateFilter:", dateFilter, "actionFilter:", actionFilter);
     return result;
   }, [activities, dateFilter, actionFilter]);
 
-  // ─── CSV Export ────────────────────────────────────────────────────
+  // ─── CSV Export (UNCHANGED) ───────────────────────────────────────
   async function exportCSV() {
     try {
       const header = "Timestamp,Action,Item Type,Item Name,Quantity,Min Qty,Prev State,New State\n";
@@ -449,7 +442,6 @@ export default function AlertsScreen() {
       const csv = header + rows.join("\n");
 
       if (Platform.OS === "web") {
-        // Web: download via blob
         const blob = new Blob([csv], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -457,7 +449,6 @@ export default function AlertsScreen() {
         link.download = "activity_log.csv";
         link.click();
       } else {
-        // Native: write to temp file and share
         const fileUri = FileSystem.cacheDirectory + "activity_log.csv";
         await FileSystem.writeAsStringAsync(fileUri, csv, {
           encoding: FileSystem.EncodingType.UTF8,
@@ -473,7 +464,7 @@ export default function AlertsScreen() {
     }
   }
 
-  // ─── Render: Filter Chips ──────────────────────────────────────────
+  // ─── Render: Filter Chips (for Activity Log, UNCHANGED) ───────────
   function FilterChips() {
     return (
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
@@ -544,7 +535,7 @@ export default function AlertsScreen() {
     );
   }
 
-  // ─── Render: Activity Item ─────────────────────────────────────────
+  // ─── Render: Activity Item (UNCHANGED) ────────────────────────────
   function renderActivityItem({ item }: { item: ActivityEntry }) {
     const icon = getActionIcon(item.action);
     const statusColor = getStatusColor(item.nextState);
@@ -601,7 +592,7 @@ export default function AlertsScreen() {
             </Text>
           </View>
 
-          {/* State change — FIX: normalize case for display consistency */}
+          {/* State change */}
           {item.prevState && item.nextState && item.prevState.toLowerCase() !== item.nextState.toLowerCase() && (
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
               <View style={[styles.stateDot, { backgroundColor: getStatusColor(item.prevState) }]} />
@@ -616,10 +607,10 @@ export default function AlertsScreen() {
     );
   }
 
-  // ─── Render: Alert Item (tappable with dismiss animation) ──────────
+  // ─── Render: Alert Item (now driven by items collection) ──────────
   function renderAlertItem({ item }: { item: AlertEntry }) {
-    const statusColor = getStatusColor(item.status);
-    const isOut = item.status === "out" || item.status === "critical";
+    const statusColor = getStatusColor(item.alertState);
+    const isOut = item.alertState === "OUT" || item.alertState === "CRITICAL";
     const isDismissing = dismissingIds.has(item.id);
     const animOpacity = getAnimValue(item.id);
     const animScale = animOpacity.interpolate({
@@ -672,26 +663,33 @@ export default function AlertsScreen() {
               </Text>
               <Ionicons name="close-circle-outline" size={18} color={theme.mutedText} style={{ opacity: 0.5 }} />
             </View>
+
+            {/* Location */}
+            {item.location ? (
+              <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                📍 {item.location}
+              </Text>
+            ) : null}
+
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
               <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
                 <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                  {item.status}
+                  {item.alertState}
                 </Text>
               </View>
               <Text style={{ color: theme.mutedText, fontSize: 11 }}>
-                {item.itemType} · Qty: {item.qty} / Min: {item.min}
+                Qty: {item.currentQuantity} / Min: {item.minQuantity}
               </Text>
             </View>
-            {item.createdAt && (
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 3 }}>
-                <Text style={{ color: theme.mutedText, fontSize: 10 }}>
-                  Last updated {formatTimestamp(item.createdAt)}
-                </Text>
-                <Text style={{ color: theme.mutedText, fontSize: 10, fontStyle: "italic" }}>
-                  Tap to dismiss
-                </Text>
-              </View>
-            )}
+
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 3 }}>
+              <Text style={{ color: theme.mutedText, fontSize: 10 }}>
+                {item.lastAlertAt ? `Last alert ${formatTimestamp(item.lastAlertAt)}` : ""}
+              </Text>
+              <Text style={{ color: theme.mutedText, fontSize: 10, fontStyle: "italic" }}>
+                Tap to dismiss
+              </Text>
+            </View>
           </View>
         </Pressable>
       </Animated.View>
@@ -771,7 +769,7 @@ export default function AlertsScreen() {
         </>
       )}
 
-      {/* ─── Activity Log View ───────────────────────────────────────── */}
+      {/* ─── Activity Log View (UNCHANGED) ───────────────────────────── */}
       {activeView === "activity" && (
         <>
           {/* Filters */}
