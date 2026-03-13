@@ -18,6 +18,12 @@
 //     1. 24 hours have passed since `userDismissedAlertAt`
 //     2. Current quantity > `userDismissedAlertQuantity` (restocked)
 //     3. Current severity is worse than dismissed severity (already had this)
+//
+// FIX v5 - 2026-03-13  (Dynamic state calculation — never use stale Firestore alertState)
+// --------------------
+// - Auto-reset comparison now explicitly recalculates current state from
+//   live currentQuantity/minQuantity using calculateAlertState().
+// - Enhanced debug logging shows CALCULATED vs DISMISSED state with severity.
 
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
@@ -135,7 +141,21 @@ export function useLowStockCount(siteId?: string | null): number {
               const dismissedState = typeof data.userDismissedAlertState === "string"
                 ? data.userDismissedAlertState
                 : "OK"; // fallback for legacy dismissals without state
+
+              // FIX v5: ALWAYS calculate current state from live quantities — never
+              // trust the Firestore `alertState` field which may be stale.
+              const calculatedCurrentState = calculateAlertState(currentQty, minQty);
+              const currentSeverity = getSeverityLevel(calculatedCurrentState);
+              const dismissedSeverity = getSeverityLevel(dismissedState);
               let autoClearReason: string | null = null;
+
+              // Debug: log exact values being compared
+              console.log(
+                `[useLowStockCount]   Auto-reset check "${data.name ?? d.id}": ` +
+                `qty=${currentQty}, min=${minQty} → ` +
+                `CALCULATED="${calculatedCurrentState}" (sev=${currentSeverity}), ` +
+                `DISMISSED="${dismissedState}" (sev=${dismissedSeverity})`
+              );
 
               // Check 1: Time-based expiry (24 hours)
               const dismissedAt = data.userDismissedAlertAt;
@@ -161,19 +181,20 @@ export function useLowStockCount(siteId?: string | null): number {
                 autoClearReason = `restocked (was ${dismissedQty}, now ${currentQty})`;
               }
 
-              // Check 3: Severity worsened
-              if (!autoClearReason && getSeverityLevel(alertState) > getSeverityLevel(dismissedState)) {
-                autoClearReason = `severity worsened (${dismissedState} → ${alertState})`;
+              // Check 3: Severity worsened — compare CALCULATED current state vs
+              // the state stored at dismissal time (e.g. dismissed at LOW, now OUT).
+              if (!autoClearReason && currentSeverity > dismissedSeverity) {
+                autoClearReason = `severity worsened (dismissed="${dismissedState}"→calculated="${calculatedCurrentState}")`;
               }
 
               if (autoClearReason) {
                 console.log(
-                  `[useLowStockCount]   AUTO-CLEAR (${autoClearReason}): "${data.name ?? d.id}"`
+                  `[useLowStockCount]   ✅ AUTO-CLEAR (${autoClearReason}): "${data.name ?? d.id}"`
                 );
                 // Fall through — count the item
               } else {
                 console.log(
-                  `[useLowStockCount]   SKIP (dismissed at ${dismissedState}, now ${alertState}): ${data.name ?? d.id}`
+                  `[useLowStockCount]   ⛔ SKIP (dismissed="${dismissedState}", calculated="${calculatedCurrentState}", same or better): "${data.name ?? d.id}"`
                 );
                 continue;
               }

@@ -21,6 +21,15 @@
 //     1. 24 hours have passed since dismissal
 //     2. Current quantity > quantity at dismissal (item restocked)
 //     3. Current severity is worse than dismissed severity (already had this)
+//
+// FIX v5 - 2026-03-13  (Dynamic state calculation — never use stale Firestore alertState)
+// --------------------
+// - Auto-reset comparison now explicitly recalculates current state from
+//   live currentQuantity/minQuantity using calculateAlertState() instead
+//   of relying on item.alertState which could be stale if Firestore's
+//   alertState field wasn't updated when quantity changed.
+// - Enhanced debug logging: logs CALCULATED state vs DISMISSED state with
+//   severity levels for every dismissed-item comparison.
 
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -427,9 +436,23 @@ export default function AlertsScreen() {
       //   2. Current quantity > quantity at dismissal (item restocked)
       //   3. Current severity is worse than dismissed severity
       if (item.userDismissedAlert) {
-        const currentSeverity = getSeverityLevel(item.alertState);
+        // FIX v5: ALWAYS calculate current state from live quantities — never
+        // trust the Firestore `alertState` field which may be stale.
+        const calculatedCurrentState = calculateAlertState(
+          item.currentQuantity,
+          item.minQuantity
+        );
+        const currentSeverity = getSeverityLevel(calculatedCurrentState);
         const dismissedSeverity = getSeverityLevel(item.userDismissedAlertState);
         let autoClearReason: string | null = null;
+
+        // Debug: log exact values being compared
+        console.log(
+          `[AlertsScreen] Auto-reset check for "${item.itemName}": ` +
+          `qty=${item.currentQuantity}, min=${item.minQuantity} → ` +
+          `CALCULATED state="${calculatedCurrentState}" (severity=${currentSeverity}), ` +
+          `DISMISSED state="${item.userDismissedAlertState}" (severity=${dismissedSeverity})`
+        );
 
         // Check 1: Time-based expiry (24 hours)
         if (item.userDismissedAlertAt) {
@@ -453,19 +476,21 @@ export default function AlertsScreen() {
           autoClearReason = `restocked (was ${item.userDismissedAlertQuantity}, now ${item.currentQuantity})`;
         }
 
-        // Check 3: Severity worsened (existing smart auto-reset)
+        // Check 3: Severity worsened — compare CALCULATED current state vs
+        // the state that was stored at dismissal time. This catches the case
+        // where e.g. item was dismissed at LOW and has since gone to OUT.
         if (!autoClearReason && currentSeverity > dismissedSeverity) {
-          autoClearReason = `severity worsened (${item.userDismissedAlertState} → ${item.alertState})`;
+          autoClearReason = `severity worsened (dismissed="${item.userDismissedAlertState}"→calculated="${calculatedCurrentState}")`;
         }
 
         if (autoClearReason) {
           console.log(
-            `[AlertsScreen] Auto-clear: "${item.itemName}" — ${autoClearReason} → SHOWING`
+            `[AlertsScreen] ✅ Auto-clear: "${item.itemName}" — ${autoClearReason} → SHOWING alert`
           );
           // Fall through — show the alert
         } else {
           console.log(
-            `[AlertsScreen] Filtered out (dismissed at ${item.userDismissedAlertState}, now ${item.alertState}): "${item.itemName}"`
+            `[AlertsScreen] ⛔ Filtered out (dismissed="${item.userDismissedAlertState}", calculated="${calculatedCurrentState}", same or better): "${item.itemName}"`
           );
           continue;
         }
