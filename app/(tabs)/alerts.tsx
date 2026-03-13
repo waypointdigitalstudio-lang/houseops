@@ -1,36 +1,5 @@
 // app/(tabs)/alerts.tsx
 // Alerts & Activity Log Screen
-// REWRITE: Alerts view now queries the `items` collection directly instead of
-// deriving alerts from `alertsLog`. This is more reliable because the items
-// collection holds the current stock state (isLowStock, alertState, etc.).
-// Activity Log view remains unchanged — still queries alertsLog collection.
-//
-// FIX v3 - 2026-03-13
-// --------------------
-// - Moved locallyDismissedItemIds filtering OUT of the onSnapshot callback
-//   and into a useMemo. This prevents re-subscribing on every dismiss and
-//   avoids stale-closure issues.
-// - Added generation guard (like useLowStockCount) to prevent stale callbacks.
-// - Fixed CRITICAL threshold: now uses minQty * 0.5 (not Math.floor).
-// - Enhanced debug logging throughout.
-//
-// FIX v4 - 2026-03-13  (Auto-clear dismissed alerts)
-// --------------------
-// - Dismiss now stores `userDismissedAlertQuantity` (qty at dismissal).
-// - Alert reappears (auto-clear) if ANY of:
-//     1. 24 hours have passed since dismissal
-//     2. Current quantity > quantity at dismissal (item restocked)
-//     3. Current severity is worse than dismissed severity (already had this)
-//
-// FIX v5 - 2026-03-13  (Dynamic state calculation — never use stale Firestore alertState)
-// --------------------
-// - Auto-reset comparison now explicitly recalculates current state from
-//   live currentQuantity/minQuantity using calculateAlertState() instead
-//   of relying on item.alertState which could be stale if Firestore's
-//   alertState field wasn't updated when quantity changed.
-// - Enhanced debug logging: logs CALCULATED state vs DISMISSED state with
-//   severity levels for every dismissed-item comparison.
-
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -416,25 +385,45 @@ export default function AlertsScreen() {
     };
   }, [siteId]); // FIX v3: only depends on siteId — no locallyDismissedItemIds
 
+  // ─── Sync locallyDismissedItemIds with Firestore ───────────────────
+  // FIX v6: Once Firestore confirms dismissal (userDismissedAlert === true),
+  // remove the item from locallyDismissedItemIds so the auto-clear logic
+  // in the useMemo below can properly evaluate it — matching useLowStockCount.
+  useEffect(() => {
+    if (locallyDismissedItemIds.size === 0) return;
+
+    const confirmedIds = new Set<string>();
+    for (const item of rawAlerts) {
+      if (locallyDismissedItemIds.has(item.itemId) && item.userDismissedAlert) {
+        confirmedIds.add(item.itemId);
+      }
+    }
+
+    if (confirmedIds.size > 0) {
+      console.log(
+        `[AlertsScreen] FIX v6: Clearing ${confirmedIds.size} locally-dismissed IDs now confirmed by Firestore:`,
+        [...confirmedIds]
+      );
+      setLocallyDismissedItemIds((prev) => {
+        const next = new Set(prev);
+        for (const id of confirmedIds) next.delete(id);
+        return next;
+      });
+    }
+  }, [rawAlerts, locallyDismissedItemIds]);
+
   // ─── Filtered alerts (dismiss logic applied at render time) ───────
   // FIX v3: Smart dismiss + local dismiss filtering is now a useMemo.
-  // This avoids re-subscribing to Firestore on every dismiss.
+  // FIX v6: locallyDismissedItemIds is now ONLY used as an optimistic hint
+  // when Firestore hasn't confirmed the dismissal yet. Once Firestore has
+  // userDismissedAlert === true, the auto-clear logic decides visibility —
+  // matching useLowStockCount exactly.
   const alerts = useMemo(() => {
     const result: AlertEntry[] = [];
 
     for (const item of rawAlerts) {
-      // Skip items the user has locally dismissed (optimistic UI)
-      if (locallyDismissedItemIds.has(item.itemId)) {
-        console.log(`[AlertsScreen] Filtered out (locally dismissed): "${item.itemName}"`);
-        continue;
-      }
-
-      // Auto-clear logic: If user dismissed this alert in Firestore,
-      // check if the dismissal should be cleared (alert shown again).
-      // Show alert if ANY of these conditions are true:
-      //   1. 24 hours have passed since dismissal
-      //   2. Current quantity > quantity at dismissal (item restocked)
-      //   3. Current severity is worse than dismissed severity
+      // ── Firestore-confirmed dismissals: let auto-clear decide ──────
+      // This block matches useLowStockCount's logic exactly.
       if (item.userDismissedAlert) {
         // FIX v5: ALWAYS calculate current state from live quantities — never
         // trust the Firestore `alertState` field which may be stale.
@@ -494,6 +483,12 @@ export default function AlertsScreen() {
           );
           continue;
         }
+      }
+      // ── Optimistic local dismiss (Firestore hasn't confirmed yet) ──
+      // Only used briefly between the dismiss tap and Firestore round-trip.
+      else if (locallyDismissedItemIds.has(item.itemId)) {
+        console.log(`[AlertsScreen] Filtered out (locally dismissed, pending Firestore confirmation): "${item.itemName}"`);
+        continue;
       }
 
       result.push(item);

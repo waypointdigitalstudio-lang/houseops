@@ -1,30 +1,4 @@
 // hooks/useLowStockCount.ts
-// Shared hook that returns the real-time count of low-stock items.
-// Used by _layout.tsx to set the tab badge and by alerts.tsx for consistency.
-//
-// FIX v3 - 2026-03-13
-// --------------------
-// - Extracted calculateAlertState() for consistent severity logic with alerts.tsx.
-//   Uses minQty * 0.5 (not Math.floor) for CRITICAL threshold.
-// - Only uses the canonical `currentQuantity` and `minQuantity` fields from
-//   the items collection. No fallback to `quantity` or `min`.
-// - Added a listener-generation guard to prevent stale onSnapshot callbacks
-//   from updating state after the effect has been cleaned up.
-// - Count is always computed fresh from the snapshot (never accumulated).
-//
-// FIX v4 - 2026-03-13  (Auto-clear dismissed alerts)
-// --------------------
-// - Dismissal is auto-cleared (alert counted again) if ANY of:
-//     1. 24 hours have passed since `userDismissedAlertAt`
-//     2. Current quantity > `userDismissedAlertQuantity` (restocked)
-//     3. Current severity is worse than dismissed severity (already had this)
-//
-// FIX v5 - 2026-03-13  (Dynamic state calculation — never use stale Firestore alertState)
-// --------------------
-// - Auto-reset comparison now explicitly recalculates current state from
-//   live currentQuantity/minQuantity using calculateAlertState().
-// - Enhanced debug logging shows CALCULATED vs DISMISSED state with severity.
-
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import { db } from "../firebaseConfig";
