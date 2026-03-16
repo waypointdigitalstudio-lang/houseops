@@ -1,41 +1,44 @@
 // hooks/useUserProfile.ts
+// v2 - 2026-03-16
+// FIX: Removed hardcoded DEFAULT_SITE_ID fallback.
+// Users without a siteId in Firestore now get null instead of being
+// silently assigned "ballys_tiverton". This surfaces the missing
+// assignment rather than hiding it with wrong data.
+ 
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { auth, db } from "../firebaseConfig";
-
+ 
 export type UserProfile = {
-  siteId: string; // e.g. "ballys_tiverton"
+  siteId: string;
   role?: "admin" | "staff";
   createdAt?: any;
   updatedAt?: any;
 };
-
+ 
 type Result = {
   uid: string | null;
   profile: UserProfile | null;
   siteId: string | null;
   loading: boolean;
 };
-
-const DEFAULT_SITE_ID = "ballys_tiverton"; // <-- change if you want a different default
-
+ 
 export function useUserProfile(): Result {
   const [uid, setUid] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [siteId, setSiteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
+ 
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
-
+ 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
-      // cleanup old listener when auth changes
       if (unsubProfile) {
         unsubProfile();
         unsubProfile = null;
       }
-
+ 
       if (!user) {
         setUid(null);
         setProfile(null);
@@ -43,57 +46,50 @@ export function useUserProfile(): Result {
         setLoading(false);
         return;
       }
-
+ 
       setUid(user.uid);
       setLoading(true);
-
+ 
       const ref = doc(db, "users", user.uid);
-
+ 
       unsubProfile = onSnapshot(
         ref,
         async (snap) => {
-          // If profile exists, BUT missing siteId, patch it.
           if (snap.exists()) {
             const data = (snap.data() || {}) as Partial<UserProfile>;
-
-            const patched: UserProfile = {
-              siteId: (data.siteId as string) || DEFAULT_SITE_ID,
+ 
+            // FIX: No longer falls back to a hardcoded site.
+            // siteId will be null if not set — surfaces missing assignment.
+            const resolved: UserProfile = {
+              siteId: (data.siteId as string) ?? "",
               role: (data.role as any) || "staff",
-              createdAt: data.createdAt ?? serverTimestamp(),
-              updatedAt: serverTimestamp(),
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
             };
-
-            // If it was missing siteId, write it back so the DB matches UI
-            if (!data.siteId) {
-              try {
-                await setDoc(ref, patched, { merge: true });
-              } catch (e) {
-                console.log("Patch user profile failed:", e);
-              }
-            }
-
-            setProfile(patched);
-            setSiteId(patched.siteId);
+ 
+            setProfile(resolved);
+            setSiteId(resolved.siteId || null);
             setLoading(false);
             return;
           }
-
-          // If profile doesn't exist, create it
+ 
+          // Profile doesn't exist yet — create it with no siteId assigned.
+          // User will need to be assigned a site by an admin or via signup.
           const defaultProfile: UserProfile = {
-            siteId: DEFAULT_SITE_ID,
+            siteId: "",
             role: "staff",
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
-
+ 
           try {
             await setDoc(ref, defaultProfile, { merge: true });
           } catch (e) {
             console.log("Create default user profile failed:", e);
           }
-
+ 
           setProfile(defaultProfile);
-          setSiteId(defaultProfile.siteId);
+          setSiteId(null); // null = not yet assigned
           setLoading(false);
         },
         (err) => {
@@ -104,13 +100,12 @@ export function useUserProfile(): Result {
         }
       );
     });
-
+ 
     return () => {
       if (unsubProfile) unsubProfile();
       unsubAuth();
     };
   }, []);
-
+ 
   return { uid, profile, siteId, loading };
 }
-
