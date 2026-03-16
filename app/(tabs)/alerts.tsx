@@ -417,6 +417,23 @@ export default function AlertsScreen() {
       (snapshot) => {
         if (alertGenRef.current !== thisGeneration) return;
  
+        // ─── DEBUG — remove once alerts confirmed working ─────────────
+        console.log("=== ALERTS DEBUG ===");
+        console.log("siteId querying:", JSON.stringify(siteId));
+        console.log("total items docs returned:", snapshot.docs.length);
+        snapshot.docs.slice(0, 5).forEach((d) => {
+          const data = d.data();
+          console.log("item:", {
+            id: d.id,
+            siteId: JSON.stringify(data.siteId),
+            name: data.name,
+            currentQuantity: data.currentQuantity,
+            minQuantity: data.minQuantity,
+            userDismissedAlert: data.userDismissedAlert,
+          });
+        });
+        // ─────────────────────────────────────────────────────────────
+ 
         const alertItems: AlertEntry[] = [];
  
         for (const d of snapshot.docs) {
@@ -486,6 +503,22 @@ export default function AlertsScreen() {
     const unsub = onSnapshot(
       q,
       (snapshot) => {
+        // ─── DEBUG — remove once activity log confirmed working ───────
+        console.log("=== ACTIVITY DEBUG ===");
+        console.log("siteId querying:", JSON.stringify(siteId));
+        console.log("total alertsLog docs returned:", snapshot.docs.length);
+        snapshot.docs.slice(0, 5).forEach((d) => {
+          const data = d.data();
+          console.log("log entry:", {
+            id: d.id,
+            siteId: JSON.stringify(data.siteId),
+            action: data.action,
+            itemName: data.itemName ?? data.name,
+            createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt,
+          });
+        });
+        // ─────────────────────────────────────────────────────────────
+ 
         const items: ActivityEntry[] = snapshot.docs.map((d) => {
           const data = d.data();
           return {
