@@ -95,16 +95,22 @@ export const notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) 
   }
 
   // update item alert markers
-  await event.data.after.ref.set(
-    {
-      alertState: nextState,
-      lastAlertAt: admin.firestore.FieldValue.serverTimestamp(),
-      // Reset lastAlertState when restocked so the cooldown doesn't block
-      // the next LOW/OUT notification after an OK→LOW cycle.
-      lastAlertState: nextState === "OK" ? null : nextState,
-    },
-    { merge: true }
-  );
+  const alertMarkers = {
+    alertState: nextState,
+    lastAlertAt: admin.firestore.FieldValue.serverTimestamp(),
+    // Reset lastAlertState when restocked so the cooldown doesn't block
+    // the next LOW/OUT notification after an OK→LOW cycle.
+    lastAlertState: nextState === "OK" ? null : nextState,
+  };
+
+  // When restocked, clear dismiss flags so the alert can show again
+  // next time the item goes low — even if it returns to the same quantity.
+  if (nextState === "OK") {
+    alertMarkers.userDismissedAlert = false;
+    alertMarkers.userDismissedAlertQuantity = null;
+  }
+
+  await event.data.after.ref.set(alertMarkers, { merge: true });
 
   const itemSiteId = after.siteId;
   console.log("🔍 Item siteId:", itemSiteId);
