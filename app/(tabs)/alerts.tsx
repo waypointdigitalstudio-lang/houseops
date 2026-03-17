@@ -311,14 +311,14 @@ function AlertCard({
     if (dismissingRef.current) return;
     dismissingRef.current = true;
  
-    // Fire dismiss BEFORE animation
-    onDismiss(item);
- 
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
-    }).start();
+    }).start(() => {
+      // Fire dismiss AFTER animation so the fade plays fully before the item is removed
+      onDismiss(item);
+    });
   }, [item, onDismiss, fadeAnim]);
  
   return (
@@ -587,7 +587,7 @@ export default function AlertsScreen() {
   // ─── Visible alerts (exclude locally dismissed) ───────────────────
   const visibleAlerts = useMemo(() => {
     if (locallyDismissedIds.size === 0) return alerts;
-    return alerts.filter((a) => !locallyDismissedIds.has(a.id));
+    return alerts.filter((a) => !locallyDismissedIds.has(a.itemId));
   }, [alerts, locallyDismissedIds]);
  
   // ─── Filtered activities (client-side date/action filter) ─────────
