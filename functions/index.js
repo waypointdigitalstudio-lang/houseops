@@ -1,6 +1,6 @@
-const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
-const { logger } = require("firebase-functions");
-const admin = require("firebase-admin");
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { logger } from "firebase-functions";
+import admin from "firebase-admin";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -63,7 +63,7 @@ async function sendExpoPush(messages) {
 }
 
 // ---- main ----
-exports.notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
+export const notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
   const before = event.data.before.data();
   const after = event.data.after.data();
   const itemId = event.params.itemId;
@@ -99,7 +99,9 @@ exports.notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
     {
       alertState: nextState,
       lastAlertAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastAlertState: nextState,
+      // Reset lastAlertState when restocked so the cooldown doesn't block
+      // the next LOW/OUT notification after an OK→LOW cycle.
+      lastAlertState: nextState === "OK" ? null : nextState,
     },
     { merge: true }
   );
@@ -108,10 +110,10 @@ exports.notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
   console.log("🔍 Item siteId:", itemSiteId);
   console.log("🔍 Item name:", after.name);
   console.log("🔍 State change:", prevState, "→", nextState);
-  
+
   const tokens = await getEnabledTokens(itemSiteId);
   console.log("🔍 Found tokens:", tokens.length, "for siteId:", itemSiteId);
-  
+
   const itemName = after.name ?? "Unnamed item";
 
   // ---- message text ----
@@ -131,7 +133,7 @@ exports.notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
 
   console.log("📧 Notification:", title, "-", body);
 
-  // ---- audit log (existing system) ----
+  // ---- audit log ----
   const action =
     nextState === "OK" ? "added" :
     (nextState === "LOW" || nextState === "OUT") ? "deducted" :
@@ -155,7 +157,7 @@ exports.notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
     status: tokens.length ? "sending" : "no_tokens",
   });
 
-  // ---- NEW: app-facing alerts collection ----
+  // ---- app-facing alerts collection ----
   const type =
     nextState === "OUT" ? "out" : nextState === "LOW" ? "low" : "restock";
 

@@ -2,6 +2,7 @@
   "name": "functions",
   "description": "Cloud Functions for Firebase",
   "main": "index.js",
+  "type": "module",
   "engines": { "node": "20" },
   "scripts": {
     "serve": "firebase emulators:start --only functions",
