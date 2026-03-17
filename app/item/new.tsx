@@ -15,10 +15,12 @@ import {
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { BRAND } from "../../constants/branding";
 import { db } from "../../firebaseConfig";
+import { useUserProfile } from "../../hooks/useUserProfile";
 
 export default function NewItemScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ barcode?: string }>();
+  const { siteId } = useUserProfile();
 
   const initialBarcode = useMemo(() => String(params.barcode ?? "").trim(), [params.barcode]);
 
@@ -52,7 +54,14 @@ export default function NewItemScreen() {
 
     setSaving(true);
     try {
+      if (!siteId) {
+        Alert.alert("No site assigned", "Your account doesn't have a site assigned yet.");
+        setSaving(false);
+        return;
+      }
+
       const docRef = await addDoc(collection(db, "items"), {
+        siteId,
         name: cleanName,
         barcode: cleanBarcode,
         currentQuantity: Number(currentQuantity ?? 0),

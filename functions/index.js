@@ -132,15 +132,25 @@ exports.notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
   console.log("📧 Notification:", title, "-", body);
 
   // ---- audit log (existing system) ----
+  const action =
+    nextState === "OK" ? "added" :
+    (nextState === "LOW" || nextState === "OUT") ? "deducted" :
+    "edited";
+
   const logRef = db.collection("alertsLog").doc();
   await logRef.set({
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    siteId: itemSiteId,
     itemId,
     itemName,
     prevState,
     nextState,
     qty: afterQty,
     min: minQty,
+    action,
+    itemType: "inventory",
+    dismissed: false,
+    userDismissed: false,
     tokenCount: tokens.length,
     status: tokens.length ? "sending" : "no_tokens",
   });
