@@ -451,6 +451,15 @@ export default function AlertsScreen() {
  
         alertItems.sort((a, b) => getSeverityLevel(b.alertState) - getSeverityLevel(a.alertState));
  
+        // If an item reappears (qty changed, shouldShowAlert = true again),
+        // clear it from locallyDismissedIds so it is no longer hidden.
+        const alertItemIds = new Set(alertItems.map(a => a.itemId));
+        setLocallyDismissedIds(prev => {
+          if (prev.size === 0) return prev;
+          const next = new Set([...prev].filter(id => !alertItemIds.has(id)));
+          return next.size === prev.size ? prev : next;
+        });
+ 
         setAlerts(alertItems);
         setLoadingAlerts(false);
       },
