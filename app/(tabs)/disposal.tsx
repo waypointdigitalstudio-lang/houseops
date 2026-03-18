@@ -198,6 +198,27 @@ export default function DisposalScreen() {
         UTI: 'public.comma-separated-values-text', // iOS
       });
 
+      Alert.alert(
+        "Clear Records?",
+        `Export complete. Delete all ${disposals.length} disposal record${disposals.length !== 1 ? "s" : ""} from this site?`,
+        [
+          { text: "Keep Records", style: "cancel" },
+          {
+            text: "Delete All",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                const batch = writeBatch(db);
+                disposals.forEach((d) => batch.delete(doc(db, "disposals", d.id)));
+                await batch.commit();
+              } catch (err: any) {
+                Alert.alert("Error", err.message || "Failed to delete records.");
+              }
+            },
+          },
+        ]
+      );
+
     } catch (error: any) {
       console.error('Export error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
