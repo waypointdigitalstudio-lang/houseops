@@ -54,14 +54,10 @@ type Item = {
 type Toner = {
   id: string;
   model: string;
-  partNumber?: string;
   color: string;
   quantity: number;
   minQuantity: number;
   printer?: string;
-  supplier?: string;
-  notes?: string;
-  barcode?: string;
   siteId: string;
 };
 
@@ -243,14 +239,10 @@ export default function IndexScreen() {
   const [editingToner, setEditingToner] = useState<Toner | null>(null);
   const [tonerForm, setTonerForm] = useState({
     model: "",
-    partNumber: "",
     color: "Black",
     quantity: "",
     minQuantity: "",
     printer: "",
-    supplier: "",
-    notes: "",
-    barcode: "",
   });
 
   // --- FIX: Toner Undo delete state - using refs for timeouts ---
@@ -968,28 +960,14 @@ export default function IndexScreen() {
       setEditingToner(toner);
       setTonerForm({
         model: toner.model,
-        partNumber: toner.partNumber || "",
         color: toner.color,
         quantity: String(toner.quantity),
         minQuantity: String(toner.minQuantity),
         printer: toner.printer || "",
-        supplier: toner.supplier || "",
-        notes: toner.notes || "",
-        barcode: toner.barcode || "",
       });
     } else {
       setEditingToner(null);
-      setTonerForm({
-        model: "",
-        partNumber: "",
-        color: "Black",
-        quantity: "",
-        minQuantity: "",
-        printer: "",
-        supplier: "",
-        notes: "",
-        barcode: "",
-      });
+      setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "" });
     }
     setShowTonerModal(true);
   };
@@ -1263,7 +1241,7 @@ export default function IndexScreen() {
 
       const iName = col(["name", "printer"]);
       const iLocation = col(["location", "loc"]);
-      const iIp = col(["ip", "ipaddress", "ipaddress"]);
+      const iIp = col(["ip", "ipaddress", "ip_address"]);
       const iAsset = col(["asset", "assetnumber"]);
       const iSerial = col(["serial", "sn"]);
       const iTonerSeries = col(["toner", "tonerseries"]);
@@ -2012,11 +1990,11 @@ export default function IndexScreen() {
       </Modal>
 
       {/* Toner Modal */}
-      <Modal visible={showTonerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowTonerModal(false)}>
+      <Modal visible={showTonerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowTonerModal(false); setEditingToner(null); }}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>{editingToner ? "Edit Toner" : "Add New Toner"}</Text>
-            <Pressable onPress={() => setShowTonerModal(false)}>
+            <Pressable onPress={() => { setShowTonerModal(false); setEditingToner(null); }}>
               <Ionicons name="close" size={24} color={theme.text} />
             </Pressable>
           </View>
