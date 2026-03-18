@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ControlDeck — Standard Operating Procedure</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #1a1a1a;
+      background: #fff;
+      padding: 48px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    /* ── Cover ── */
+    .cover {
+      text-align: center;
+      padding: 60px 0 48px;
+      border-bottom: 2px solid #1d4ed8;
+      margin-bottom: 40px;
+    }
+    .cover h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1d4ed8;
+      letter-spacing: -0.5px;
+    }
+    .cover .subtitle {
+      font-size: 14px;
+      color: #555;
+      margin-top: 8px;
+    }
+    .cover .meta {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-top: 20px;
+      font-size: 12px;
+      color: #777;
+    }
+    .cover .meta span strong {
+      color: #333;
+    }
+
+    /* ── Section headings ── */
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1d4ed8;
+      margin-top: 36px;
+      margin-bottom: 10px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #dbeafe;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1e3a8a;
+      margin-top: 18px;
+      margin-bottom: 6px;
+      page-break-after: avoid;
+    }
+
+    /* ── Body text ── */
+    p {
+      margin-bottom: 8px;
+      color: #333;
+    }
+
+    /* ── Lists ── */
+    ul, ol {
+      margin: 6px 0 10px 20px;
+    }
+    li {
+      margin-bottom: 4px;
+    }
+    li strong {
+      color: #111;
+    }
+
+    /* ── Tips / callout box ── */
+    .callout {
+      background: #eff6ff;
+      border-left: 4px solid #1d4ed8;
+      border-radius: 4px;
+      padding: 14px 16px;
+      margin: 20px 0;
+    }
+    .callout p {
+      margin-bottom: 6px;
+      color: #1e3a8a;
+    }
+    .callout p:last-child { margin-bottom: 0; }
+    .callout strong { color: #1d4ed8; }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: center;
+    }
+
+    /* ── Print styles ── */
+    @media print {
+      body { padding: 0; font-size: 12px; }
+      h2 { page-break-before: auto; }
+      .cover { page-break-after: always; }
+      .no-break { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Cover -->
+  <div class="cover">
+    <h1>ControlDeck</h1>
+    <div class="subtitle">Standard Operating Procedure — Inventory &amp; Asset Management</div>
+    <div class="meta">
+      <span><strong>For:</strong> Operations Staff</span>
+      <span><strong>Sites:</strong> Bally's Tiverton &amp; Bally's Lincoln</span>
+      <span><strong>Platform:</strong> iOS &amp; Android</span>
+    </div>
+  </div>
+
+  <!-- Getting Started -->
+  <h2>Getting Started</h2>
+  <p>When you open the app you will be prompted to sign in. Use the email and password provided by your administrator. Once signed in, the app is scoped to your site — you will only see inventory, alerts, and disposals for your location.</p>
+  <p>The app has five tabs along the bottom:</p>
+  <ul>
+    <li><strong>Inventory</strong> — your stock list</li>
+    <li><strong>Alerts</strong> — low and out-of-stock notifications</li>
+    <li><strong>Scan</strong> — barcode scanner</li>
+    <li><strong>Disposal</strong> — asset disposal log</li>
+    <li><strong>Settings</strong> — your account and preferences</li>
+  </ul>
+
+  <!-- Inventory -->
+  <h2>Inventory Tab</h2>
+
+  <h3>Viewing Inventory</h3>
+  <p>The inventory list shows all items at your site. Each card displays the item name, location, and current stock level. Items at or below their minimum quantity will show a <strong>LOW</strong> or <strong>OUT</strong> badge in red.</p>
+  <p>Use the search bar to find items by name. Tap <strong>Low Stock Only</strong> to filter to items that need attention. Use the sort buttons to order by name or stock level.</p>
+
+  <h3>Adding a New Item</h3>
+  <p>Tap the <strong>+</strong> button in the top right. Fill in:</p>
+  <ul>
+    <li><strong>Item Name</strong> (required)</li>
+    <li><strong>Current Quantity</strong> (required)</li>
+    <li><strong>Minimum Quantity</strong> — the threshold that triggers a low stock alert</li>
+    <li><strong>Location</strong> — where the item is physically stored</li>
+    <li><strong>Barcode</strong> — optional, used with the scanner</li>
+    <li><strong>Notes</strong> — any additional information</li>
+  </ul>
+  <p>Tap <strong>Add Item</strong> to save.</p>
+
+  <h3>Editing an Item</h3>
+  <p>Tap anywhere on an item card to open its detail screen. Tap <strong>Edit Details</strong> to make changes to the name, quantities, location, or barcode. Tap <strong>Save</strong> when done or <strong>Cancel</strong> to discard.</p>
+
+  <h3>Adjusting Stock</h3>
+  <p>From the item detail screen, tap <strong>Adjust Stock</strong> to add or remove quantity. Select <strong>Add</strong> or <strong>Remove</strong>, enter the amount, and optionally add a note explaining the reason. Every adjustment is logged in the item's movement history.</p>
+
+  <h3>Disposing an Item (Partial or Full)</h3>
+  <p>Tap the orange archive icon on any inventory item to log a disposal. Fill in:</p>
+  <ul>
+    <li><strong>Item Name</strong> — pre-filled, edit if needed</li>
+    <li><strong>Amount</strong> — how many units are being disposed <em>(current stock is shown above this field)</em></li>
+    <li><strong>Reason</strong> — Broken, Damaged, Obsolete, Lost, or Other</li>
+    <li><strong>Who is disposing</strong> (required)</li>
+    <li><strong>Model, Vendor, Value, Age, Notes</strong> — fill in as applicable</li>
+  </ul>
+  <p>Tap <strong>Confirm Disposal</strong>. The disposed quantity will be subtracted from the item's current stock. The item stays in inventory — it is not deleted.</p>
+
+  <h3>Deleting an Item</h3>
+  <p>Tap the red trash icon on an item. A 5-second undo banner will appear at the bottom of the screen. Tap <strong>Undo</strong> to cancel. If you do nothing, the item is permanently deleted after 5 seconds.</p>
+
+  <h3>Importing from CSV</h3>
+  <p>Tap <strong>Import CSV</strong> to bulk-load inventory from a spreadsheet. The file must be a <strong>.csv</strong> with columns for name, quantity, minimum quantity, and location. Contact your administrator for the correct template.</p>
+
+  <!-- Toners -->
+  <h2>Toners Tab</h2>
+  <p>Within the Inventory tab, tap <strong>Toners</strong> to switch to the toner sub-tab.</p>
+
+  <h3>Toners</h3>
+  <p>Each toner card shows the model, color, current quantity, and minimum quantity. Tap the edit icon to update details. Tap the trash icon to delete (with 5-second undo).</p>
+  <p>Tap <strong>Add Toner</strong> to create a new record. Fill in:</p>
+  <ul>
+    <li><strong>Model Name</strong> (required)</li>
+    <li><strong>Color</strong> — Black, Cyan, Magenta, Yellow, or Other</li>
+    <li><strong>Quantity</strong> (required)</li>
+    <li><strong>Minimum Quantity</strong></li>
+    <li><strong>Printer</strong> — which printer this toner is for</li>
+  </ul>
+
+  <h3>Printers</h3>
+  <p>Tap <strong>Printers</strong> under the Toners tab to see all printers at your site. Printers can be imported via CSV or added manually. Each printer can be linked to a toner so stock levels are tracked together.</p>
+
+  <!-- Alerts -->
+  <h2>Alerts Tab</h2>
+
+  <h3>Stock Alerts</h3>
+  <p>The Alerts tab shows all items that are currently low or out of stock, sorted by severity (OUT first, then LOW). The tab icon shows a live badge count of how many items need attention.</p>
+  <p>Each alert card shows the item name, location, current quantity vs. minimum, and a status badge. Tap an alert to dismiss it. A dismissed alert will reappear if the quantity changes again.</p>
+  <p>Tap <strong>Generate Reorder List</strong> to export a CSV of all current alerts sorted by severity — useful for placing orders.</p>
+
+  <h3>Activity Log</h3>
+  <p>Tap <strong>Activity</strong> at the top of the Alerts tab to see a full log of every change made across your site's inventory. Filter by time period (Today / 7 Days / 30 Days / All) and by action type (Added, Edited, Disposed, etc.). Tap <strong>Export CSV</strong> to download the log.</p>
+
+  <!-- Scan -->
+  <h2>Scan Tab</h2>
+  <p>Point the camera at any barcode. The app will look it up in your inventory.</p>
+  <ul>
+    <li><strong>If found</strong> — you are taken directly to that item's detail screen where you can adjust stock or view history.</li>
+    <li><strong>If not found</strong> — you are offered the option to add it as a new inventory item or as a new toner.</li>
+  </ul>
+
+  <!-- Disposal -->
+  <h2>Disposal Tab</h2>
+  <p>The Disposal tab is a standalone log of all disposed assets at your site, separate from inventory adjustments.</p>
+
+  <h3>Viewing Records</h3>
+  <p>Each record shows the item name, reason (color-coded badge), quantity, who disposed it, and the date.</p>
+
+  <h3>Adding a Record Manually</h3>
+  <p>Tap <strong>Add Record</strong> if you need to log a disposal that wasn't done through the inventory screen. Fill in all applicable fields. <strong>Item Name</strong> and <strong>Disposed By</strong> are required.</p>
+
+  <h3>Exporting Records</h3>
+  <p>Tap <strong>Export CSV</strong> to download all disposal records. After the export completes, you will be asked if you want to delete all records from the app. Tap <strong>Delete All</strong> to clear or <strong>Keep Records</strong> to leave them in place.</p>
+
+  <h3>Deleting All Records</h3>
+  <p>Tap <strong>Delete All</strong> at any time to permanently clear all disposal records for your site. You will be asked to confirm before anything is deleted.</p>
+
+  <!-- Settings -->
+  <h2>Settings Tab</h2>
+
+  <h3>Theme</h3>
+  <p>Choose <strong>Light</strong>, <strong>Dark</strong>, or <strong>System</strong> to match your device preference.</p>
+
+  <h3>Your Site &amp; Role</h3>
+  <p>Displays your current site assignment and role (staff or admin). If you see "No site assigned," contact your administrator.</p>
+
+  <h3>Device Registration</h3>
+  <p>Register your device to receive push notifications for low-stock and out-of-stock alerts. Tap <strong>Register</strong>, enter a label for your device (e.g. "John's iPhone"), and save. You can reset your token here if notifications stop working.</p>
+
+  <h3>Alert Preferences</h3>
+  <p>Toggle which alerts you receive — Low Stock, Out of Stock, and Restocked. You can also toggle sound and vibration.</p>
+
+  <h3>Export Inventory</h3>
+  <p>Tap <strong>Export Inventory to CSV</strong> to download a full snapshot of your site's current inventory.</p>
+
+  <h3>Logging Out</h3>
+  <p>Scroll to the bottom and tap <strong>Log Out</strong>. You will be asked to confirm.</p>
+
+  <!-- Admin -->
+  <h2>Admin Panel <span style="font-size:11px; font-weight:400; color:#6b7280;">(Admin Role Only)</span></h2>
+  <p>The Admin tab is only visible to users with the admin role.</p>
+
+  <h3>Managing Users</h3>
+  <p>The user list shows everyone across both sites. Tap any user to:</p>
+  <ul>
+    <li><strong>Change their role</strong> — promote to admin or demote to staff</li>
+    <li><strong>Send a password reset email</strong></li>
+    <li><strong>Delete their profile</strong> — removes the user from the app</li>
+  </ul>
+
+  <h3>Reassigning a User's Site</h3>
+  <p>Select a user and select the new site. Check <strong>Also update this user's device tokens</strong> to move their push notifications to the new site at the same time. Tap <strong>Save Site Assignment</strong>.</p>
+
+  <!-- Tips -->
+  <h2>Tips &amp; Reminders</h2>
+  <div class="callout">
+    <p><strong>Low stock badge</strong> on the Alerts tab updates in real time — if someone else on your team adjusts stock, the count updates automatically.</p>
+    <p><strong>Undo is available for 5 seconds</strong> after any delete. If you miss it, the item is gone permanently.</p>
+    <p><strong>Disposal does not delete</strong> — it subtracts the disposed quantity from stock and logs the record. The item stays in your inventory at the reduced count.</p>
+    <p><strong>All data is site-scoped</strong> — staff at Tiverton cannot see Lincoln's inventory and vice versa.</p>
+    <p>If something looks wrong, check the <strong>Activity Log</strong> on the Alerts tab — every change is tracked with who made it and when.</p>
+  </div>
+
+  <div class="footer">
+    For technical issues or access problems, contact your administrator. &nbsp;|&nbsp; ControlDeck — Internal Use Only
+  </div>
+
+</body>
+</html>

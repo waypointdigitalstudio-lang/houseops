@@ -14,7 +14,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import React, { useEffect } from "react";
+import React from "react";
 import { Text, View } from "react-native";
 
 import { BRAND } from "../../constants/branding";
@@ -37,10 +37,6 @@ export default function TabLayout() {
   // FIX: Low stock count replaces unreadCount — dynamically computed from Firestore
   const lowStockCount = useLowStockCount(siteId);
 
-  // Debug: log whenever the badge count changes
-  useEffect(() => {
-    console.log(`[TabLayout] Badge count updated: ${lowStockCount} (siteId="${siteId}")`);
-  }, [lowStockCount, siteId]);
 
   return (
     <Tabs
@@ -64,7 +60,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Inventory",
-          headerTitle: `${BRAND.appName} Inventory`,
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="clipboard-outline" color={color} size={size} />
           ),
