@@ -1,9 +1,5 @@
 // app/(tabs)/admin.tsx
-// v2 - 2026-03-16
-// ADDED: Admin site switcher — admins can now view the app as either site
-// The active site selection persists in the session and affects all
-// screens that use useSiteContext() instead of useUserProfile() directly.
- 
+
 import { sendPasswordResetEmail } from "firebase/auth";
 import {
   collection,
@@ -26,18 +22,18 @@ import {
   Text,
   View,
 } from "react-native";
- 
+
 import { useAppTheme } from "../../constants/theme";
 import { auth, db } from "../../firebaseConfig";
-import { SITES, useSiteContext } from "../../hooks/useSiteContext";
+import { SITES } from "../../hooks/useSiteContext";
 import { useUserProfile } from "../../hooks/useUserProfile";
- 
+
 type SiteRow = {
   id: string;
   name?: string;
   label?: string;
 };
- 
+
 type UserRow = {
   uid: string;
   siteId?: string;
@@ -46,7 +42,7 @@ type UserRow = {
   name?: string;
   createdAt?: any;
 };
- 
+
 function SelectModal<T>({
   visible,
   title,
@@ -65,7 +61,7 @@ function SelectModal<T>({
   onClose: () => void;
 }) {
   const theme = useAppTheme();
- 
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
@@ -94,7 +90,7 @@ function SelectModal<T>({
               Tap one to select
             </Text>
           </View>
- 
+
           <ScrollView>
             {items.map((it) => (
               <Pressable
@@ -112,7 +108,7 @@ function SelectModal<T>({
               </Pressable>
             ))}
           </ScrollView>
- 
+
           <Pressable
             onPress={onClose}
             style={({ pressed }) => ({
@@ -130,51 +126,49 @@ function SelectModal<T>({
     </Modal>
   );
 }
- 
+
 export default function AdminScreen() {
   const theme = useAppTheme();
   const { profile } = useUserProfile();
-  const { activeSiteId, activeSiteLabel, setActiveSiteId, ownSiteId } = useSiteContext();
- 
   const role = profile?.role ?? "staff";
   const isAdmin = role === "admin";
- 
+
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
- 
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
- 
+
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [siteModalOpen, setSiteModalOpen] = useState(false);
   const [manageUserModalOpen, setManageUserModalOpen] = useState(false);
- 
+
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [userToManage, setUserToManage] = useState<UserRow | null>(null);
- 
+
   const [alsoUpdateTokens, setAlsoUpdateTokens] = useState(true);
- 
+
   useEffect(() => {
     let alive = true;
- 
+
     (async () => {
       try {
         setLoading(true);
- 
+
         const sitesSnap = await getDocs(collection(db, "sites"));
         const siteList: SiteRow[] = sitesSnap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as any),
         }));
- 
+
         const usersQ = query(collection(db, "users"), limit(200));
         const usersSnap = await getDocs(usersQ);
         const userList: UserRow[] = usersSnap.docs.map((d) => ({
           uid: d.id,
           ...(d.data() as any),
         }));
- 
+
         if (!alive) return;
         setSites(siteList);
         setUsers(userList);
@@ -185,16 +179,16 @@ export default function AdminScreen() {
         if (alive) setLoading(false);
       }
     })();
- 
+
     return () => { alive = false; };
   }, []);
- 
+
   const selectedSiteLabel = useMemo(() => {
     if (!selectedSiteId) return null;
     const s = sites.find((x) => x.id === selectedSiteId);
     return s?.label || s?.name || selectedSiteId;
   }, [selectedSiteId, sites]);
- 
+
   const handleSaveSiteAssignment = async () => {
     if (!isAdmin) {
       Alert.alert("Not allowed", "This account is not an admin.");
@@ -208,14 +202,14 @@ export default function AdminScreen() {
       Alert.alert("Pick a site", "Select a site first.");
       return;
     }
- 
+
     setSaving(true);
     try {
       await updateDoc(doc(db, "users", selectedUser.uid), {
         siteId: selectedSiteId,
         updatedAt: serverTimestamp(),
       });
- 
+
       if (alsoUpdateTokens) {
         const tokQ = query(
           collection(db, "devicePushTokens"),
@@ -231,7 +225,7 @@ export default function AdminScreen() {
           )
         );
       }
- 
+
       Alert.alert("Saved", `Updated ${selectedUser.email || selectedUser.uid} → ${selectedSiteId}`);
       setUsers((prev) =>
         prev.map((u) => u.uid === selectedUser.uid ? { ...u, siteId: selectedSiteId } : u)
@@ -244,7 +238,7 @@ export default function AdminScreen() {
       setSaving(false);
     }
   };
- 
+
   const handleDeleteUser = async (user: UserRow) => {
     Alert.alert(
       "Delete User",
@@ -275,7 +269,7 @@ export default function AdminScreen() {
       ]
     );
   };
- 
+
   const handleChangeRole = async (user: UserRow, newRole: "admin" | "staff") => {
     try {
       await updateDoc(doc(db, "users", user.uid), {
@@ -292,7 +286,7 @@ export default function AdminScreen() {
       Alert.alert("Failed", "Could not change user role.");
     }
   };
- 
+
   const handleSendPasswordReset = async (user: UserRow) => {
     if (!user.email) {
       Alert.alert("No email", "This user doesn't have an email address.");
@@ -306,7 +300,7 @@ export default function AdminScreen() {
       Alert.alert("Failed", e.message || "Could not send password reset email.");
     }
   };
- 
+
   if (!isAdmin) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.background, padding: 16 }}>
@@ -317,7 +311,7 @@ export default function AdminScreen() {
       </View>
     );
   }
- 
+
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.background, padding: 16 }}>
@@ -329,7 +323,7 @@ export default function AdminScreen() {
       </View>
     );
   }
- 
+
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
       <View style={{ padding: 16 }}>
@@ -337,70 +331,8 @@ export default function AdminScreen() {
         <Text style={{ color: theme.mutedText, marginTop: 6 }}>
           Manage users and site assignments
         </Text>
- 
-        {/* ── SITE SWITCHER ─────────────────────────────────────────── */}
-        {/* Admins only — lets them view the app as either site         */}
-        <View
-          style={{
-            marginTop: 16,
-            backgroundColor: theme.card,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: theme.tint + "60",
-            padding: 14,
-          }}
-        >
-          <Text style={{ color: theme.tint, fontWeight: "900", fontSize: 13, marginBottom: 2 }}>
-            👁 Viewing As
-          </Text>
-          <Text style={{ color: theme.mutedText, fontSize: 12, marginBottom: 12 }}>
-            Switch which site's data you see across the whole app. Your account is assigned to{" "}
-            <Text style={{ color: theme.text, fontWeight: "700" }}>
-              {SITES.find((s) => s.id === ownSiteId)?.label ?? ownSiteId ?? "Unknown"}
-            </Text>
-            .
-          </Text>
- 
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            {SITES.map((site) => {
-              const active = activeSiteId === site.id;
-              return (
-                <Pressable
-                  key={site.id}
-                  onPress={() => setActiveSiteId(site.id)}
-                  style={({ pressed }) => ({
-                    flex: 1,
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    borderRadius: 12,
-                    borderWidth: 2,
-                    borderColor: active ? theme.tint : theme.border,
-                    backgroundColor: active ? theme.tint + "18" : "transparent",
-                    alignItems: "center",
-                    opacity: pressed ? 0.8 : 1,
-                  })}
-                >
-                  <Text
-                    style={{
-                      color: active ? theme.tint : theme.text,
-                      fontWeight: "900",
-                      fontSize: 15,
-                    }}
-                  >
-                    {site.label}
-                  </Text>
-                  {active && (
-                    <Text style={{ color: theme.tint, fontSize: 10, marginTop: 2 }}>
-                      Currently viewing
-                    </Text>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
- 
-        {/* ── USER LIST ─────────────────────────────────────────────── */}
+
+        {/* USER LIST */}
         <View
           style={{
             marginTop: 16,
@@ -417,7 +349,7 @@ export default function AdminScreen() {
           <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}>
             Tap a user to manage their account
           </Text>
- 
+
           <View style={{ marginTop: 12 }}>
             {users.map((user) => (
               <Pressable
@@ -449,12 +381,12 @@ export default function AdminScreen() {
             ))}
           </View>
         </View>
- 
-        {/* ── SITE ASSIGNMENT ───────────────────────────────────────── */}
+
+        {/* SITE ASSIGNMENT */}
         <Text style={{ color: theme.text, fontSize: 18, fontWeight: "900", marginTop: 24 }}>
           Reassign User Site
         </Text>
- 
+
         <View
           style={{
             marginTop: 12,
@@ -490,7 +422,7 @@ export default function AdminScreen() {
             </Text>
           </Pressable>
         </View>
- 
+
         <View
           style={{
             marginTop: 12,
@@ -521,7 +453,7 @@ export default function AdminScreen() {
               siteId: {selectedSiteId ?? "—"}
             </Text>
           </Pressable>
- 
+
           <Pressable
             onPress={() => setAlsoUpdateTokens((v) => !v)}
             style={({ pressed }) => ({
@@ -542,7 +474,7 @@ export default function AdminScreen() {
             </Text>
           </Pressable>
         </View>
- 
+
         <Pressable
           onPress={handleSaveSiteAssignment}
           disabled={saving || !selectedUser || !selectedSiteId}
@@ -559,10 +491,10 @@ export default function AdminScreen() {
             {saving ? "Saving…" : "Save site assignment"}
           </Text>
         </Pressable>
- 
+
         <View style={{ height: 40 }} />
       </View>
- 
+
       {/* USER MODAL */}
       <SelectModal<UserRow>
         visible={userModalOpen}
@@ -587,7 +519,7 @@ export default function AdminScreen() {
         }}
         onClose={() => setUserModalOpen(false)}
       />
- 
+
       {/* SITE MODAL */}
       <SelectModal<SiteRow>
         visible={siteModalOpen}
@@ -610,7 +542,7 @@ export default function AdminScreen() {
         }}
         onClose={() => setSiteModalOpen(false)}
       />
- 
+
       {/* MANAGE USER MODAL */}
       <Modal
         visible={manageUserModalOpen}
@@ -652,7 +584,7 @@ export default function AdminScreen() {
                 <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 2 }}>
                   UID: {userToManage.uid}
                 </Text>
- 
+
                 {/* Change Role */}
                 <View style={{ marginTop: 16 }}>
                   <Text style={{ color: theme.mutedText, fontSize: 12, marginBottom: 8 }}>
@@ -681,7 +613,7 @@ export default function AdminScreen() {
                     ))}
                   </View>
                 </View>
- 
+
                 {/* Send Password Reset */}
                 {userToManage.email && (
                   <Pressable
@@ -701,7 +633,7 @@ export default function AdminScreen() {
                     </Text>
                   </Pressable>
                 )}
- 
+
                 {/* Delete User */}
                 <Pressable
                   onPress={() => handleDeleteUser(userToManage)}
@@ -716,7 +648,7 @@ export default function AdminScreen() {
                 >
                   <Text style={{ color: "#fff", fontWeight: "900" }}>Delete User</Text>
                 </Pressable>
- 
+
                 {/* Close */}
                 <Pressable
                   onPress={() => setManageUserModalOpen(false)}
