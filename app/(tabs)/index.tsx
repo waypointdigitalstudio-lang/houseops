@@ -1526,7 +1526,7 @@ export default function IndexScreen() {
   // are sibling Pressable components that don't interfere with each other.
   const renderInventoryItem = ({ item }: { item: Item }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Pressable onPress={() => openInventoryModal(item)} style={{ flex: 1 }}>
+      <Pressable onPress={() => router.push(`/item/${item.id}`)} style={{ flex: 1 }}>
         <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
           <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
