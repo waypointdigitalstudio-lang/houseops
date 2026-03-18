@@ -62,7 +62,7 @@ export default function ItemDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const { profile } = useUserProfile();
-  const mySiteId = profile?.siteId ?? "ballys_tiverton";
+  const mySiteId = profile?.siteId ?? null;
 
   const SITES = ["ballys_tiverton", "ballys_lincoln"];
 
@@ -76,7 +76,7 @@ export default function ItemDetail() {
   const [editBarcode, setEditBarcode] = useState("");
   const [savingMeta, setSavingMeta] = useState(false);
 
-  const [editSiteId, setEditSiteId] = useState<string>(mySiteId);
+  const [editSiteId, setEditSiteId] = useState<string>(mySiteId ?? "");
   const [deletingItem, setDeletingItem] = useState(false);
 
   const [pendingDelta, setPendingDelta] = useState<number | null>(null);

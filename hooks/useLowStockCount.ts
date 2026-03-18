@@ -35,14 +35,9 @@ export function useLowStockCount(siteId?: string | null): number {
     const thisGeneration = ++generationRef.current;
 
     if (!siteId) {
-      console.log("[useLowStockCount] No siteId provided — returning 0");
       setCount(0);
       return;
     }
-
-    console.log(
-      `[useLowStockCount] Subscribing to items (siteId="${siteId}", gen=${thisGeneration})`
-    );
 
     const q = query(collection(db, "items"), where("siteId", "==", siteId));
 
@@ -51,9 +46,6 @@ export function useLowStockCount(siteId?: string | null): number {
       (snapshot) => {
         // Guard: if a newer effect has started, this listener is stale — bail
         if (generationRef.current !== thisGeneration) {
-          console.log(
-            `[useLowStockCount] Stale snapshot callback (gen=${thisGeneration}, current=${generationRef.current}) — ignoring`
-          );
           return;
         }
 
@@ -84,10 +76,6 @@ export function useLowStockCount(siteId?: string | null): number {
           }
         }
 
-        console.log(
-          `[useLowStockCount] Snapshot (gen=${thisGeneration}): ${snapshot.docs.length} items, ${lowCount} visible low-stock`
-        );
-
         setCount(lowCount);
       },
       (err) => {
@@ -98,10 +86,7 @@ export function useLowStockCount(siteId?: string | null): number {
       }
     );
 
-    return () => {
-      console.log(`[useLowStockCount] Unsubscribing (gen=${thisGeneration})`);
-      unsub();
-    };
+    return () => unsub();
   }, [siteId]);
 
   return count;
