@@ -1,0 +1,214 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function myUid() { return request.auth.uid; }
+
+    function myUserPath() {
+      return /databases/$(database)/documents/users/$(myUid());
+    }
+
+    function myUserExists() {
+      return isSignedIn() && exists(myUserPath());
+    }
+
+    function myUserDoc() {
+      return get(myUserPath());
+    }
+
+    function mySiteId() {
+      return myUserExists() ? myUserDoc().data.siteId : null;
+    }
+
+    function isAdmin() {
+      return myUserExists() && myUserDoc().data.role == "admin";
+    }
+
+    function sameSite(data) {
+      return isSignedIn()
+        && mySiteId() != null
+        && data.siteId == mySiteId();
+    }
+
+    // =========================
+    // Users (profiles)
+    // =========================
+    match /users/{userId} {
+      allow read: if isAdmin() || (isSignedIn() && myUid() == userId);
+
+      allow create: if isSignedIn()
+        && myUid() == userId
+        && request.resource.data.role == "staff";
+
+      allow update: if (
+        isSignedIn()
+        && myUid() == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.siteId == resource.data.siteId
+      ) || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // =========================
+    // Sites
+    // =========================
+    match /sites/{siteId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // Items (inventory)
+    // =========================
+    match /items/{itemId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && sameSite(resource.data)
+        && request.resource.data.siteId == resource.data.siteId
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // =========================
+    // Movements (append-only)
+    // =========================
+    match /items/{itemId}/movements/{movementId} {
+      allow read: if isAdmin() || (
+        isSignedIn()
+        && sameSite(get(/databases/$(database)/documents/items/$(itemId)).data)
+      );
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update, delete: if false;
+    }
+
+    // =========================
+    // Disposals (site-scoped)
+    // =========================
+    match /disposals/{disposalId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow update: if false;
+    }
+
+    // =========================
+    // Printers (site-scoped)
+    // =========================
+    match /printers/{printerId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && sameSite(resource.data)
+        && request.resource.data.siteId == resource.data.siteId
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
+    // =========================
+    // Toners (site-scoped)
+    // =========================
+    match /toners/{tonerId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && sameSite(resource.data)
+        && request.resource.data.siteId == resource.data.siteId
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
+    // =========================
+    // Device push tokens
+    // =========================
+    match /devicePushTokens/{tokenId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == myUid());
+
+      allow create, update: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.uid == myUid()
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      // FIX: Allow admins to delete stale tokens from old/replaced devices
+      allow delete: if isAdmin();
+    }
+
+    // =========================
+    // Alerts (site-scoped; client can only mark read)
+    // =========================
+    match /alerts/{alertId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create, delete: if false;
+
+      allow update: if isSignedIn()
+        && (isAdmin() || sameSite(resource.data))
+        && request.resource.data.siteId == resource.data.siteId
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['readBy', 'updatedAt']);
+    }
+
+    // =========================
+    // AlertsLog (site-scoped)
+    // =========================
+    match /alertsLog/{logId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      // FIX: Allow client-side writes (index.tsx logActivity) scoped to own site.
+      // Cloud Function writes use Admin SDK and bypass these rules regardless.
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update, delete: if false;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
