@@ -587,6 +587,70 @@ export default function AlertsScreen() {
     return result;
   }, [activities, dateFilter, actionFilter]);
  
+  // ─── Reorder List Export ─────────────────────────────────────────
+  const generateReorderList = useCallback(async () => {
+    const outItems = visibleAlerts.filter(
+      (a) => a.alertState === "OUT" || a.alertState === "CRITICAL"
+    );
+    const lowItems = visibleAlerts.filter((a) => a.alertState === "LOW");
+
+    const date = new Date().toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const lines: string[] = [
+      `REORDER LIST — ${siteId ?? "Site"}`,
+      `Generated: ${date}`,
+      "",
+    ];
+
+    if (outItems.length > 0) {
+      lines.push("OUT OF STOCK / CRITICAL:");
+      outItems.forEach((a) => {
+        const loc = a.location ? ` (${a.location})` : "";
+        lines.push(`  • ${a.itemName}${loc} — Qty: ${a.currentQuantity}, Min: ${a.minQuantity}`);
+      });
+      lines.push("");
+    }
+
+    if (lowItems.length > 0) {
+      lines.push("LOW STOCK:");
+      lowItems.forEach((a) => {
+        const loc = a.location ? ` (${a.location})` : "";
+        lines.push(`  • ${a.itemName}${loc} — Qty: ${a.currentQuantity}, Min: ${a.minQuantity}`);
+      });
+      lines.push("");
+    }
+
+    const content = lines.join("\n");
+
+    try {
+      if (Platform.OS === "web") {
+        const blob = new Blob([content], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `ReorderList_${siteId}_${new Date().toISOString().split("T")[0]}.txt`;
+        link.click();
+      } else {
+        const fileUri =
+          FileSystem.cacheDirectory +
+          `ReorderList_${siteId}_${new Date().toISOString().split("T")[0]}.txt`;
+        await FileSystem.writeAsStringAsync(fileUri, content, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "text/plain",
+          dialogTitle: "Share Reorder List",
+        });
+      }
+    } catch (err) {
+      console.error("Reorder list export error:", err);
+    }
+  }, [visibleAlerts, siteId]);
+
   // ─── CSV Export ───────────────────────────────────────────────────
   const exportCSV = useCallback(async () => {
     try {
@@ -727,13 +791,26 @@ export default function AlertsScreen() {
               </Text>
             </View>
           ) : (
-            <FlatList
-              data={visibleAlerts}
-              keyExtractor={(item) => item.id}
-              renderItem={renderAlertItem}
-              contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-              showsVerticalScrollIndicator={false}
-            />
+            <>
+              <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+                <Pressable
+                  onPress={generateReorderList}
+                  style={[styles.exportBtn, { borderColor: theme.border }]}
+                >
+                  <Ionicons name="cart-outline" size={16} color={theme.text} />
+                  <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700", marginLeft: 6 }}>
+                    Generate Reorder List ({visibleAlerts.length})
+                  </Text>
+                </Pressable>
+              </View>
+              <FlatList
+                data={visibleAlerts}
+                keyExtractor={(item) => item.id}
+                renderItem={renderAlertItem}
+                contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+                showsVerticalScrollIndicator={false}
+              />
+            </>
           )}
         </>
       )}

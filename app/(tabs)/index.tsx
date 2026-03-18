@@ -674,6 +674,17 @@ export default function IndexScreen() {
     });
   }, [items, searchQuery, showLowOnly, sortMode, hiddenIds]);
 
+  const summaryStats = useMemo(() => {
+    const visible = items.filter((i) => !hiddenIds.has(i.id));
+    const totalItems = visible.length;
+    const outOfStock = visible.filter((i) => i.currentQuantity <= 0).length;
+    const lowStock = visible.filter(
+      (i) => i.currentQuantity > 0 && i.minQuantity > 0 && i.currentQuantity <= i.minQuantity
+    ).length;
+    const totalToners = toners.filter((t) => !hiddenTonerIds.has(t.id)).length;
+    return { totalItems, outOfStock, lowStock, totalToners };
+  }, [items, toners, hiddenIds, hiddenTonerIds]);
+
   // --- Toner Logic ---
   useEffect(() => {
     if (!siteId) return;
@@ -1600,6 +1611,26 @@ export default function IndexScreen() {
           contentContainerStyle={{ padding: 16 }}
           ListHeaderComponent={
             <>
+              {/* Dashboard Summary */}
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+                <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <Text style={[styles.statValue, { color: theme.text }]}>{summaryStats.totalItems}</Text>
+                  <Text style={[styles.statLabel, { color: theme.mutedText }]}>Items</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: summaryStats.lowStock > 0 ? "#f9731640" : theme.border }]}>
+                  <Text style={[styles.statValue, { color: summaryStats.lowStock > 0 ? "#f97316" : theme.text }]}>{summaryStats.lowStock}</Text>
+                  <Text style={[styles.statLabel, { color: theme.mutedText }]}>Low</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: summaryStats.outOfStock > 0 ? "#ef444440" : theme.border }]}>
+                  <Text style={[styles.statValue, { color: summaryStats.outOfStock > 0 ? "#ef4444" : theme.text }]}>{summaryStats.outOfStock}</Text>
+                  <Text style={[styles.statLabel, { color: theme.mutedText }]}>Out</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <Text style={[styles.statValue, { color: "#8b5cf6" }]}>{summaryStats.totalToners}</Text>
+                  <Text style={[styles.statLabel, { color: theme.mutedText }]}>Toners</Text>
+                </View>
+              </View>
+
               {/* NEW: Add button row with Import CSV and Add Item buttons */}
               <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
                 <Pressable
@@ -2212,6 +2243,9 @@ const styles = StyleSheet.create({
   filterRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   chipSmall: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
   chipTextSmall: { fontSize: 12, fontWeight: "600" },
+  statCard: { flex: 1, borderRadius: 12, padding: 12, borderWidth: 1, alignItems: "center" },
+  statValue: { fontSize: 22, fontWeight: "900" },
+  statLabel: { fontSize: 11, fontWeight: "600", marginTop: 2 },
   sortGroup: { flexDirection: "row", gap: 6 },
   card: { borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 10, flexDirection: "row", alignItems: "center", borderWidth: 1 },
   itemName: { fontSize: 16, fontWeight: "800" },
