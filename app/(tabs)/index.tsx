@@ -196,10 +196,8 @@ export default function IndexScreen() {
   const [showLowOnly, setShowLowOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
 
-  // --- NEW: Inventory item edit state ---
-  // These state variables control the inventory item edit modal
+  // --- Inventory item add modal state ---
   const [showInventoryModal, setShowInventoryModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [itemForm, setItemForm] = useState({
     name: "",
     currentQuantity: "",
@@ -473,32 +471,8 @@ export default function IndexScreen() {
     dismissUndoBanner();
   }, [pendingDelete, dismissUndoBanner]);
 
-  // --- NEW: Open inventory item modal for editing or creating ---
-  // This function populates the form with item data (for edit) or empty values (for new)
-  const openInventoryModal = useCallback((item?: Item) => {
-    if (item) {
-      // Edit mode: populate form with existing item data
-      setEditingItem(item);
-      setItemForm({
-        name: item.name || "",
-        currentQuantity: String(item.currentQuantity ?? 0),
-        minQuantity: String(item.minQuantity ?? 0),
-        location: item.location || "",
-        barcode: item.barcode || "",
-        notes: item.notes || "",
-      });
-    } else {
-      // Create mode: empty form
-      setEditingItem(null);
-      setItemForm({
-        name: "",
-        currentQuantity: "",
-        minQuantity: "",
-        location: "",
-        barcode: "",
-        notes: "",
-      });
-    }
+  const openInventoryModal = useCallback(() => {
+    setItemForm({ name: "", currentQuantity: "", minQuantity: "", location: "", barcode: "", notes: "" });
     setShowInventoryModal(true);
   }, []);
 
@@ -530,51 +504,27 @@ export default function IndexScreen() {
     };
 
     try {
-      if (editingItem) {
-        // ACTIVITY: Calculate previous and new status for editing
-        const prevStatus = getStockStatus(editingItem.currentQuantity, editingItem.minQuantity);
-        const nextStatus = getStockStatus(newQty, newMin);
+      const docRef = await addDoc(collection(db, "items"), data);
 
-        // Update existing item
-        await setDoc(doc(db, "items", editingItem.id), data, { merge: true });
+      const nextStatus = getStockStatus(newQty, newMin);
+      await logActivity({
+        siteId: siteId || "default",
+        itemName: data.name,
+        itemId: docRef.id,
+        qty: newQty,
+        min: newMin,
+        prevState: "OK",
+        nextState: nextStatus,
+        action: "added",
+        itemType: "inventory",
+      });
 
-        // ACTIVITY: Log the edit activity
-        await logActivity({
-          siteId: siteId || "default",
-          itemName: data.name,
-          itemId: editingItem.id,
-          qty: newQty,
-          min: newMin,
-          prevState: prevStatus,
-          nextState: nextStatus,
-          action: "edited",
-          itemType: "inventory",
-        });
-      } else {
-        // Create new item
-        const docRef = await addDoc(collection(db, "items"), data);
-
-        // ACTIVITY: Log the add activity
-        const nextStatus = getStockStatus(newQty, newMin);
-        await logActivity({
-          siteId: siteId || "default",
-          itemName: data.name,
-          itemId: docRef.id,
-          qty: newQty,
-          min: newMin,
-          prevState: "OK", // New items start from "OK" conceptually
-          nextState: nextStatus,
-          action: "added",
-          itemType: "inventory",
-        });
-      }
       setShowInventoryModal(false);
-      setEditingItem(null);
     } catch (err) {
       console.error("Error saving item:", err);
       Alert.alert("Error", "Failed to save inventory item.");
     }
-  }, [itemForm, editingItem, siteId]);
+  }, [itemForm, siteId]);
 
   // --- DISPOSE: Open disposal modal and auto-populate fields from inventory item ---
   const openDisposeModal = useCallback((item: Item) => {
@@ -582,7 +532,7 @@ export default function IndexScreen() {
     setDisposeForm({
       itemName: item.name || "",
       model: "",
-      amount: String(item.currentQuantity ?? 1),
+      amount: "",
       vendor: "",
       approxAmount: "",
       multipleAmount: "",
@@ -630,35 +580,37 @@ export default function IndexScreen() {
 
       await addDoc(collection(db, "disposals"), disposalData);
 
-      // 2. Delete the item from inventory using the undo-aware flow
-      // We use scheduleDelete so the user gets the undo banner
-      // But first close the modal
-      setShowDisposeModal(false);
-      setDisposingItem(null);
-      setDisposeSaving(false);
-
-      // Schedule the deletion with undo support
-      await scheduleDelete(disposingItem);
+      // 2. Subtract the disposed quantity from inventory (keep the item)
+      const disposedQty = parseInt(disposeForm.amount) || 1;
+      const newQty = Math.max(0, disposingItem.currentQuantity - disposedQty);
+      await updateDoc(doc(db, "items", disposingItem.id), {
+        currentQuantity: newQty,
+      });
 
       // 3. Log activity for the disposal
       const prevStatus = getStockStatus(disposingItem.currentQuantity, disposingItem.minQuantity);
+      const nextStatus = getStockStatus(newQty, disposingItem.minQuantity);
       await logActivity({
         siteId: siteId || "default",
         itemName: disposeForm.itemName.trim(),
         itemId: disposingItem.id,
-        qty: 0,
+        qty: newQty,
         min: disposingItem.minQuantity,
         prevState: prevStatus,
-        nextState: "OUT",
+        nextState: nextStatus,
         action: "disposed",
         itemType: "inventory",
       });
+
+      setShowDisposeModal(false);
+      setDisposingItem(null);
+      setDisposeSaving(false);
     } catch (err) {
       console.error("Error disposing item:", err);
       Alert.alert("Error", "Failed to dispose item. Please try again.");
       setDisposeSaving(false);
     }
-  }, [disposingItem, disposeForm, uid, siteId, scheduleDelete]);
+  }, [disposingItem, disposeForm, uid, siteId]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => !hiddenIds.has(i.id));
@@ -1549,14 +1501,6 @@ export default function IndexScreen() {
             <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
           )}
         </View>
-        {/* History button */}
-        <Pressable
-          onPress={() => router.push(`/item/${item.id}`)}
-          hitSlop={8}
-          style={{ padding: 6 }}
-        >
-          <Ionicons name="time-outline" size={20} color={theme.mutedText} />
-        </Pressable>
         {/* DISPOSE: Dispose button to open disposal modal */}
         <Pressable
           onPress={() => openDisposeModal(item)}
@@ -1844,7 +1788,7 @@ export default function IndexScreen() {
       <Modal visible={showInventoryModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowInventoryModal(false)}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingItem ? "Edit Item" : "Add New Item"}</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Add New Item</Text>
             <Pressable onPress={() => setShowInventoryModal(false)}>
               <Ionicons name="close" size={24} color={theme.text} />
             </Pressable>
@@ -1919,7 +1863,7 @@ export default function IndexScreen() {
 
             {/* Save Button */}
             <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveItem}>
-              <Text style={styles.saveBtnText}>{editingItem ? "Update Item" : "Add Item"}</Text>
+              <Text style={styles.saveBtnText}>Add Item</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -1956,6 +1900,11 @@ export default function IndexScreen() {
             />
 
             {/* Amount and Approx Amount Row */}
+            {disposingItem && (
+              <Text style={{ color: theme.mutedText, fontSize: 12, marginBottom: 8 }}>
+                Current stock: {disposingItem.currentQuantity}
+              </Text>
+            )}
             <View style={{ flexDirection: "row", gap: 12 }}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Amount</Text>
