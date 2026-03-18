@@ -600,50 +600,46 @@ export default function AlertsScreen() {
       year: "numeric",
     });
 
-    const lines: string[] = [
-      `REORDER LIST — ${siteId ?? "Site"}`,
-      `Generated: ${date}`,
-      "",
+    const escapeCell = (val: string) =>
+      val.includes(",") || val.includes('"') || val.includes("\n")
+        ? `"${val.replace(/"/g, '""')}"`
+        : val;
+
+    const rows: string[] = [
+      "Item Name,Location,Status,Current Qty,Min Qty,Site,Generated",
+      ...[...outItems, ...lowItems].map((a) =>
+        [
+          escapeCell(a.itemName),
+          escapeCell(a.location ?? ""),
+          a.alertState,
+          a.currentQuantity.toString(),
+          a.minQuantity.toString(),
+          escapeCell(siteId ?? ""),
+          escapeCell(date),
+        ].join(",")
+      ),
     ];
 
-    if (outItems.length > 0) {
-      lines.push("OUT OF STOCK / CRITICAL:");
-      outItems.forEach((a) => {
-        const loc = a.location ? ` (${a.location})` : "";
-        lines.push(`  • ${a.itemName}${loc} — Qty: ${a.currentQuantity}, Min: ${a.minQuantity}`);
-      });
-      lines.push("");
-    }
-
-    if (lowItems.length > 0) {
-      lines.push("LOW STOCK:");
-      lowItems.forEach((a) => {
-        const loc = a.location ? ` (${a.location})` : "";
-        lines.push(`  • ${a.itemName}${loc} — Qty: ${a.currentQuantity}, Min: ${a.minQuantity}`);
-      });
-      lines.push("");
-    }
-
-    const content = lines.join("\n");
+    const content = rows.join("\n");
+    const filename = `ReorderList_${siteId}_${new Date().toISOString().split("T")[0]}.csv`;
 
     try {
       if (Platform.OS === "web") {
-        const blob = new Blob([content], { type: "text/plain" });
+        const blob = new Blob([content], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `ReorderList_${siteId}_${new Date().toISOString().split("T")[0]}.txt`;
+        link.download = filename;
         link.click();
       } else {
-        const fileUri =
-          FileSystem.cacheDirectory +
-          `ReorderList_${siteId}_${new Date().toISOString().split("T")[0]}.txt`;
+        const fileUri = FileSystem.cacheDirectory + filename;
         await FileSystem.writeAsStringAsync(fileUri, content, {
           encoding: FileSystem.EncodingType.UTF8,
         });
         await Sharing.shareAsync(fileUri, {
-          mimeType: "text/plain",
+          mimeType: "text/csv",
           dialogTitle: "Share Reorder List",
+          UTI: "public.comma-separated-values-text",
         });
       }
     } catch (err) {
