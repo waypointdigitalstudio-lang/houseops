@@ -1,50 +1,126 @@
-# Welcome to your Expo app 👋
+# ControlDeck — Inventory & Asset Management
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native / Expo mobile app for managing inventory, tracking stock levels, and logging asset disposals across multiple sites. Built for internal operations teams at Bally's Tiverton and Bally's Lincoln.
 
-## Get started
+---
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+### Inventory
+- View all inventory items with real-time Firestore sync
+- Dashboard summary cards — total items, low stock count, out-of-stock count, toner count
+- Search by name and filter by stock status (Low Stock toggle)
+- Sort A–Z or by stock level
+- Add items manually or import from CSV
+- Hide items from the main list without deleting them
+- Tap the clock icon on any item to view its full alert history
 
-2. Start the app
+### Alerts (Stock Alerts)
+- Real-time feed of low-stock and out-of-stock items
+- Badge on the tab icon shows live count of items needing attention
+- Filter by alert state (OUT / CRITICAL / LOW)
+- Generate a Reorder List as a CSV export, sorted by severity
 
-   ```bash
-   npx expo start
-   ```
+### Scan & Update
+- Barcode scanner to quickly look up and update item quantities
 
-In the output, you'll find options to open the app in a
+### Asset Disposal
+- Log disposed assets with reason, quantity, notes, and who disposed them
+- Import disposal records from CSV
+- Export disposal records to CSV for audit/reporting
+- After export, prompted to delete all records in one tap (auto-clear)
+- Standalone "Delete All" button for manual clearing
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Item History Screen
+- Tap the clock icon on any inventory item to open its detail screen
+- Shows the last 50 alert history entries from Firestore (`alertsLog`)
+- Displays action type, state transitions (e.g. OK → LOW), quantity, and timestamp
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### Settings
+- Full inventory CSV export
+- Theme and app preferences
 
-## Get a fresh project
+### Admin (admin role only)
+- View all users across both sites
+- Reassign a user to a different site
+- Optionally update the user's push notification tokens to match the new site
+- Change user role (staff / admin)
+- Send password reset email
+- Delete user profile and associated device tokens
 
-When you're ready, run:
+---
 
-```bash
-npm run reset-project
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | React Native + Expo (Expo Router) |
+| Backend | Firebase Firestore (real-time `onSnapshot`) |
+| Auth | Firebase Auth |
+| Push Notifications | Expo Push Notifications |
+| File Export | Expo FileSystem + Expo Sharing |
+| OTA Updates | EAS Update |
+
+---
+
+## Project Structure
+
+```
+app/
+  (tabs)/
+    index.tsx       — Inventory list
+    explore.tsx     — Barcode scanner
+    alerts.tsx      — Stock alerts + Reorder List export
+    disposal.tsx    — Asset disposal log
+    settings.tsx    — Settings + full inventory export
+    admin.tsx       — Admin user management
+  item/
+    [id].tsx        — Item detail + alert history screen
+hooks/
+  useUserProfile.ts     — Current user profile + siteId
+  useSiteContext.ts     — Active site (staff = own site, admin = switchable)
+  useLowStockCount.ts   — Live badge count for Alerts tab
+  useLowStockItems.ts   — Low stock item list
+  usePushNotifications.ts
+constants/
+  branding.ts       — App name, colors (BRAND)
+  theme.ts          — Light/dark theme tokens
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## Sites
 
-To learn more about developing your project with Expo, look at the following resources:
+| Site ID | Label |
+|---|---|
+| `ballys_tiverton` | Tiverton |
+| `ballys_lincoln` | Lincoln |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Each user is assigned to one site. All Firestore queries are scoped by `siteId`.
 
-## Join the community
+---
 
-Join our community of developers creating universal apps.
+## Firestore Indexes Required
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The following composite indexes must exist in Firestore for queries to work:
+
+| Collection | Fields |
+|---|---|
+| `alertsLog` | `siteId` ↑ + `createdAt` ↓ |
+| `alertsLog` | `itemId` ↑ + `createdAt` ↓ |
+| `disposals` | `siteId` ↑ + `disposedAt` ↓ |
+
+---
+
+## Development
+
+```bash
+npm install
+npx expo start
+```
+
+## OTA Deploy
+
+```bash
+eas update --branch production --message "your message here"
+```
