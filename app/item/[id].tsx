@@ -1,15 +1,18 @@
 // app/item/[id].tsx
+import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -92,6 +95,9 @@ export default function ItemDetail() {
   const [loadingMovements, setLoadingMovements] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [alertHistory, setAlertHistory] = useState<any[]>([]);
+  const [loadingAlertHistory, setLoadingAlertHistory] = useState(true);
+
   useEffect(() => {
     if (!id) return;
 
@@ -163,6 +169,31 @@ export default function ItemDetail() {
       (err) => {
         console.error("Error loading movements:", err);
         setLoadingMovements(false);
+      }
+    );
+
+    return () => unsub();
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const q = query(
+      collection(db, "alertsLog"),
+      where("itemId", "==", String(id)),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setAlertHistory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setLoadingAlertHistory(false);
+      },
+      (err) => {
+        console.error("Error loading alert history:", err);
+        setLoadingAlertHistory(false);
       }
     );
 
@@ -765,6 +796,91 @@ export default function ItemDetail() {
                         >
                           {formatMovementTime(m)}
                         </Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: theme.card, borderColor: theme.border },
+              ]}
+            >
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                Alert History
+              </Text>
+
+              {loadingAlertHistory ? (
+                <View style={styles.centerSmall}>
+                  <ActivityIndicator />
+                </View>
+              ) : alertHistory.length === 0 ? (
+                <Text style={[styles.noMovementsText, { color: theme.mutedText }]}>
+                  No alert history for this item.
+                </Text>
+              ) : (
+                alertHistory.map((entry) => {
+                  const action: string = entry.action ?? "edited";
+                  const prevState: string = entry.prevState ?? "";
+                  const nextState: string = entry.nextState ?? "";
+                  const ts = entry.createdAt;
+                  const timeStr = ts?.toDate
+                    ? ts.toDate().toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "";
+
+                  const stateColor = (s: string) => {
+                    switch (s.toUpperCase()) {
+                      case "OUT": case "CRITICAL": return "#ef4444";
+                      case "LOW": return "#f97316";
+                      case "OK": return "#22c55e";
+                      default: return "#6b7280";
+                    }
+                  };
+
+                  const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
+                    added: "add-circle",
+                    edited: "create",
+                    deleted: "trash",
+                    deducted: "remove-circle",
+                    linked: "link",
+                    unlinked: "unlink",
+                    disposed: "close-circle",
+                  };
+                  const iconName = iconMap[action] ?? "ellipse";
+                  const iconColor = action === "added" ? "#22c55e"
+                    : action === "deleted" || action === "disposed" ? "#ef4444"
+                    : action === "deducted" ? "#f97316"
+                    : "#3b82f6";
+
+                  return (
+                    <View key={entry.id} style={styles.movementRow}>
+                      <View style={[styles.movementPill, { backgroundColor: iconColor + "20" }]}>
+                        <Ionicons name={iconName} size={16} color={iconColor} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={{ color: iconColor, fontSize: 12, fontWeight: "700", textTransform: "capitalize" }}>
+                            {action}
+                          </Text>
+                          {prevState && nextState && prevState.toUpperCase() !== nextState.toUpperCase() && (
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              <Text style={{ color: stateColor(prevState), fontSize: 11, fontWeight: "700" }}>{prevState}</Text>
+                              <Ionicons name="arrow-forward" size={10} color={theme.mutedText} />
+                              <Text style={{ color: stateColor(nextState), fontSize: 11, fontWeight: "700" }}>{nextState}</Text>
+                            </View>
+                          )}
+                          <Text style={{ color: theme.mutedText, fontSize: 11 }}>Qty: {entry.qty}</Text>
+                        </View>
+                        <Text style={[styles.movementTime, { color: theme.mutedText }]}>{timeStr}</Text>
                       </View>
                     </View>
                   );

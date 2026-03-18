@@ -1549,6 +1549,14 @@ export default function IndexScreen() {
             <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>
           )}
         </View>
+        {/* History button */}
+        <Pressable
+          onPress={() => router.push(`/item/${item.id}`)}
+          hitSlop={8}
+          style={{ padding: 6 }}
+        >
+          <Ionicons name="time-outline" size={20} color={theme.mutedText} />
+        </Pressable>
         {/* DISPOSE: Dispose button to open disposal modal */}
         <Pressable
           onPress={() => openDisposeModal(item)}
