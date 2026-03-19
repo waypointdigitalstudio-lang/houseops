@@ -39,6 +39,7 @@ interface Item {
   minQuantity: number;
   location?: string;
   barcode?: string;
+  notes?: string;
   siteId?: string;
   isLowStock?: boolean;
   lowStockAt?: any;
@@ -74,6 +75,7 @@ export default function ItemDetail() {
 
   const [editLocation, setEditLocation] = useState("");
   const [editBarcode, setEditBarcode] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const [savingMeta, setSavingMeta] = useState(false);
 
   const [editSiteId, setEditSiteId] = useState<string>(mySiteId ?? "");
@@ -115,6 +117,7 @@ export default function ItemDetail() {
             minQuantity: d.minQuantity ?? 0,
             location: d.location || "",
             barcode: d.barcode || "",
+            notes: d.notes || "",
             siteId: d.siteId || mySiteId,
             isLowStock: d.isLowStock ?? undefined,
             lowStockAt: d.lowStockAt ?? null,
@@ -123,6 +126,7 @@ export default function ItemDetail() {
           setItem(loaded);
           setEditLocation(loaded.location || "");
           setEditBarcode(loaded.barcode || "");
+          setEditNotes(loaded.notes || "");
           setEditSiteId(loaded.siteId || mySiteId);
         } else {
           setItem(null);
@@ -210,6 +214,7 @@ export default function ItemDetail() {
       await updateDoc(ref, {
         location: editLocation.trim(),
         barcode: editBarcode.trim(),
+        notes: editNotes.trim(),
         updatedAt: serverTimestamp(),
       });
 
@@ -671,6 +676,27 @@ export default function ItemDetail() {
                 placeholderTextColor={theme.mutedText}
                 value={editBarcode}
                 onChangeText={setEditBarcode}
+              />
+
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>
+                Notes
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    height: 90,
+                    textAlignVertical: "top",
+                    borderColor: theme.border,
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                  },
+                ]}
+                placeholder="e.g. Red boxes, stored on top shelf near window"
+                placeholderTextColor={theme.mutedText}
+                value={editNotes}
+                onChangeText={setEditNotes}
+                multiline
               />
 
               {error && !pendingDelta && !showDisposalDialog && (
