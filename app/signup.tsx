@@ -108,6 +108,25 @@ export default function SignUpScreen() {
         Sign up to get started
       </Text>
 
+      <View
+        style={{
+          marginTop: 14,
+          backgroundColor: theme.card,
+          borderRadius: 12,
+          padding: 12,
+          gap: 6,
+        }}
+      >
+        <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+          Please use your work email address when signing up.
+        </Text>
+        <Text style={{ color: theme.mutedText, fontSize: 12, lineHeight: 18 }}>
+          Your account will have standard staff access. If you require admin
+          privileges, please reach out to one of your site admins to have your
+          account elevated.
+        </Text>
+      </View>
+
       <TextInput
         style={{
           marginTop: 14,
