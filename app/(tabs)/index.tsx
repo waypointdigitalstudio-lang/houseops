@@ -1468,6 +1468,11 @@ export default function IndexScreen() {
             <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.barcode}</Text>
           </View>
         ) : null}
+        {item.notes ? (
+          <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 4, fontStyle: "italic" }} numberOfLines={2}>
+            {item.notes}
+          </Text>
+        ) : null}
       </Pressable>
       <View style={styles.rightControls}>
         <View style={{ alignItems: "flex-end" }}>
