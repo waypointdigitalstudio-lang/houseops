@@ -1,4 +1,4 @@
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions";
 import admin from "firebase-admin";
 
@@ -63,6 +63,19 @@ async function sendExpoPush(messages) {
 }
 
 // ---- main ----
+
+// Delete Firebase Auth account when a user document is removed
+export const deleteAuthUserOnRemoval = onDocumentDeleted("users/{uid}", async (event) => {
+  const uid = event.params.uid;
+  try {
+    await admin.auth().deleteUser(uid);
+    logger.info(`Auth account deleted for user ${uid}`);
+  } catch (err) {
+    // Auth user may already be gone — log and move on
+    logger.warn(`Could not delete Auth user ${uid}: ${err}`);
+  }
+});
+
 export const notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
   const before = event.data.before.data();
   const after = event.data.after.data();
