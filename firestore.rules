@@ -207,6 +207,26 @@ service cloud.firestore {
     }
 
     // =========================
+    // Radios (site-scoped)
+    // =========================
+    match /radios/{radioId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+      allow create: if isAdmin() || (isSignedIn() && mySiteId() != null && request.resource.data.siteId == mySiteId());
+      allow update: if isAdmin() || (isSignedIn() && sameSite(resource.data) && request.resource.data.siteId == resource.data.siteId);
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
+    // =========================
+    // Radio Parts (site-scoped)
+    // =========================
+    match /radioParts/{partId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+      allow create: if isAdmin() || (isSignedIn() && mySiteId() != null && request.resource.data.siteId == mySiteId());
+      allow update: if isAdmin() || (isSignedIn() && sameSite(resource.data) && request.resource.data.siteId == resource.data.siteId);
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
+    // =========================
     // Contacts / Directory (site-scoped)
     // =========================
     match /contacts/{contactId} {

@@ -78,6 +78,28 @@ type Printer = {
   importedAt?: string;
 };
 
+type Radio = {
+  id: string;
+  model: string;
+  serialNumber?: string;
+  channel?: string;
+  assignedTo?: string;
+  location?: string;
+  condition?: string;
+  notes?: string;
+  siteId: string;
+};
+
+type RadioPart = {
+  id: string;
+  name: string;
+  compatibleModel?: string;
+  quantity: number;
+  location?: string;
+  notes?: string;
+  siteId: string;
+};
+
 type TonerLink = {
   id: string;
   name: string;
@@ -85,8 +107,9 @@ type TonerLink = {
 };
 
 type SortMode = "name" | "stock";
-type TabMode = "inventory" | "toners";
+type TabMode = "inventory" | "toners" | "radios";
 type TonerSubTab = "toners" | "printers";
+type RadioSubTab = "radios" | "parts";
 
 // ACTIVITY: Stock status type for activity logging
 type StockStatus = "OK" | "LOW" | "OUT";
@@ -185,6 +208,21 @@ export default function IndexScreen() {
   // Tab state
   const [activeTab, setActiveTab] = useState<TabMode>("inventory");
   const [tonerSubTab, setTonerSubTab] = useState<TonerSubTab>("toners");
+  const [radioSubTab, setRadioSubTab] = useState<RadioSubTab>("radios");
+
+  // --- Radios state ---
+  const [radios, setRadios] = useState<Radio[]>([]);
+  const [radioParts, setRadioParts] = useState<RadioPart[]>([]);
+  const [radioSearch, setRadioSearch] = useState("");
+  const [radioPartSearch, setRadioPartSearch] = useState("");
+
+  const [showRadioModal, setShowRadioModal] = useState(false);
+  const [editingRadio, setEditingRadio] = useState<Radio | null>(null);
+  const [radioForm, setRadioForm] = useState({ model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", notes: "" });
+
+  const [showRadioPartModal, setShowRadioPartModal] = useState(false);
+  const [editingRadioPart, setEditingRadioPart] = useState<RadioPart | null>(null);
+  const [radioPartForm, setRadioPartForm] = useState({ name: "", compatibleModel: "", quantity: "", location: "", notes: "" });
 
   // --- Inventory state ---
   const [items, setItems] = useState<Item[]>([]);
@@ -903,6 +941,99 @@ export default function IndexScreen() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [printers, printerSearch]);
 
+  // --- Radio Logic ---
+  useEffect(() => {
+    if (!siteId) return;
+    const qRadios = query(collection(db, "radios"), where("siteId", "==", siteId));
+    const unsubRadios = onSnapshot(qRadios, (snap) => {
+      setRadios(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Radio)));
+    });
+    const qParts = query(collection(db, "radioParts"), where("siteId", "==", siteId));
+    const unsubParts = onSnapshot(qParts, (snap) => {
+      setRadioParts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as RadioPart)));
+    });
+    return () => { unsubRadios(); unsubParts(); };
+  }, [siteId]);
+
+  const filteredRadios = useMemo(() => {
+    if (!radioSearch) return [...radios].sort((a, b) => a.model.localeCompare(b.model));
+    const q = radioSearch.toLowerCase();
+    return radios
+      .filter((r) => r.model.toLowerCase().includes(q) || r.serialNumber?.toLowerCase().includes(q) || r.assignedTo?.toLowerCase().includes(q))
+      .sort((a, b) => a.model.localeCompare(b.model));
+  }, [radios, radioSearch]);
+
+  const filteredRadioParts = useMemo(() => {
+    if (!radioPartSearch) return [...radioParts].sort((a, b) => a.name.localeCompare(b.name));
+    const q = radioPartSearch.toLowerCase();
+    return radioParts
+      .filter((p) => p.name.toLowerCase().includes(q) || p.compatibleModel?.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [radioParts, radioPartSearch]);
+
+  const openRadioModal = useCallback((radio?: Radio) => {
+    setEditingRadio(radio ?? null);
+    setRadioForm(radio ? {
+      model: radio.model, serialNumber: radio.serialNumber ?? "", channel: radio.channel ?? "",
+      assignedTo: radio.assignedTo ?? "", location: radio.location ?? "",
+      condition: radio.condition ?? "Good", notes: radio.notes ?? "",
+    } : { model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", notes: "" });
+    setShowRadioModal(true);
+  }, []);
+
+  const saveRadio = useCallback(async () => {
+    if (!radioForm.model.trim()) { Alert.alert("Error", "Model is required."); return; }
+    const data = {
+      model: radioForm.model.trim(), serialNumber: radioForm.serialNumber.trim(),
+      channel: radioForm.channel.trim(), assignedTo: radioForm.assignedTo.trim(),
+      location: radioForm.location.trim(), condition: radioForm.condition,
+      notes: radioForm.notes.trim(), siteId: siteId || "default",
+    };
+    try {
+      if (editingRadio) { await updateDoc(doc(db, "radios", editingRadio.id), data); }
+      else { await addDoc(collection(db, "radios"), { ...data, createdAt: serverTimestamp() }); }
+      setShowRadioModal(false);
+    } catch (err: any) { Alert.alert("Error", err.message || "Failed to save radio."); }
+  }, [radioForm, editingRadio, siteId]);
+
+  const deleteRadio = useCallback((radio: Radio) => {
+    Alert.alert("Delete Radio", `Remove ${radio.model}${radio.serialNumber ? ` (${radio.serialNumber})` : ""}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { try { await deleteDoc(doc(db, "radios", radio.id)); } catch (err: any) { Alert.alert("Error", err.message); } } },
+    ]);
+  }, []);
+
+  const openRadioPartModal = useCallback((part?: RadioPart) => {
+    setEditingRadioPart(part ?? null);
+    setRadioPartForm(part ? {
+      name: part.name, compatibleModel: part.compatibleModel ?? "",
+      quantity: String(part.quantity), location: part.location ?? "", notes: part.notes ?? "",
+    } : { name: "", compatibleModel: "", quantity: "", location: "", notes: "" });
+    setShowRadioPartModal(true);
+  }, []);
+
+  const saveRadioPart = useCallback(async () => {
+    if (!radioPartForm.name.trim()) { Alert.alert("Error", "Part name is required."); return; }
+    const data = {
+      name: radioPartForm.name.trim(), compatibleModel: radioPartForm.compatibleModel.trim(),
+      quantity: parseInt(radioPartForm.quantity) || 0,
+      location: radioPartForm.location.trim(), notes: radioPartForm.notes.trim(),
+      siteId: siteId || "default",
+    };
+    try {
+      if (editingRadioPart) { await updateDoc(doc(db, "radioParts", editingRadioPart.id), data); }
+      else { await addDoc(collection(db, "radioParts"), { ...data, createdAt: serverTimestamp() }); }
+      setShowRadioPartModal(false);
+    } catch (err: any) { Alert.alert("Error", err.message || "Failed to save part."); }
+  }, [radioPartForm, editingRadioPart, siteId]);
+
+  const deleteRadioPart = useCallback((part: RadioPart) => {
+    Alert.alert("Delete Part", `Remove ${part.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { try { await deleteDoc(doc(db, "radioParts", part.id)); } catch (err: any) { Alert.alert("Error", err.message); } } },
+    ]);
+  }, []);
+
   const filteredTonerLinkList = useMemo(() => {
     if (!tonerLinkSearch) return tonerLinkList;
     return tonerLinkList.filter((t) => t.name.toLowerCase().includes(tonerLinkSearch.toLowerCase()));
@@ -1513,6 +1644,59 @@ export default function IndexScreen() {
 
   // --- NEW: Render inventory item with tap-to-edit functionality ---
   // FIX: Removed outer Pressable wrapper to avoid nested Pressable touch conflicts.
+  const CONDITION_COLOR: Record<string, string> = { Good: "#22c55e", Fair: "#f59e0b", Poor: "#ef4444", "Out of Service": "#6b7280" };
+
+  const renderRadio = ({ item }: { item: Radio }) => (
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <Pressable onPress={() => openRadioModal(item)} style={{ flex: 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+          <Text style={[styles.itemName, { color: theme.text }]}>{item.model}</Text>
+          {item.condition ? (
+            <View style={{ marginLeft: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: (CONDITION_COLOR[item.condition] ?? "#6b7280") + "22" }}>
+              <Text style={{ color: CONDITION_COLOR[item.condition] ?? "#6b7280", fontSize: 10, fontWeight: "700" }}>{item.condition}</Text>
+            </View>
+          ) : null}
+        </View>
+        {item.serialNumber ? <Text style={{ color: theme.mutedText, fontSize: 12 }}>S/N: {item.serialNumber}</Text> : null}
+        {item.channel ? <Text style={{ color: theme.mutedText, fontSize: 12 }}>Ch: {item.channel}</Text> : null}
+        {item.assignedTo ? <Text style={{ color: theme.mutedText, fontSize: 12 }}>Assigned: {item.assignedTo}</Text> : null}
+        {item.location ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <Ionicons name="location-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
+            <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location}</Text>
+          </View>
+        ) : null}
+        {item.notes ? <Text style={{ color: theme.mutedText, fontSize: 11, fontStyle: "italic", marginTop: 3 }} numberOfLines={1}>{item.notes}</Text> : null}
+      </Pressable>
+      <Pressable onPress={() => deleteRadio(item)} hitSlop={8} style={{ padding: 6 }}>
+        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+      </Pressable>
+    </View>
+  );
+
+  const renderRadioPart = ({ item }: { item: RadioPart }) => (
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <Pressable onPress={() => openRadioPartModal(item)} style={{ flex: 1 }}>
+        <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
+        {item.compatibleModel ? <Text style={{ color: theme.mutedText, fontSize: 12 }}>Compatible: {item.compatibleModel}</Text> : null}
+        {item.location ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <Ionicons name="location-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
+            <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location}</Text>
+          </View>
+        ) : null}
+        {item.notes ? <Text style={{ color: theme.mutedText, fontSize: 11, fontStyle: "italic", marginTop: 3 }} numberOfLines={1}>{item.notes}</Text> : null}
+      </Pressable>
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={{ color: theme.text, fontWeight: "800", fontSize: 18 }}>{item.quantity}</Text>
+        <Text style={{ color: theme.mutedText, fontSize: 10 }}>QTY</Text>
+      </View>
+      <Pressable onPress={() => deleteRadioPart(item)} hitSlop={8} style={{ padding: 6 }}>
+        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+      </Pressable>
+    </View>
+  );
+
   // The item info area is now its own Pressable for editing, while dispose/delete buttons
   // are sibling Pressable components that don't interfere with each other.
   const renderInventoryItem = ({ item }: { item: Item }) => (
@@ -1594,6 +1778,12 @@ export default function IndexScreen() {
             style={[styles.tab, activeTab === "toners" && { backgroundColor: theme.background, borderColor: theme.border }]}
           >
             <Text style={[styles.tabText, { color: activeTab === "toners" ? theme.text : theme.mutedText }]}>Toners & Printers</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveTab("radios")}
+            style={[styles.tab, activeTab === "radios" && { backgroundColor: theme.background, borderColor: theme.border }]}
+          >
+            <Text style={[styles.tabText, { color: activeTab === "radios" ? theme.text : theme.mutedText }]}>Radios</Text>
           </Pressable>
         </View>
       </View>
@@ -1782,7 +1972,75 @@ export default function IndexScreen() {
             />
           )}
         </View>
-      )}
+      ) : activeTab === "radios" ? (
+        <View style={{ flex: 1 }}>
+          {/* Radios sub-tab bar */}
+          <View style={{ flexDirection: "row", paddingHorizontal: 16, marginBottom: 12, gap: 12 }}>
+            <Pressable
+              onPress={() => setRadioSubTab("radios")}
+              style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: radioSubTab === "radios" ? theme.text : "transparent" }}
+            >
+              <Text style={{ textAlign: "center", color: radioSubTab === "radios" ? theme.text : theme.mutedText, fontWeight: "700" }}>
+                Radios ({radios.length})
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setRadioSubTab("parts")}
+              style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: radioSubTab === "parts" ? theme.text : "transparent" }}
+            >
+              <Text style={{ textAlign: "center", color: radioSubTab === "parts" ? theme.text : theme.mutedText, fontWeight: "700" }}>
+                Parts ({radioParts.length})
+              </Text>
+            </Pressable>
+          </View>
+
+          {radioSubTab === "radios" ? (
+            <FlatList
+              data={filteredRadios}
+              keyExtractor={(item) => item.id}
+              renderItem={renderRadio}
+              contentContainerStyle={{ padding: 16 }}
+              ListHeaderComponent={
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <TextInput
+                    style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+                    placeholder="Search radios..."
+                    placeholderTextColor={theme.mutedText}
+                    value={radioSearch}
+                    onChangeText={setRadioSearch}
+                  />
+                  <Pressable onPress={() => openRadioModal()} style={[styles.addTonerBtn, { backgroundColor: theme.text }]}>
+                    <Ionicons name="add" size={24} color={theme.background} />
+                  </Pressable>
+                </View>
+              }
+              ListEmptyComponent={<Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>No radios yet. Tap + to add one.</Text>}
+            />
+          ) : (
+            <FlatList
+              data={filteredRadioParts}
+              keyExtractor={(item) => item.id}
+              renderItem={renderRadioPart}
+              contentContainerStyle={{ padding: 16 }}
+              ListHeaderComponent={
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <TextInput
+                    style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+                    placeholder="Search parts..."
+                    placeholderTextColor={theme.mutedText}
+                    value={radioPartSearch}
+                    onChangeText={setRadioPartSearch}
+                  />
+                  <Pressable onPress={() => openRadioPartModal()} style={[styles.addTonerBtn, { backgroundColor: theme.text }]}>
+                    <Ionicons name="add" size={24} color={theme.background} />
+                  </Pressable>
+                </View>
+              }
+              ListEmptyComponent={<Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>No parts yet. Tap + to add one.</Text>}
+            />
+          )}
+        </View>
+      ) : null}
 
       {/* FIX: Inventory Undo Bar - Always rendered, visibility controlled by animation + pointerEvents */}
       <Animated.View
@@ -1833,6 +2091,109 @@ export default function IndexScreen() {
       </Animated.View>
 
       {/* NEW: Inventory Item Edit Modal */}
+      {/* Radio Modal */}
+      <Modal visible={showRadioModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRadioModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingRadio ? "Edit Radio" : "Add Radio"}</Text>
+            <Pressable onPress={() => setShowRadioModal(false)}><Ionicons name="close" size={24} color={theme.text} /></Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {[
+              { label: "Model *", key: "model", placeholder: "e.g. Motorola RDU2020" },
+              { label: "Serial Number", key: "serialNumber", placeholder: "e.g. 123ABC" },
+              { label: "Channel", key: "channel", placeholder: "e.g. Ch 3" },
+              { label: "Assigned To", key: "assignedTo", placeholder: "e.g. John Smith" },
+              { label: "Location", key: "location", placeholder: "e.g. Security Desk" },
+            ].map(({ label, key, placeholder }) => (
+              <View key={key}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>{label}</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder={placeholder}
+                  placeholderTextColor={theme.mutedText}
+                  value={(radioForm as any)[key]}
+                  onChangeText={(v) => setRadioForm((p) => ({ ...p, [key]: v }))}
+                />
+              </View>
+            ))}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Condition</Text>
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+              {["Good", "Fair", "Poor", "Out of Service"].map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => setRadioForm((p) => ({ ...p, condition: c }))}
+                  style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: radioForm.condition === c ? theme.tint : theme.border, backgroundColor: radioForm.condition === c ? theme.tint + "22" : theme.card }}
+                >
+                  <Text style={{ color: radioForm.condition === c ? theme.tint : theme.mutedText, fontWeight: "700", fontSize: 13 }}>{c}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]}
+              placeholder="Additional notes..."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={radioForm.notes}
+              onChangeText={(v) => setRadioForm((p) => ({ ...p, notes: v }))}
+            />
+            <Pressable style={[styles.saveBtn, { backgroundColor: theme.tint }]} onPress={saveRadio}>
+              <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>{editingRadio ? "Save Changes" : "Add Radio"}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Radio Part Modal */}
+      <Modal visible={showRadioPartModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRadioPartModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingRadioPart ? "Edit Part" : "Add Radio Part"}</Text>
+            <Pressable onPress={() => setShowRadioPartModal(false)}><Ionicons name="close" size={24} color={theme.text} /></Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {[
+              { label: "Part Name *", key: "name", placeholder: "e.g. Belt Clip" },
+              { label: "Compatible Model", key: "compatibleModel", placeholder: "e.g. Motorola RDU2020" },
+              { label: "Location", key: "location", placeholder: "e.g. Storage Room B" },
+            ].map(({ label, key, placeholder }) => (
+              <View key={key}>
+                <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>{label}</Text>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder={placeholder}
+                  placeholderTextColor={theme.mutedText}
+                  value={(radioPartForm as any)[key]}
+                  onChangeText={(v) => setRadioPartForm((p) => ({ ...p, [key]: v }))}
+                />
+              </View>
+            ))}
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Quantity</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="0"
+              placeholderTextColor={theme.mutedText}
+              keyboardType="numeric"
+              value={radioPartForm.quantity}
+              onChangeText={(v) => setRadioPartForm((p) => ({ ...p, quantity: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]}
+              placeholder="Additional notes..."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={radioPartForm.notes}
+              onChangeText={(v) => setRadioPartForm((p) => ({ ...p, notes: v }))}
+            />
+            <Pressable style={[styles.saveBtn, { backgroundColor: theme.tint }]} onPress={saveRadioPart}>
+              <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>{editingRadioPart ? "Save Changes" : "Add Part"}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* Scanner Modal */}
       <Modal visible={showScanModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowScanModal(false)}>
         <View style={{ flex: 1, backgroundColor: "#000" }}>
