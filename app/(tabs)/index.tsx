@@ -1874,7 +1874,7 @@ export default function IndexScreen() {
             </>
           }
         />
-      ) : (
+      ) : activeTab === "toners" ? (
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: "row", paddingHorizontal: 16, marginBottom: 12, gap: 12 }}>
             <Pressable
