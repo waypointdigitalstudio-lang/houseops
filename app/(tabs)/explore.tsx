@@ -1,6 +1,8 @@
 // app/(tabs)/explore.tsx — Vendor & Contact Directory
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
   addDoc,
   collection,
@@ -12,9 +14,11 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Linking,
@@ -65,6 +69,7 @@ export default function DirectoryScreen() {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
+  const [importingContacts, setImportingContacts] = useState(false);
 
   // Real-time listener
   useEffect(() => {
@@ -168,6 +173,103 @@ export default function DirectoryScreen() {
   const call = (phone: string) => Linking.openURL(`tel:${phone}`);
   const email = (addr: string) => Linking.openURL(`mailto:${addr}`);
 
+  const normalizeCell = (val: string): string => {
+    if (!val) return "";
+    const trimmed = val.trim();
+    if (["nan", "none", "null", "-", "n/a"].includes(trimmed.toLowerCase())) return "";
+    return trimmed;
+  };
+
+  const parseCSV = (content: string): string[][] => {
+    const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
+    if (lines.length === 0) return [];
+    const firstLine = lines[0];
+    const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
+    return lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
+  };
+
+  const importContactsFromCSV = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImportingContacts(true);
+      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const rows = parseCSV(content);
+
+      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
+        return -1;
+      };
+
+      const iName     = col(["name", "contact", "fullname"]);
+      const iCompany  = col(["company", "organization", "org", "business"]);
+      const iPhone    = col(["phone", "tel", "mobile", "cell"]);
+      const iEmail    = col(["email", "mail"]);
+      const iCategory = col(["category", "type", "cat"]);
+      const iNotes    = col(["notes", "note"]);
+
+      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' or 'Contact' column."); return; }
+
+      const VALID_CATS = ["Vendor", "IT Support", "Maintenance", "Facilities", "Other"];
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const name = normalizeCell(row[iName] ?? "");
+        if (!name) continue;
+        const rawCat = normalizeCell(row[iCategory] ?? "Other");
+        const category = VALID_CATS.find((c) => c.toLowerCase() === rawCat.toLowerCase()) || "Other";
+        const stableId = `${siteId}_${name}`
+          .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+        const docRef = doc(db, "contacts", stableId);
+        batch.set(docRef, {
+          name,
+          company:  normalizeCell(row[iCompany] ?? ""),
+          phone:    normalizeCell(row[iPhone] ?? ""),
+          email:    normalizeCell(row[iEmail] ?? ""),
+          category,
+          notes:    normalizeCell(row[iNotes] ?? ""),
+          siteId:   siteId || "default",
+          importedAt: new Date().toISOString(),
+        }, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert("Import Complete", `${count} contact${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      console.error("Contact import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingContacts(false);
+    }
+  }, [siteId]);
+
+  const exportContactsToCSV = useCallback(async () => {
+    try {
+      if (contacts.length === 0) { Alert.alert("Nothing to export", "No contacts to export."); return; }
+      const header = "Name,Company,Phone,Email,Category,Notes";
+      const rows = contacts.map((c) =>
+        [c.name, c.company ?? "", c.phone ?? "", c.email ?? "", c.category ?? "", c.notes ?? ""]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(",")
+      );
+      const csv = [header, ...rows].join("\n");
+      const uri = FileSystem.cacheDirectory + "contacts_export.csv";
+      await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Export Contacts CSV" });
+    } catch (err: any) {
+      Alert.alert("Export Failed", err.message || "An unexpected error occurred.");
+    }
+  }, [contacts]);
+
   const renderContact = ({ item }: { item: Contact }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <Pressable onPress={() => openEdit(item)} style={{ flex: 1 }}>
@@ -210,7 +312,7 @@ export default function DirectoryScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Search + Add */}
-      <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+      <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
         <TextInput
           style={[styles.search, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, flex: 1 }]}
           placeholder="Search directory..."
@@ -223,6 +325,26 @@ export default function DirectoryScreen() {
           style={[styles.addBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
         >
           <Ionicons name="add" size={22} color={theme.text} />
+        </Pressable>
+      </View>
+      {/* Import / Export */}
+      <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+        <Pressable
+          onPress={importContactsFromCSV}
+          disabled={importingContacts}
+          style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}
+        >
+          {importingContacts
+            ? <ActivityIndicator size="small" color={theme.text} />
+            : <><Ionicons name="cloud-upload-outline" size={15} color={theme.text} style={{ marginRight: 5 }} /><Text style={[styles.csvBtnText, { color: theme.text }]}>Import CSV</Text></>
+          }
+        </Pressable>
+        <Pressable
+          onPress={exportContactsToCSV}
+          style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}
+        >
+          <Ionicons name="cloud-download-outline" size={15} color={theme.text} style={{ marginRight: 5 }} />
+          <Text style={[styles.csvBtnText, { color: theme.text }]}>Export CSV</Text>
         </Pressable>
       </View>
 
@@ -362,4 +484,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: "600", marginBottom: 6, textTransform: "uppercase" },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, marginBottom: 16 },
   saveBtn: { borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 8, marginBottom: 40 },
+  csvBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
+  csvBtnText: { fontSize: 13, fontWeight: "600" },
 });

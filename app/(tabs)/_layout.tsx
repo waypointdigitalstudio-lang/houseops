@@ -68,17 +68,6 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="explore"
-        options={{
-          title: "Directory",
-          headerTitle: "Vendor Directory",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book-outline" color={color} size={size} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
         name="alerts"
         options={{
           title: "Alerts",
@@ -113,6 +102,17 @@ export default function TabLayout() {
                 </View>
               )}
             </View>
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: "Directory",
+          headerTitle: "Vendor Directory",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="book-outline" color={color} size={size} />
           ),
         }}
       />

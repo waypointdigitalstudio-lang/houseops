@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -324,6 +325,8 @@ export default function IndexScreen() {
   // --- Import state ---
   const [importingInventory, setImportingInventory] = useState(false);
   const [importingToners, setImportingToners] = useState(false);
+  const [importingRadios, setImportingRadios] = useState(false);
+  const [importingRadioParts, setImportingRadioParts] = useState(false);
 
   // --- Link Toner Modal state ---
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -1489,6 +1492,169 @@ export default function IndexScreen() {
     }
   };
 
+  // --- Import Radios from CSV ---
+  const importRadiosFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImportingRadios(true);
+      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const rows = parseCSV(content);
+
+      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
+        return -1;
+      };
+
+      const iModel    = col(["model", "name", "radio"]);
+      const iSerial   = col(["serial", "serialnumber", "sn"]);
+      const iChannel  = col(["channel", "chan"]);
+      const iAssigned = col(["assigned", "assignedto", "user", "person"]);
+      const iLocation = col(["location", "loc"]);
+      const iCondition = col(["condition", "status", "state"]);
+      const iNotes    = col(["notes", "note"]);
+
+      if (iModel === -1) { Alert.alert("Import Failed", "Could not find a 'Model' or 'Name' column."); return; }
+
+      const VALID_CONDITIONS = ["Good", "Fair", "Poor", "Out of Service"];
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iModel] ?? "") !== "");
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const model = normalizeCell(row[iModel] ?? "");
+        if (!model) continue;
+        const rawCondition = normalizeCell(row[iCondition] ?? "Good");
+        const condition = VALID_CONDITIONS.find((c) => c.toLowerCase() === rawCondition.toLowerCase()) || "Good";
+        const docRef = doc(db, "radios", `${siteId}_${model}_${normalizeCell(row[iSerial] ?? count.toString())}`
+          .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
+        batch.set(docRef, {
+          model,
+          serialNumber: normalizeCell(row[iSerial] ?? ""),
+          channel:      normalizeCell(row[iChannel] ?? ""),
+          assignedTo:   normalizeCell(row[iAssigned] ?? ""),
+          location:     normalizeCell(row[iLocation] ?? ""),
+          condition,
+          notes:        normalizeCell(row[iNotes] ?? ""),
+          siteId:       siteId || "default",
+          importedAt:   new Date().toISOString(),
+        }, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert("Import Complete", `${count} radio${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      console.error("Radio import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingRadios(false);
+    }
+  };
+
+  // --- Import Radio Parts from CSV ---
+  const importRadioPartsFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain"],
+      });
+      if (result.canceled) return;
+
+      setImportingRadioParts(true);
+      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const rows = parseCSV(content);
+
+      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
+        return -1;
+      };
+
+      const iName     = col(["name", "part", "item"]);
+      const iCompat   = col(["compatible", "model", "compatiblemodel"]);
+      const iQty      = col(["qty", "quantity", "amount", "stock"]);
+      const iLocation = col(["location", "loc"]);
+      const iNotes    = col(["notes", "note"]);
+
+      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' or 'Part' column."); return; }
+
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of dataRows) {
+        const name = normalizeCell(row[iName] ?? "");
+        if (!name) continue;
+        const docRef = doc(db, "radioParts", `${siteId}_${name}`
+          .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
+        batch.set(docRef, {
+          name,
+          compatibleModel: normalizeCell(row[iCompat] ?? ""),
+          quantity:        parseInt(normalizeCell(row[iQty] ?? "")) || 0,
+          location:        normalizeCell(row[iLocation] ?? ""),
+          notes:           normalizeCell(row[iNotes] ?? ""),
+          siteId:          siteId || "default",
+          importedAt:      new Date().toISOString(),
+        }, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      Alert.alert("Import Complete", `${count} part${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      console.error("Radio parts import error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingRadioParts(false);
+    }
+  };
+
+  // --- Export Radios to CSV ---
+  const exportRadiosToCSV = async () => {
+    try {
+      if (radios.length === 0) { Alert.alert("Nothing to export", "No radios to export."); return; }
+      const header = "Model,Serial Number,Channel,Assigned To,Location,Condition,Notes";
+      const rows = radios.map((r) =>
+        [r.model, r.serialNumber ?? "", r.channel ?? "", r.assignedTo ?? "", r.location ?? "", r.condition ?? "", r.notes ?? ""]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(",")
+      );
+      const csv = [header, ...rows].join("\n");
+      const uri = FileSystem.cacheDirectory + "radios_export.csv";
+      await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Export Radios CSV" });
+    } catch (err: any) {
+      Alert.alert("Export Failed", err.message || "An unexpected error occurred.");
+    }
+  };
+
+  // --- Export Radio Parts to CSV ---
+  const exportRadioPartsToCSV = async () => {
+    try {
+      if (radioParts.length === 0) { Alert.alert("Nothing to export", "No radio parts to export."); return; }
+      const header = "Name,Compatible Model,Quantity,Location,Notes";
+      const rows = radioParts.map((p) =>
+        [p.name, p.compatibleModel ?? "", String(p.quantity), p.location ?? "", p.notes ?? ""]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(",")
+      );
+      const csv = [header, ...rows].join("\n");
+      const uri = FileSystem.cacheDirectory + "radio_parts_export.csv";
+      await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Export Radio Parts CSV" });
+    } catch (err: any) {
+      Alert.alert("Export Failed", err.message || "An unexpected error occurred.");
+    }
+  };
+
   // ACTIVITY: Updated savePrinter to log activity when printers are added/edited
   const savePrinter = async () => {
     if (!printerForm.name) {
@@ -2001,18 +2167,39 @@ export default function IndexScreen() {
               renderItem={renderRadio}
               contentContainerStyle={{ padding: 16 }}
               ListHeaderComponent={
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <TextInput
-                    style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
-                    placeholder="Search radios..."
-                    placeholderTextColor={theme.mutedText}
-                    value={radioSearch}
-                    onChangeText={setRadioSearch}
-                  />
-                  <Pressable onPress={() => openRadioModal()} style={[styles.addTonerBtn, { backgroundColor: theme.text }]}>
-                    <Ionicons name="add" size={24} color={theme.background} />
-                  </Pressable>
-                </View>
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <TextInput
+                      style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+                      placeholder="Search radios..."
+                      placeholderTextColor={theme.mutedText}
+                      value={radioSearch}
+                      onChangeText={setRadioSearch}
+                    />
+                    <Pressable onPress={() => openRadioModal()} style={[styles.addTonerBtn, { backgroundColor: theme.text }]}>
+                      <Ionicons name="add" size={24} color={theme.background} />
+                    </Pressable>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+                    <Pressable
+                      onPress={importRadiosFromCSV}
+                      disabled={importingRadios}
+                      style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1, marginBottom: 0 }]}
+                    >
+                      {importingRadios
+                        ? <ActivityIndicator size="small" color={theme.text} />
+                        : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import CSV</Text></>
+                      }
+                    </Pressable>
+                    <Pressable
+                      onPress={exportRadiosToCSV}
+                      style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1, marginBottom: 0 }]}
+                    >
+                      <Ionicons name="cloud-download-outline" size={16} color={theme.text} style={{ marginRight: 6 }} />
+                      <Text style={[styles.importBtnText, { color: theme.text }]}>Export CSV</Text>
+                    </Pressable>
+                  </View>
+                </>
               }
               ListEmptyComponent={<Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>No radios yet. Tap + to add one.</Text>}
             />
@@ -2023,18 +2210,39 @@ export default function IndexScreen() {
               renderItem={renderRadioPart}
               contentContainerStyle={{ padding: 16 }}
               ListHeaderComponent={
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <TextInput
-                    style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
-                    placeholder="Search parts..."
-                    placeholderTextColor={theme.mutedText}
-                    value={radioPartSearch}
-                    onChangeText={setRadioPartSearch}
-                  />
-                  <Pressable onPress={() => openRadioPartModal()} style={[styles.addTonerBtn, { backgroundColor: theme.text }]}>
-                    <Ionicons name="add" size={24} color={theme.background} />
-                  </Pressable>
-                </View>
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <TextInput
+                      style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+                      placeholder="Search parts..."
+                      placeholderTextColor={theme.mutedText}
+                      value={radioPartSearch}
+                      onChangeText={setRadioPartSearch}
+                    />
+                    <Pressable onPress={() => openRadioPartModal()} style={[styles.addTonerBtn, { backgroundColor: theme.text }]}>
+                      <Ionicons name="add" size={24} color={theme.background} />
+                    </Pressable>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+                    <Pressable
+                      onPress={importRadioPartsFromCSV}
+                      disabled={importingRadioParts}
+                      style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1, marginBottom: 0 }]}
+                    >
+                      {importingRadioParts
+                        ? <ActivityIndicator size="small" color={theme.text} />
+                        : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import CSV</Text></>
+                      }
+                    </Pressable>
+                    <Pressable
+                      onPress={exportRadioPartsToCSV}
+                      style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1, marginBottom: 0 }]}
+                    >
+                      <Ionicons name="cloud-download-outline" size={16} color={theme.text} style={{ marginRight: 6 }} />
+                      <Text style={[styles.importBtnText, { color: theme.text }]}>Export CSV</Text>
+                    </Pressable>
+                  </View>
+                </>
               }
               ListEmptyComponent={<Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>No parts yet. Tap + to add one.</Text>}
             />
