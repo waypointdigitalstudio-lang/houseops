@@ -87,6 +87,7 @@ type Radio = {
   assignedTo?: string;
   location?: string;
   condition?: string;
+  barcode?: string;
   notes?: string;
   siteId: string;
 };
@@ -97,6 +98,7 @@ type RadioPart = {
   compatibleModel?: string;
   quantity: number;
   location?: string;
+  barcode?: string;
   notes?: string;
   siteId: string;
 };
@@ -219,11 +221,11 @@ export default function IndexScreen() {
 
   const [showRadioModal, setShowRadioModal] = useState(false);
   const [editingRadio, setEditingRadio] = useState<Radio | null>(null);
-  const [radioForm, setRadioForm] = useState({ model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", notes: "" });
+  const [radioForm, setRadioForm] = useState({ model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", barcode: "", notes: "" });
 
   const [showRadioPartModal, setShowRadioPartModal] = useState(false);
   const [editingRadioPart, setEditingRadioPart] = useState<RadioPart | null>(null);
-  const [radioPartForm, setRadioPartForm] = useState({ name: "", compatibleModel: "", quantity: "", location: "", notes: "" });
+  const [radioPartForm, setRadioPartForm] = useState({ name: "", compatibleModel: "", quantity: "", location: "", barcode: "", notes: "" });
 
   // --- Inventory state ---
   const [items, setItems] = useState<Item[]>([]);
@@ -560,16 +562,79 @@ export default function IndexScreen() {
         return;
       }
 
-      Alert.alert("Not found", `No item or toner has barcode:\n${clean}`, [
-        { text: "Scan again", onPress: () => { setScanBusy(false); setScanningEnabled(true); } },
-        { text: "Cancel", style: "cancel", onPress: () => setShowScanModal(false) },
-      ]);
+      const radioSnap = await getDocs(query(collection(db, "radios"), where("barcode", "==", clean), where("siteId", "==", siteId)));
+      if (!radioSnap.empty) {
+        setShowScanModal(false);
+        setActiveTab("radios");
+        setRadioSubTab("radios");
+        openRadioModal(({ id: radioSnap.docs[0].id, ...radioSnap.docs[0].data() } as Radio));
+        return;
+      }
+
+      const radioPartSnap = await getDocs(query(collection(db, "radioParts"), where("barcode", "==", clean), where("siteId", "==", siteId)));
+      if (!radioPartSnap.empty) {
+        setShowScanModal(false);
+        setActiveTab("radios");
+        setRadioSubTab("parts");
+        openRadioPartModal(({ id: radioPartSnap.docs[0].id, ...radioPartSnap.docs[0].data() } as RadioPart));
+        return;
+      }
+
+      Alert.alert(
+        "Barcode not found",
+        `No existing item matches:\n${clean}\n\nWhere would you like to add it?`,
+        [
+          {
+            text: "Inventory",
+            onPress: () => {
+              setShowScanModal(false);
+              setActiveTab("inventory");
+              setItemForm({ name: "", currentQuantity: "", minQuantity: "", location: "", barcode: clean, notes: "" });
+              setShowInventoryModal(true);
+            },
+          },
+          {
+            text: "Toner",
+            onPress: () => {
+              setShowScanModal(false);
+              setActiveTab("toners");
+              setEditingToner(null);
+              setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "" });
+              setShowTonerModal(true);
+            },
+          },
+          {
+            text: "Radio",
+            onPress: () => {
+              setShowScanModal(false);
+              setActiveTab("radios");
+              setRadioSubTab("radios");
+              setEditingRadio(null);
+              setRadioForm({ model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", barcode: clean, notes: "" });
+              setShowRadioModal(true);
+            },
+          },
+          {
+            text: "Radio Parts",
+            onPress: () => {
+              setShowScanModal(false);
+              setActiveTab("radios");
+              setRadioSubTab("parts");
+              setEditingRadioPart(null);
+              setRadioPartForm({ name: "", compatibleModel: "", quantity: "", location: "", barcode: clean, notes: "" });
+              setShowRadioPartModal(true);
+            },
+          },
+          { text: "Scan Again", onPress: () => { setScanBusy(false); setScanningEnabled(true); } },
+          { text: "Cancel", style: "cancel", onPress: () => setShowScanModal(false) },
+        ]
+      );
     } catch (e) {
       Alert.alert("Scan failed", "Could not look up that barcode. Try again.");
     } finally {
       setScanBusy(false);
     }
-  }, [scanningEnabled, scanBusy, router]);
+  }, [scanningEnabled, scanBusy, router, siteId, openRadioModal, openRadioPartModal]);
 
   // --- Save inventory item ---
   // Validates required fields and saves to Firestore
@@ -979,8 +1044,8 @@ export default function IndexScreen() {
     setRadioForm(radio ? {
       model: radio.model, serialNumber: radio.serialNumber ?? "", channel: radio.channel ?? "",
       assignedTo: radio.assignedTo ?? "", location: radio.location ?? "",
-      condition: radio.condition ?? "Good", notes: radio.notes ?? "",
-    } : { model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", notes: "" });
+      condition: radio.condition ?? "Good", barcode: radio.barcode ?? "", notes: radio.notes ?? "",
+    } : { model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", barcode: "", notes: "" });
     setShowRadioModal(true);
   }, []);
 
@@ -990,7 +1055,8 @@ export default function IndexScreen() {
       model: radioForm.model.trim(), serialNumber: radioForm.serialNumber.trim(),
       channel: radioForm.channel.trim(), assignedTo: radioForm.assignedTo.trim(),
       location: radioForm.location.trim(), condition: radioForm.condition,
-      notes: radioForm.notes.trim(), siteId: siteId || "default",
+      barcode: radioForm.barcode.trim(), notes: radioForm.notes.trim(),
+      siteId: siteId || "default",
     };
     try {
       if (editingRadio) { await updateDoc(doc(db, "radios", editingRadio.id), data); }
@@ -1010,8 +1076,9 @@ export default function IndexScreen() {
     setEditingRadioPart(part ?? null);
     setRadioPartForm(part ? {
       name: part.name, compatibleModel: part.compatibleModel ?? "",
-      quantity: String(part.quantity), location: part.location ?? "", notes: part.notes ?? "",
-    } : { name: "", compatibleModel: "", quantity: "", location: "", notes: "" });
+      quantity: String(part.quantity), location: part.location ?? "",
+      barcode: part.barcode ?? "", notes: part.notes ?? "",
+    } : { name: "", compatibleModel: "", quantity: "", location: "", barcode: "", notes: "" });
     setShowRadioPartModal(true);
   }, []);
 
@@ -1020,8 +1087,8 @@ export default function IndexScreen() {
     const data = {
       name: radioPartForm.name.trim(), compatibleModel: radioPartForm.compatibleModel.trim(),
       quantity: parseInt(radioPartForm.quantity) || 0,
-      location: radioPartForm.location.trim(), notes: radioPartForm.notes.trim(),
-      siteId: siteId || "default",
+      location: radioPartForm.location.trim(), barcode: radioPartForm.barcode.trim(),
+      notes: radioPartForm.notes.trim(), siteId: siteId || "default",
     };
     try {
       if (editingRadioPart) { await updateDoc(doc(db, "radioParts", editingRadioPart.id), data); }
@@ -2313,6 +2380,7 @@ export default function IndexScreen() {
               { label: "Channel", key: "channel", placeholder: "e.g. Ch 3" },
               { label: "Assigned To", key: "assignedTo", placeholder: "e.g. John Smith" },
               { label: "Location", key: "location", placeholder: "e.g. Security Desk" },
+              { label: "Barcode / SKU", key: "barcode", placeholder: "e.g. 123456789012" },
             ].map(({ label, key, placeholder }) => (
               <View key={key}>
                 <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>{label}</Text>
@@ -2365,6 +2433,7 @@ export default function IndexScreen() {
               { label: "Part Name *", key: "name", placeholder: "e.g. Belt Clip" },
               { label: "Compatible Model", key: "compatibleModel", placeholder: "e.g. Motorola RDU2020" },
               { label: "Location", key: "location", placeholder: "e.g. Storage Room B" },
+              { label: "Barcode / SKU", key: "barcode", placeholder: "e.g. 123456789012" },
             ].map(({ label, key, placeholder }) => (
               <View key={key}>
                 <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>{label}</Text>
