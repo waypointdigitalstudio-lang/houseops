@@ -206,6 +206,27 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // =========================
+    // Contacts / Directory (site-scoped)
+    // =========================
+    match /contacts/{contactId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && sameSite(resource.data)
+        && request.resource.data.siteId == resource.data.siteId
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

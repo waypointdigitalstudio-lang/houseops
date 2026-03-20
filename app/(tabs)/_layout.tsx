@@ -70,10 +70,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
-          title: "Scan",
-          headerTitle: "Scan & Update",
+          title: "Directory",
+          headerTitle: "Vendor Directory",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="barcode-outline" color={color} size={size} />
+            <Ionicons name="book-outline" color={color} size={size} />
           ),
         }}
       />

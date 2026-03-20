@@ -3,6 +3,7 @@
 // Changes marked with "// FIX:" for undo banner, "// NEW:" for inventory edit, "// ACTIVITY:" for activity logging
 
 import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -13,11 +14,12 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDocs,
   increment,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp, // ACTIVITY: Added serverTimestamp import
+  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -191,6 +193,13 @@ export default function IndexScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showLowOnly, setShowLowOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
+
+  // --- Scanner modal state ---
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanningEnabled, setScanningEnabled] = useState(true);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const lastScanRef = useRef<{ data: string; at: number } | null>(null);
 
   // --- Inventory item add modal state ---
   const [showInventoryModal, setShowInventoryModal] = useState(false);
@@ -468,8 +477,60 @@ export default function IndexScreen() {
     setShowInventoryModal(true);
   }, []);
 
-  // --- NEW: Save inventory item (create or update) ---
-  // ACTIVITY: Added activity logging for item save operations
+  // --- Scanner ---
+  const openScanModal = useCallback(async () => {
+    if (!cameraPermission?.granted) {
+      const res = await requestCameraPermission();
+      if (!res.granted) {
+        Alert.alert("Camera permission needed", "Enable camera access to use the scanner.");
+        return;
+      }
+    }
+    lastScanRef.current = null;
+    setScanBusy(false);
+    setScanningEnabled(true);
+    setShowScanModal(true);
+  }, [cameraPermission, requestCameraPermission]);
+
+  const handleBarcodeScanned = useCallback(async ({ data }: { data: string }) => {
+    if (!scanningEnabled || scanBusy) return;
+    const now = Date.now();
+    const last = lastScanRef.current;
+    if (last && last.data === data && now - last.at < 1500) return;
+    lastScanRef.current = { data, at: now };
+
+    setScanBusy(true);
+    setScanningEnabled(false);
+
+    try {
+      const clean = String(data).trim();
+
+      const itemSnap = await getDocs(query(collection(db, "items"), where("barcode", "==", clean)));
+      if (!itemSnap.empty) {
+        setShowScanModal(false);
+        router.push({ pathname: "/item/[id]", params: { id: itemSnap.docs[0].id } });
+        return;
+      }
+
+      const tonerSnap = await getDocs(query(collection(db, "toners"), where("barcode", "==", clean)));
+      if (!tonerSnap.empty) {
+        setShowScanModal(false);
+        router.push({ pathname: "/toners/[id]" as any, params: { id: tonerSnap.docs[0].id } });
+        return;
+      }
+
+      Alert.alert("Not found", `No item or toner has barcode:\n${clean}`, [
+        { text: "Scan again", onPress: () => { setScanBusy(false); setScanningEnabled(true); } },
+        { text: "Cancel", style: "cancel", onPress: () => setShowScanModal(false) },
+      ]);
+    } catch (e) {
+      Alert.alert("Scan failed", "Could not look up that barcode. Try again.");
+    } finally {
+      setScanBusy(false);
+    }
+  }, [scanningEnabled, scanBusy, router]);
+
+  // --- Save inventory item ---
   // Validates required fields and saves to Firestore
   const saveItem = useCallback(async () => {
     // Validate required fields
@@ -1578,7 +1639,12 @@ export default function IndexScreen() {
                     : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[styles.importBtnText, { color: theme.text }]}>Import CSV</Text></>
                   }
                 </Pressable>
-                {/* NEW: Add Item button to create new inventory items */}
+                <Pressable
+                  onPress={openScanModal}
+                  style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12, marginBottom: 0 }]}
+                >
+                  <Ionicons name="barcode-outline" size={18} color={theme.text} />
+                </Pressable>
                 <Pressable
                   onPress={() => openInventoryModal()}
                   style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12, marginBottom: 0 }]}
@@ -1767,6 +1833,36 @@ export default function IndexScreen() {
       </Animated.View>
 
       {/* NEW: Inventory Item Edit Modal */}
+      {/* Scanner Modal */}
+      <Modal visible={showScanModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowScanModal(false)}>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            onBarcodeScanned={scanningEnabled ? handleBarcodeScanned : undefined}
+          />
+          <View style={{ position: "absolute", left: 16, right: 16, bottom: 48, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 16, padding: 16 }}>
+            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16, marginBottom: 12 }}>
+              {scanBusy ? "Looking up barcode…" : scanningEnabled ? "Point at a barcode" : "Paused"}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
+                onPress={() => { setScanBusy(false); setScanningEnabled(true); }}
+                style={{ flex: 1, backgroundColor: theme.tint, paddingVertical: 10, borderRadius: 999, alignItems: "center" }}
+              >
+                <Text style={{ color: "#000", fontWeight: "800" }}>Scan again</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowScanModal(false)}
+                style={{ flex: 1, backgroundColor: "#374151", paddingVertical: 10, borderRadius: 999, alignItems: "center" }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "800" }}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* This modal allows users to view and edit all inventory item fields */}
       <Modal visible={showInventoryModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowInventoryModal(false)}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
