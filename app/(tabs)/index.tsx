@@ -582,7 +582,7 @@ export default function IndexScreen() {
 
       Alert.alert(
         "Barcode not found",
-        `No existing item matches:\n${clean}\n\nWhere would you like to add it?`,
+        `Where would you like to add "${clean}"?`,
         [
           {
             text: "Inventory",
@@ -601,17 +601,6 @@ export default function IndexScreen() {
               setEditingToner(null);
               setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "" });
               setShowTonerModal(true);
-            },
-          },
-          {
-            text: "Radio",
-            onPress: () => {
-              setShowScanModal(false);
-              setActiveTab("radios");
-              setRadioSubTab("radios");
-              setEditingRadio(null);
-              setRadioForm({ model: "", serialNumber: "", channel: "", assignedTo: "", location: "", condition: "Good", barcode: clean, notes: "" });
-              setShowRadioModal(true);
             },
           },
           {
