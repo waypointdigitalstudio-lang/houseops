@@ -110,7 +110,7 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: "Directory",
-          headerTitle: "Vendor Directory",
+          headerTitle: "Directory",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="book-outline" color={color} size={size} />
           ),

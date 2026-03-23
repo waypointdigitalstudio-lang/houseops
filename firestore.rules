@@ -247,6 +247,16 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
     }
 
+    // =========================
+    // Vendors (site-scoped)
+    // =========================
+    match /vendors/{vendorId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+      allow create: if isAdmin() || (isSignedIn() && mySiteId() != null && request.resource.data.siteId == mySiteId());
+      allow update: if isAdmin() || (isSignedIn() && sameSite(resource.data) && request.resource.data.siteId == resource.data.siteId);
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
