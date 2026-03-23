@@ -8,7 +8,7 @@
 
 import admin from "../functions/node_modules/firebase-admin/lib/index.js";
 
-admin.initializeApp();
+admin.initializeApp({ projectId: "houseops-55490" });
 const db = admin.firestore();
 
 const PREFIX = "401-618-";
