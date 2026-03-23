@@ -9,7 +9,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -76,11 +75,14 @@ export default function DirectoryScreen() {
     if (!siteId) return;
     const q = query(
       collection(db, "contacts"),
-      where("siteId", "==", siteId),
-      orderBy("name", "asc")
+      where("siteId", "==", siteId)
     );
     const unsub = onSnapshot(q, (snap) => {
-      setContacts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Contact)));
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Contact));
+      docs.sort((a, b) => a.name.localeCompare(b.name));
+      setContacts(docs);
+    }, (err) => {
+      console.error("Contacts listener error:", err);
     });
     return unsub;
   }, [siteId]);
