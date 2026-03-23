@@ -40,6 +40,7 @@ type Contact = {
   name: string;
   company?: string;
   phone?: string;
+  phone2?: string;
   email?: string;
   category?: string;
   notes?: string;
@@ -50,6 +51,7 @@ const emptyForm = {
   name: "",
   company: "",
   phone: "",
+  phone2: "",
   email: "",
   category: "Vendor",
   notes: "",
@@ -69,6 +71,7 @@ export default function DirectoryScreen() {
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [importingContacts, setImportingContacts] = useState(false);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
   // Real-time listener
   useEffect(() => {
@@ -86,6 +89,11 @@ export default function DirectoryScreen() {
     });
     return unsub;
   }, [siteId]);
+
+  const activeCategories = useMemo(() => {
+    const cats = new Set(contacts.map((c) => c.category).filter(Boolean) as string[]);
+    return Array.from(cats).sort();
+  }, [contacts]);
 
   const filtered = useMemo(() => {
     let list = contacts;
@@ -115,6 +123,7 @@ export default function DirectoryScreen() {
       name: contact.name,
       company: contact.company ?? "",
       phone: contact.phone ?? "",
+      phone2: contact.phone2 ?? "",
       email: contact.email ?? "",
       category: contact.category ?? "Vendor",
       notes: contact.notes ?? "",
@@ -133,6 +142,7 @@ export default function DirectoryScreen() {
         name: form.name.trim(),
         company: form.company.trim(),
         phone: form.phone.trim(),
+        phone2: form.phone2.trim(),
         email: form.email.trim(),
         category: form.category,
         notes: form.notes.trim(),
@@ -210,31 +220,39 @@ export default function DirectoryScreen() {
       };
 
       const iName     = col(["name", "contact", "fullname"]);
-      const iCompany  = col(["company", "organization", "org", "business"]);
-      const iPhone    = col(["phone", "tel", "mobile", "cell"]);
+      const iCompany  = col(["company", "organization", "org", "business", "department", "dept"]);
+      const iPhone    = col(["phone", "tel", "mobile", "cell", "extension", "ext"]);
       const iEmail    = col(["email", "mail"]);
-      const iCategory = col(["category", "type", "cat"]);
-      const iNotes    = col(["notes", "note"]);
-
-      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' or 'Contact' column."); return; }
+      const iCategory = col(["category", "type", "cat", "department", "dept"]);
+      const iNotes    = col(["notes", "note", "title", "role", "position"]);
 
       const VALID_CATS = ["Vendor", "IT Support", "Maintenance", "Facilities", "Other"];
-      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+
+      const deptToCategory = (dept: string): string => dept.trim() || "Other";
+
+      const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
       const batch = writeBatch(db);
       let count = 0;
 
       for (const row of dataRows) {
-        const name = normalizeCell(row[iName] ?? "");
+        const rawName    = normalizeCell(row[iName] ?? "");
+        const rawCompany = normalizeCell(row[iCompany] ?? "");
+        const rawExt     = normalizeCell(row[iPhone] ?? "");
+        // Fall back to "Department (Extension)" if name is empty
+        const name = rawName || (rawCompany ? `${rawCompany}${rawExt ? ` (${rawExt})` : ""}` : "");
         if (!name) continue;
-        const rawCat = normalizeCell(row[iCategory] ?? "Other");
-        const category = VALID_CATS.find((c) => c.toLowerCase() === rawCat.toLowerCase()) || "Other";
+
+        const rawCat = normalizeCell(row[iCategory] ?? "");
+        const category = VALID_CATS.find((c) => c.toLowerCase() === rawCat.toLowerCase())
+          || deptToCategory(rawCompany)
+          || "Other";
         const stableId = `${siteId}_${name}`
           .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
         const docRef = doc(db, "contacts", stableId);
         batch.set(docRef, {
           name,
-          company:  normalizeCell(row[iCompany] ?? ""),
-          phone:    normalizeCell(row[iPhone] ?? ""),
+          company:  rawCompany,
+          phone:    rawExt,
           email:    normalizeCell(row[iEmail] ?? ""),
           category,
           notes:    normalizeCell(row[iNotes] ?? ""),
@@ -279,7 +297,7 @@ export default function DirectoryScreen() {
           <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
           {item.category ? (
             <View style={[styles.badge, { backgroundColor: theme.tint + "22" }]}>
-              <Text style={{ color: theme.tint, fontSize: 10, fontWeight: "700" }}>{item.category}</Text>
+              <Text style={{ color: theme.tint, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>{item.category}</Text>
             </View>
           ) : null}
         </View>
@@ -297,6 +315,11 @@ export default function DirectoryScreen() {
         {item.phone ? (
           <Pressable onPress={() => call(item.phone!)} hitSlop={8}>
             <Ionicons name="call-outline" size={20} color={theme.tint} />
+          </Pressable>
+        ) : null}
+        {item.phone2 ? (
+          <Pressable onPress={() => call(item.phone2!)} hitSlop={8}>
+            <Ionicons name="call-outline" size={20} color={theme.tint} style={{ opacity: 0.6 }} />
           </Pressable>
         ) : null}
         {item.email ? (
@@ -350,24 +373,47 @@ export default function DirectoryScreen() {
         </Pressable>
       </View>
 
-      {/* Category filter */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        <Pressable
-          onPress={() => setSelectedCategory(null)}
-          style={[styles.chip, { backgroundColor: !selectedCategory ? theme.tint : theme.card, borderColor: theme.border }]}
-        >
-          <Text style={{ color: !selectedCategory ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 12 }}>All</Text>
+      {/* Category filter dropdown */}
+      <Pressable
+        onPress={() => setShowFilterDropdown(true)}
+        style={[styles.dropdown, { backgroundColor: theme.card, borderColor: selectedCategory ? theme.tint : theme.border }]}
+      >
+        <Text style={{ color: selectedCategory ? theme.tint : theme.mutedText, fontSize: 14, flex: 1 }}>
+          {selectedCategory ?? "Filter by department..."}
+        </Text>
+        {selectedCategory
+          ? <Pressable onPress={() => setSelectedCategory(null)} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={theme.mutedText} />
+            </Pressable>
+          : <Ionicons name="chevron-down" size={18} color={theme.mutedText} />
+        }
+      </Pressable>
+
+      {/* Dropdown modal */}
+      <Modal visible={showFilterDropdown} transparent animationType="fade" onRequestClose={() => setShowFilterDropdown(false)}>
+        <Pressable style={styles.dropdownOverlay} onPress={() => setShowFilterDropdown(false)}>
+          <View style={[styles.dropdownMenu, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Pressable
+              onPress={() => { setSelectedCategory(null); setShowFilterDropdown(false); }}
+              style={[styles.dropdownItem, { borderBottomColor: theme.border }]}
+            >
+              <Text style={{ color: theme.text, fontSize: 15, fontWeight: "700" }}>All Departments</Text>
+            </Pressable>
+            <ScrollView>
+              {activeCategories.map((cat) => (
+                <Pressable
+                  key={cat}
+                  onPress={() => { setSelectedCategory(cat); setShowFilterDropdown(false); }}
+                  style={[styles.dropdownItem, { borderBottomColor: theme.border, backgroundColor: selectedCategory === cat ? theme.tint + "22" : "transparent" }]}
+                >
+                  <Text style={{ color: selectedCategory === cat ? theme.tint : theme.text, fontSize: 15 }}>{cat}</Text>
+                  {selectedCategory === cat && <Ionicons name="checkmark" size={16} color={theme.tint} />}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
         </Pressable>
-        {CATEGORIES.map((cat) => (
-          <Pressable
-            key={cat}
-            onPress={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
-            style={[styles.chip, { backgroundColor: selectedCategory === cat ? theme.tint : theme.card, borderColor: theme.border, marginLeft: 8 }]}
-          >
-            <Text style={{ color: selectedCategory === cat ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 12 }}>{cat}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      </Modal>
 
       <FlatList
         data={filtered}
@@ -420,6 +466,16 @@ export default function DirectoryScreen() {
               keyboardType="phone-pad"
               value={form.phone}
               onChangeText={(v) => setForm((p) => ({ ...p, phone: v }))}
+            />
+
+            <Text style={[styles.label, { color: theme.mutedText }]}>Phone 2</Text>
+            <TextInput
+              style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Secondary phone number"
+              placeholderTextColor={theme.mutedText}
+              keyboardType="phone-pad"
+              value={form.phone2}
+              onChangeText={(v) => setForm((p) => ({ ...p, phone2: v }))}
             />
 
             <Text style={[styles.label, { color: theme.mutedText }]}>Email</Text>
@@ -476,10 +532,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, paddingTop: 16 },
   search: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
   addBtn: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
   card: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 10 },
   name: { fontWeight: "700", fontSize: 15, marginRight: 8 },
-  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, maxWidth: 160, flexShrink: 1 },
   modalContainer: { flex: 1, padding: 20 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: "800" },
@@ -488,4 +544,8 @@ const styles = StyleSheet.create({
   saveBtn: { borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 8, marginBottom: 40 },
   csvBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
   csvBtnText: { fontSize: 13, fontWeight: "600" },
+  dropdown: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 12 },
+  dropdownOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", padding: 24 },
+  dropdownMenu: { borderRadius: 16, borderWidth: 1, overflow: "hidden", maxHeight: 400 },
+  dropdownItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1 },
 });
