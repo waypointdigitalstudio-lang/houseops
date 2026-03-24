@@ -1342,34 +1342,36 @@ export default function IndexScreen() {
       }
 
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
-      const batch = writeBatch(db);
       let count = 0;
 
-      for (const row of dataRows) {
-        const name = normalizeCell(row[iName] ?? "");
-        if (!name) continue;
+      for (let i = 0; i < dataRows.length; i += 499) {
+        const chunk = dataRows.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const row of chunk) {
+          const name = normalizeCell(row[iName] ?? "");
+          if (!name) continue;
 
-        const stableId = `${siteId}_${name}`
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "_")
-          .replace(/_+/g, "_")
-          .slice(0, 100);
+          const stableId = `${siteId}_${name}`
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "_")
+            .replace(/_+/g, "_")
+            .slice(0, 100);
 
-        const docRef = doc(db, "items", stableId);
-        batch.set(docRef, {
-          name,
-          currentQuantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0,
-          minQuantity:     parseInt(normalizeCell(row[iMinQty] ?? "")) || 0,
-          location:        normalizeCell(row[iLocation] ?? ""),
-          barcode:         normalizeCell(row[iBarcode] ?? ""),
-          notes:           normalizeCell(row[iNotes] ?? ""),
-          siteId:          siteId || "default",
-          importedAt:      new Date().toISOString(),
-        }, { merge: true });
-        count++;
+          const docRef = doc(db, "items", stableId);
+          batch.set(docRef, {
+            name,
+            currentQuantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0,
+            minQuantity:     parseInt(normalizeCell(row[iMinQty] ?? "")) || 0,
+            location:        normalizeCell(row[iLocation] ?? ""),
+            barcode:         normalizeCell(row[iBarcode] ?? ""),
+            notes:           normalizeCell(row[iNotes] ?? ""),
+            siteId:          siteId || "default",
+            importedAt:      new Date().toISOString(),
+          }, { merge: true });
+          count++;
+        }
+        await batch.commit();
       }
-
-      await batch.commit();
       Alert.alert("Import Complete", `${count} inventory item${count !== 1 ? "s" : ""} imported/updated.`);
     } catch (err: any) {
       console.error("Inventory import error:", err);
@@ -1421,41 +1423,43 @@ export default function IndexScreen() {
       }
 
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iModel] ?? "") !== "");
-      const batch = writeBatch(db);
       let count = 0;
 
-      for (const row of dataRows) {
-        const model = normalizeCell(row[iModel] ?? "");
-        if (!model) continue;
+      for (let i = 0; i < dataRows.length; i += 499) {
+        const chunk = dataRows.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const row of chunk) {
+          const model = normalizeCell(row[iModel] ?? "");
+          if (!model) continue;
 
-        const rawColor = normalizeCell(row[iColor] ?? "Black");
-        const color = TONER_COLORS.find(
-          (c) => c.toLowerCase() === rawColor.toLowerCase()
-        ) || "Other";
+          const rawColor = normalizeCell(row[iColor] ?? "Black");
+          const color = TONER_COLORS.find(
+            (c) => c.toLowerCase() === rawColor.toLowerCase()
+          ) || "Other";
 
-        const stableId = `${siteId}_${model}_${color}`
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "_")
-          .replace(/_+/g, "_")
-          .slice(0, 100);
+          const stableId = `${siteId}_${model}_${color}`
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "_")
+            .replace(/_+/g, "_")
+            .slice(0, 100);
 
-        const docRef = doc(db, "toners", stableId);
-        batch.set(docRef, {
-          model,
-          partNumber:  normalizeCell(row[iPart] ?? ""),
-          color,
-          quantity:    parseInt(normalizeCell(row[iQty] ?? "")) || 0,
-          minQuantity: parseInt(normalizeCell(row[iMinQty] ?? "")) || 0,
-          printer:     normalizeCell(row[iPrinter] ?? ""),
-          supplier:    normalizeCell(row[iSupplier] ?? ""),
-          notes:       normalizeCell(row[iNotes] ?? ""),
-          siteId:      siteId || "default",
-          importedAt:  new Date().toISOString(),
-        }, { merge: true });
-        count++;
+          const docRef = doc(db, "toners", stableId);
+          batch.set(docRef, {
+            model,
+            partNumber:  normalizeCell(row[iPart] ?? ""),
+            color,
+            quantity:    parseInt(normalizeCell(row[iQty] ?? "")) || 0,
+            minQuantity: parseInt(normalizeCell(row[iMinQty] ?? "")) || 0,
+            printer:     normalizeCell(row[iPrinter] ?? ""),
+            supplier:    normalizeCell(row[iSupplier] ?? ""),
+            notes:       normalizeCell(row[iNotes] ?? ""),
+            siteId:      siteId || "default",
+            importedAt:  new Date().toISOString(),
+          }, { merge: true });
+          count++;
+        }
+        await batch.commit();
       }
-
-      await batch.commit();
       Alert.alert("Import Complete", `${count} toner${count !== 1 ? "s" : ""} imported/updated.`);
     } catch (err: any) {
       console.error("Toner import error:", err);
@@ -1507,40 +1511,38 @@ export default function IndexScreen() {
       }
 
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
-      const batch = writeBatch(db);
       let count = 0;
 
-      for (const row of dataRows) {
-        const name = normalizeCell(row[iName] ?? "");
-        if (!name) continue;
+      for (let i = 0; i < dataRows.length; i += 499) {
+        const chunk = dataRows.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const row of chunk) {
+          const name = normalizeCell(row[iName] ?? "");
+          if (!name) continue;
 
-        const stableId = `${siteId}_${name}`
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "_")
-          .replace(/_+/g, "_")
-          .slice(0, 100);
+          const stableId = `${siteId}_${name}`
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "_")
+            .replace(/_+/g, "_")
+            .slice(0, 100);
 
-        const docRef = doc(db, "printers", stableId);
-        batch.set(
-          docRef,
-          {
+          const docRef = doc(db, "printers", stableId);
+          batch.set(docRef, {
             name,
-            location: normalizeCell(row[iLocation] ?? ""),
-            ipAddress: normalizeCell(row[iIp] ?? ""),
+            location:    normalizeCell(row[iLocation] ?? ""),
+            ipAddress:   normalizeCell(row[iIp] ?? ""),
             assetNumber: normalizeCell(row[iAsset] ?? ""),
-            serial: normalizeCell(row[iSerial] ?? ""),
+            serial:      normalizeCell(row[iSerial] ?? ""),
             tonerSeries: normalizeCell(row[iTonerSeries] ?? ""),
-            barcode: normalizeCell(row[iBarcode] ?? ""),
-            notes: normalizeCell(row[iNotes] ?? ""),
-            siteId: siteId || "default",
-            importedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-        count++;
+            barcode:     normalizeCell(row[iBarcode] ?? ""),
+            notes:       normalizeCell(row[iNotes] ?? ""),
+            siteId:      siteId || "default",
+            importedAt:  new Date().toISOString(),
+          }, { merge: true });
+          count++;
+        }
+        await batch.commit();
       }
-
-      await batch.commit();
       Alert.alert("Import Complete", `${count} printer${count !== 1 ? "s" : ""} imported/updated.`);
     } catch (err: any) {
       console.error("Printer import error:", err);
@@ -1582,31 +1584,33 @@ export default function IndexScreen() {
 
       const VALID_CONDITIONS = ["Good", "Fair", "Poor", "Out of Service"];
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iModel] ?? "") !== "");
-      const batch = writeBatch(db);
       let count = 0;
 
-      for (const row of dataRows) {
-        const model = normalizeCell(row[iModel] ?? "");
-        if (!model) continue;
-        const rawCondition = normalizeCell(row[iCondition] ?? "Good");
-        const condition = VALID_CONDITIONS.find((c) => c.toLowerCase() === rawCondition.toLowerCase()) || "Good";
-        const docRef = doc(db, "radios", `${siteId}_${model}_${normalizeCell(row[iSerial] ?? count.toString())}`
-          .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
-        batch.set(docRef, {
-          model,
-          serialNumber: normalizeCell(row[iSerial] ?? ""),
-          channel:      normalizeCell(row[iChannel] ?? ""),
-          assignedTo:   normalizeCell(row[iAssigned] ?? ""),
-          location:     normalizeCell(row[iLocation] ?? ""),
-          condition,
-          notes:        normalizeCell(row[iNotes] ?? ""),
-          siteId:       siteId || "default",
-          importedAt:   new Date().toISOString(),
-        }, { merge: true });
-        count++;
+      for (let i = 0; i < dataRows.length; i += 499) {
+        const chunk = dataRows.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const row of chunk) {
+          const model = normalizeCell(row[iModel] ?? "");
+          if (!model) continue;
+          const rawCondition = normalizeCell(row[iCondition] ?? "Good");
+          const condition = VALID_CONDITIONS.find((c) => c.toLowerCase() === rawCondition.toLowerCase()) || "Good";
+          const docRef = doc(db, "radios", `${siteId}_${model}_${normalizeCell(row[iSerial] ?? count.toString())}`
+            .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
+          batch.set(docRef, {
+            model,
+            serialNumber: normalizeCell(row[iSerial] ?? ""),
+            channel:      normalizeCell(row[iChannel] ?? ""),
+            assignedTo:   normalizeCell(row[iAssigned] ?? ""),
+            location:     normalizeCell(row[iLocation] ?? ""),
+            condition,
+            notes:        normalizeCell(row[iNotes] ?? ""),
+            siteId:       siteId || "default",
+            importedAt:   new Date().toISOString(),
+          }, { merge: true });
+          count++;
+        }
+        await batch.commit();
       }
-
-      await batch.commit();
       Alert.alert("Import Complete", `${count} radio${count !== 1 ? "s" : ""} imported/updated.`);
     } catch (err: any) {
       console.error("Radio import error:", err);
@@ -1639,33 +1643,37 @@ export default function IndexScreen() {
       const iName     = col(["name", "part", "item"]);
       const iCompat   = col(["compatible", "model", "compatiblemodel"]);
       const iQty      = col(["qty", "quantity", "amount", "stock"]);
+      const iMin      = col(["min", "minimum", "minqty"]);
       const iLocation = col(["location", "loc"]);
       const iNotes    = col(["notes", "note"]);
 
       if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' or 'Part' column."); return; }
 
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
-      const batch = writeBatch(db);
       let count = 0;
 
-      for (const row of dataRows) {
-        const name = normalizeCell(row[iName] ?? "");
-        if (!name) continue;
-        const docRef = doc(db, "radioParts", `${siteId}_${name}`
-          .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
-        batch.set(docRef, {
-          name,
-          compatibleModel: normalizeCell(row[iCompat] ?? ""),
-          quantity:        parseInt(normalizeCell(row[iQty] ?? "")) || 0,
-          location:        normalizeCell(row[iLocation] ?? ""),
-          notes:           normalizeCell(row[iNotes] ?? ""),
-          siteId:          siteId || "default",
-          importedAt:      new Date().toISOString(),
-        }, { merge: true });
-        count++;
+      for (let i = 0; i < dataRows.length; i += 499) {
+        const chunk = dataRows.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const row of chunk) {
+          const name = normalizeCell(row[iName] ?? "");
+          if (!name) continue;
+          const docRef = doc(db, "radioParts", `${siteId}_${name}`
+            .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
+          batch.set(docRef, {
+            name,
+            compatibleModel: normalizeCell(row[iCompat] ?? ""),
+            quantity:        parseInt(normalizeCell(row[iQty] ?? "")) || 0,
+            minQuantity:     parseInt(normalizeCell(row[iMin] ?? "")) || 0,
+            location:        normalizeCell(row[iLocation] ?? ""),
+            notes:           normalizeCell(row[iNotes] ?? ""),
+            siteId:          siteId || "default",
+            importedAt:      new Date().toISOString(),
+          }, { merge: true });
+          count++;
+        }
+        await batch.commit();
       }
-
-      await batch.commit();
       Alert.alert("Import Complete", `${count} part${count !== 1 ? "s" : ""} imported/updated.`);
     } catch (err: any) {
       console.error("Radio parts import error:", err);
@@ -1698,9 +1706,9 @@ export default function IndexScreen() {
   const exportRadioPartsToCSV = async () => {
     try {
       if (radioParts.length === 0) { Alert.alert("Nothing to export", "No radio parts to export."); return; }
-      const header = "Name,Compatible Model,Quantity,Location,Notes";
+      const header = "Name,Compatible Model,Quantity,Min Quantity,Location,Notes";
       const rows = radioParts.map((p) =>
-        [p.name, p.compatibleModel ?? "", String(p.quantity), p.location ?? "", p.notes ?? ""]
+        [p.name, p.compatibleModel ?? "", String(p.quantity), String(p.minQuantity ?? 0), p.location ?? "", p.notes ?? ""]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
           .join(",")
       );
@@ -1769,9 +1777,9 @@ export default function IndexScreen() {
   const downloadRadioPartTemplate = async () => {
     try {
       const content = [
-        "Name,Compatible Model,Quantity,Location,Barcode,Notes",
-        '"Belt Clip","Motorola RDU2020",5,"Storage Room B","","Standard clip"',
-        '"Battery Pack","Kenwood TK-2400",3,"Storage Room B","012345678902",""',
+        "Name,Compatible Model,Quantity,Min Quantity,Location,Barcode,Notes",
+        '"Belt Clip","Motorola RDU2020",5,2,"Storage Room B","","Standard clip"',
+        '"Battery Pack","Kenwood TK-2400",3,1,"Storage Room B","012345678902",""',
       ].join("\n");
       const uri = FileSystem.cacheDirectory + "radio_parts_template.csv";
       await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });

@@ -376,9 +376,17 @@ sameSite(data)    // data.siteId == mySiteId()
 
 Located in `functions/index.js` (ESM, Firebase Functions v2).
 
-### 7.1 `notifyLowStock`
+### 7.1 `notifyLowStock` / `notifyLowToner` / `notifyLowRadioPart`
 
-**Trigger:** `onDocumentUpdated("items/{itemId}")`
+Three separate functions share the same `handleLowStockUpdate` logic, each triggered by a different collection:
+
+| Function | Trigger | qty field |
+|---|---|---|
+| `notifyLowStock` | `items/{itemId}` | `currentQuantity` |
+| `notifyLowToner` | `toners/{tonerId}` | `quantity` |
+| `notifyLowRadioPart` | `radioParts/{partId}` | `quantity` |
+
+**Trigger:** one of the above
 
 **Logic:**
 1. Compares `before.currentQuantity` vs `after.currentQuantity`.
@@ -613,16 +621,13 @@ Because `runtimeVersion` uses the `appVersion` policy, bumping the version in `a
 The `myUserDoc()` helper in security rules calls `get()` on the user document. This counts as an extra read per evaluated rule. With the current rule structure, some operations (e.g., write to `items`) trigger 1–2 additional reads. This is acceptable at current scale but should be monitored as the user base grows.
 
 ### `writeBatch` Limit
-Firestore batches are limited to **500 operations**. The current CSV importers do not chunk batches. For very large CSV files (500+ rows), the import will fail. Add batch chunking if bulk imports beyond 500 rows are needed.
+Firestore batches are limited to **500 operations**. All CSV importers chunk rows into batches of 499 and commit sequentially, so imports of any size are supported.
 
 ### `alertsLog` Composite Index
 The `alertsLog` query filters by `siteId` and orders by `createdAt DESC`. This requires a composite index. Firestore will return an error with a console link to create it on first use.
 
 ### Expo Camera on Android
 The `CameraView` component from `expo-camera` requires the `android.permission.CAMERA` permission, which is declared in `app.json`. On Android 13+, the permission dialog is shown once; if denied, the user must manually enable it in device settings.
-
-### Push Notifications Only Cover `items`
-The `notifyLowStock` Cloud Function only triggers on `onDocumentUpdated("items/{itemId}")`. Low-stock changes to **toners** and **radioParts** update the in-app badge and Alerts feed (via client-side listeners) but do **not** send push notifications. To cover all three collections, separate Cloud Function triggers would be needed for `toners/{tonerId}` and `radioParts/{partId}`.
 
 ### `expo-file-system` Legacy API
 The import uses `expo-file-system/legacy`. If upgrading to a newer Expo SDK, verify whether the modern API (`expo-file-system`) has breaking changes for `readAsStringAsync` and `writeAsStringAsync`.

@@ -239,7 +239,7 @@ All major data sections support CSV import and export, making bulk setup and dat
 
 **Radios:** `Model / Name / Radio`, `Serial / SerialNumber / SN`, `Channel / Chan`, `Assigned / AssignedTo / Person`, `Location`, `Condition / Status`, `Notes`
 
-**Radio Parts:** `Name / Part / Item`, `Compatible / Model / CompatibleModel`, `Qty / Quantity`, `Location`, `Notes`
+**Radio Parts:** `Name / Part / Item`, `Compatible / Model / CompatibleModel`, `Qty / Quantity`, `Min / Minimum / MinQty`, `Location`, `Notes`
 
 **Contacts:** `Name / Contact / FullName`, `Company / Organization`, `Phone / Tel / Mobile`, `Email / Mail`, `Category / Type`, `Notes`
 
