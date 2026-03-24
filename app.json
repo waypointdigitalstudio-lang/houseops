@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Nexus",
-    "slug": "nexus",
+    "slug": "houseops",
     "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/nexus-icon.png",
@@ -32,7 +32,8 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
       ]
     },
     "web": {
