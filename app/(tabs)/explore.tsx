@@ -314,10 +314,12 @@ export default function DirectoryScreen() {
       };
       const iName     = col(["name", "contact", "fullname"]);
       const iCompany  = col(["company", "organization", "org", "business", "department", "dept"]);
+      const iRole     = col(["role/description", "roledescription", "role", "description", "title", "position"]);
       const iPhone    = col(["phone", "tel", "mobile", "cell", "extension", "ext"]);
+      const iPhone2   = col(["phone2", "secondaryphone", "altphone"]);
       const iEmail    = col(["email", "mail"]);
       const iCategory = col(["category", "type", "cat", "department", "dept"]);
-      const iNotes    = col(["notes", "note", "title", "role", "position"]);
+      const iNotes    = col(["notes", "note"]);
 
       const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
       let batch = writeBatch(db);
@@ -327,16 +329,21 @@ export default function DirectoryScreen() {
       for (const row of dataRows) {
         const rawName    = normalizeCell(row[iName] ?? "");
         const rawCompany = normalizeCell(row[iCompany] ?? "");
-        const rawExt     = normalizeCell(row[iPhone] ?? "");
-        const name = rawName || (rawCompany ? `${rawCompany}${rawExt ? ` (${rawExt})` : ""}` : "");
+        const rawRole    = iRole !== -1 ? normalizeCell(row[iRole] ?? "") : "";
+        const rawPhone   = normalizeCell(row[iPhone] ?? "");
+        const rawPhone2  = iPhone2 !== -1 ? normalizeCell(row[iPhone2] ?? "") : "";
+        const rawNotes   = normalizeCell(row[iNotes] ?? "");
+        // Nameless rows (e.g. "Front Desk") use Role/Description as the display name
+        const name = rawName || rawRole || rawCompany;
         if (!name) continue;
         const rawCat  = normalizeCell(row[iCategory] ?? "");
         const category = rawCompany.trim() || rawCat || "Other";
+        // For named contacts, store their role/title in notes if no explicit notes
+        const notes = rawNotes || (rawName && rawRole ? rawRole : "");
         const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
         batch.set(doc(db, "contacts", stableId), {
-          name, company: rawCompany, phone: rawExt,
-          email: normalizeCell(row[iEmail] ?? ""), category,
-          notes: normalizeCell(row[iNotes] ?? ""),
+          name, company: rawCompany, phone: rawPhone, phone2: rawPhone2,
+          email: normalizeCell(row[iEmail] ?? ""), category, notes,
           siteId: siteId || "default", importedAt: new Date().toISOString(),
         }, { merge: true });
         count++;
@@ -355,9 +362,9 @@ export default function DirectoryScreen() {
   const exportContactsToCSV = useCallback(async () => {
     if (contacts.length === 0) { Alert.alert("Nothing to export", "No contacts to export."); return; }
     try {
-      const header = "Name,Department,Phone,Phone 2,Email,Notes";
+      const header = "Name,Department,Role/Description,Phone,Phone2,Email,Notes";
       const rows = contacts.map((c) =>
-        [c.name, c.company ?? "", c.phone ?? "", c.phone2 ?? "", c.email ?? "", c.notes ?? ""]
+        [c.name, c.company ?? "", c.notes ?? "", c.phone ?? "", c.phone2 ?? "", c.email ?? "", ""]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
           .join(",")
       );
@@ -389,9 +396,10 @@ export default function DirectoryScreen() {
   const downloadContactTemplate = useCallback(async () => {
     try {
       const content = [
-        "Name,Department,Phone,Email,Notes",
-        '"John Smith","Information Technology","401-618-1234","jsmith@example.com","Main IT contact"',
-        '"Jane Doe","Restaurant & Bar","401-618-5678","jdoe@example.com",""',
+        "Name,Department,Role/Description,Phone,Phone2,Email,Notes",
+        "Kim Baron,Marketing,Reg. Marketing & Promotion Mgr.,401-816-6240,856-430-6446,kbaron@example.com,",
+        ",Information Technology,IT Help Desk,401-816-6115,,,",
+        ",Security,Security Dispatch/Badging,401-816-6400,,,",
       ].join("\n");
       const uri = FileSystem.cacheDirectory + "contacts_template.csv";
       await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
