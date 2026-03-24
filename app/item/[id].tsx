@@ -552,41 +552,26 @@ export default function ItemDetail() {
               </View>
 
               <View style={styles.buttonRow}>
-                <Pressable
-                  style={[styles.stockButton, styles.stockButtonMinus]}
-                  onPress={() => openMovementDialog(-1)}
-                >
-                  <Text style={[styles.stockButtonText, { color: theme.text }]}>
-                    −1
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.stockButton, styles.stockButtonMinus]}
-                  onPress={() => openMovementDialog(-5)}
-                >
-                  <Text style={[styles.stockButtonText, { color: theme.text }]}>
-                    −5
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.stockButton, styles.stockButtonPlus]}
-                  onPress={() => openMovementDialog(1)}
-                >
-                  <Text style={[styles.stockButtonText, { color: theme.text }]}>
-                    +1
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.stockButton, styles.stockButtonPlus]}
-                  onPress={() => openMovementDialog(5)}
-                >
-                  <Text style={[styles.stockButtonText, { color: theme.text }]}>
-                    +5
-                  </Text>
-                </Pressable>
+                {[-1, -5, -10, -25].map((n) => (
+                  <Pressable
+                    key={n}
+                    style={[styles.stockButton, styles.stockButtonMinus]}
+                    onPress={() => openMovementDialog(n)}
+                  >
+                    <Text style={[styles.stockButtonText, { color: theme.text }]}>{n}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={[styles.buttonRow, { marginTop: 8 }]}>
+                {[1, 5, 10, 25].map((n) => (
+                  <Pressable
+                    key={n}
+                    style={[styles.stockButton, styles.stockButtonPlus]}
+                    onPress={() => openMovementDialog(n)}
+                  >
+                    <Text style={[styles.stockButtonText, { color: theme.text }]}>+{n}</Text>
+                  </Pressable>
+                ))}
               </View>
             </View>
 

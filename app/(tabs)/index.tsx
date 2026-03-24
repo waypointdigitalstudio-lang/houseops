@@ -61,6 +61,8 @@ type Toner = {
   quantity: number;
   minQuantity: number;
   printer?: string;
+  notes?: string;
+  barcode?: string;
   siteId: string;
 };
 
@@ -294,6 +296,8 @@ export default function IndexScreen() {
     quantity: "",
     minQuantity: "",
     printer: "",
+    notes: "",
+    barcode: "",
   });
 
   // --- FIX: Toner Undo delete state - using refs for timeouts ---
@@ -600,7 +604,7 @@ export default function IndexScreen() {
               setShowScanModal(false);
               setActiveTab("toners");
               setEditingToner(null);
-              setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "" });
+              setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "", notes: "", barcode: "" });
               setShowTonerModal(true);
             },
           },
@@ -1217,10 +1221,12 @@ export default function IndexScreen() {
         quantity: String(toner.quantity),
         minQuantity: String(toner.minQuantity),
         printer: toner.printer || "",
+        notes: toner.notes || "",
+        barcode: toner.barcode || "",
       });
     } else {
       setEditingToner(null);
-      setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "" });
+      setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "", notes: "", barcode: "" });
     }
     setShowTonerModal(true);
   };
@@ -1846,6 +1852,21 @@ export default function IndexScreen() {
     }
   };
 
+  const deletePrinter = (printer: Printer) => {
+    Alert.alert("Delete Printer", `Remove ${printer.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive", onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "printers", printer.id));
+            setShowPrinterModal(false);
+            setEditingPrinter(null);
+          } catch (err: any) { Alert.alert("Error", err.message || "Failed to delete printer."); }
+        },
+      },
+    ]);
+  };
+
   const renderToner = ({ item }: { item: Toner }) => (
     <Pressable onPress={() => openTonerModal(item)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -1918,7 +1939,12 @@ export default function IndexScreen() {
         )}
       </Pressable>
       <View style={{ alignItems: "flex-end", gap: 8 }}>
-        <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
+          <Pressable onPress={() => deletePrinter(item)} hitSlop={8} style={{ padding: 4 }}>
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+          </Pressable>
+        </View>
         {item.tonerId ? (
           <>
             <Pressable
@@ -2902,9 +2928,42 @@ export default function IndexScreen() {
                 />
               </View>
             </View>
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Compatible Printer</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. HP LaserJet M404"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.printer}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, printer: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Barcode / SKU</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. 123456789012"
+              placeholderTextColor={theme.mutedText}
+              value={tonerForm.barcode}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, barcode: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]}
+              placeholder="Additional notes..."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={tonerForm.notes}
+              onChangeText={(v) => setTonerForm((p) => ({ ...p, notes: v }))}
+            />
             <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveToner}>
               <Text style={styles.saveBtnText}>{editingToner ? "Update Toner" : "Add Toner"}</Text>
             </Pressable>
+            {editingToner && (
+              <Pressable
+                style={[styles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ef4444", marginTop: 8 }]}
+                onPress={() => { setShowTonerModal(false); scheduleTonerDelete(editingToner); setEditingToner(null); }}
+              >
+                <Text style={[styles.saveBtnText, { color: "#ef4444" }]}>Delete Toner</Text>
+              </Pressable>
+            )}
           </ScrollView>
         </View>
       </Modal>
@@ -2987,6 +3046,14 @@ export default function IndexScreen() {
             <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={savePrinter}>
               <Text style={styles.saveBtnText}>{editingPrinter ? "Update Printer" : "Add Printer"}</Text>
             </Pressable>
+            {editingPrinter && (
+              <Pressable
+                style={[styles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ef4444", marginTop: 8 }]}
+                onPress={() => deletePrinter(editingPrinter)}
+              >
+                <Text style={[styles.saveBtnText, { color: "#ef4444" }]}>Delete Printer</Text>
+              </Pressable>
+            )}
           </ScrollView>
         </View>
       </Modal>
