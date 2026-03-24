@@ -278,9 +278,9 @@ export default function DirectoryScreen() {
   }, []);
 
   // ── CSV helpers ──────────────────────────────────────────────────────────
-  const call  = (phone: string) => Linking.openURL(`tel:${phone}`);
-  const email = (addr: string)  => Linking.openURL(`mailto:${addr}`);
-  const web   = (url: string)   => Linking.openURL(url.startsWith("http") ? url : `https://${url}`);
+  const call  = useCallback((phone: string) => Linking.openURL(`tel:${phone}`), []);
+  const email = useCallback((addr: string)  => Linking.openURL(`mailto:${addr}`), []);
+  const web   = useCallback((url: string)   => Linking.openURL(url.startsWith("http") ? url : `https://${url}`), []);
 
   const normalizeCell = (val: string): string => {
     if (!val) return "";
@@ -318,10 +318,10 @@ export default function DirectoryScreen() {
       const iCategory = col(["category", "type", "cat", "department", "dept"]);
       const iNotes    = col(["notes", "note", "title", "role", "position"]);
 
-      const deptToCategory = (dept: string): string => dept.trim() || "Other";
       const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
-      const batch = writeBatch(db);
+      let batch = writeBatch(db);
       let count = 0;
+      let batchCount = 0;
 
       for (const row of dataRows) {
         const rawName    = normalizeCell(row[iName] ?? "");
@@ -330,7 +330,7 @@ export default function DirectoryScreen() {
         const name = rawName || (rawCompany ? `${rawCompany}${rawExt ? ` (${rawExt})` : ""}` : "");
         if (!name) continue;
         const rawCat  = normalizeCell(row[iCategory] ?? "");
-        const category = deptToCategory(rawCompany) || rawCat || "Other";
+        const category = rawCompany.trim() || rawCat || "Other";
         const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
         batch.set(doc(db, "contacts", stableId), {
           name, company: rawCompany, phone: rawExt,
@@ -339,8 +339,10 @@ export default function DirectoryScreen() {
           siteId: siteId || "default", importedAt: new Date().toISOString(),
         }, { merge: true });
         count++;
+        batchCount++;
+        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
       }
-      await batch.commit();
+      if (batchCount > 0) await batch.commit();
       Alert.alert("Import Complete", `${count} contact${count !== 1 ? "s" : ""} imported/updated.`);
     } catch (err: any) {
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
@@ -384,7 +386,7 @@ export default function DirectoryScreen() {
   }, [vendors]);
 
   // ── Render helpers ───────────────────────────────────────────────────────
-  const renderContact = ({ item }: { item: Contact }) => (
+  const renderContact = useCallback(({ item }: { item: Contact }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <Pressable onPress={() => openEditContact(item)} style={{ flex: 1 }}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
@@ -405,9 +407,9 @@ export default function DirectoryScreen() {
         <Pressable onPress={() => deleteContact(item)} hitSlop={8}><Ionicons name="trash-outline" size={18} color="#ef4444" /></Pressable>
       </View>
     </View>
-  );
+  ), [theme, openEditContact, call, email, deleteContact]);
 
-  const renderVendor = ({ item }: { item: Vendor }) => (
+  const renderVendor = useCallback(({ item }: { item: Vendor }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <Pressable onPress={() => openEditVendor(item)} style={{ flex: 1 }}>
         <Text style={[styles.name, { color: theme.text }]}>{item.company}</Text>
@@ -427,7 +429,7 @@ export default function DirectoryScreen() {
         <Pressable onPress={() => deleteVendor(item)} hitSlop={8}><Ionicons name="trash-outline" size={18} color="#ef4444" /></Pressable>
       </View>
     </View>
-  );
+  ), [theme, openEditVendor, call, email, web, deleteVendor]);
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -667,7 +669,6 @@ const styles = StyleSheet.create({
   tabBtn:         { flex: 1, paddingVertical: 10, alignItems: "center", justifyContent: "center" },
   search:         { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
   addBtn:         { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
-  chip:           { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
   card:           { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 10 },
   name:           { fontWeight: "700", fontSize: 15, marginRight: 8 },
   badge:          { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, maxWidth: 160, flexShrink: 1 },
