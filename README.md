@@ -11,10 +11,10 @@ Control Deck helps site teams track inventory, toners, printers, radios, asset d
 
 - **Inventory** — Track items with quantity, minimum thresholds, location, and barcode. Low/out-of-stock items are flagged automatically with +/− quick-adjust buttons and a 5-second undo.
 - **Toners & Printers** — Manage toner stock by model and color. Link toners to printers for live stock badges on each printer card.
-- **Radios & Radio Parts** — Track radio units by serial number, channel, assigned user, and condition (Good / Fair / Poor / Out of Service). Manage spare parts with quantity tracking.
+- **Radios & Radio Parts** — Track radio units by serial number, channel, assigned user, and condition (Good / Fair / Poor / Out of Service). Manage spare parts with quantity and minimum threshold tracking. The Parts subtab is shown first.
 - **Barcode Scanner** — Built into the Inventory tab. Tap to scan any barcode; auto-navigates to the matching item or toner.
-- **Stock Alerts** — Real-time push notifications and an in-app alert feed when items go low, out, or are restocked. Badge on the tab icon shows live low-stock count.
-- **Activity Log** — Full chronological history of every inventory change at your site, exportable as CSV.
+- **Stock Alerts** — Real-time push notifications and an in-app alert feed when items go low, out, or are restocked. Badge on the tab icon shows a live count across inventory items, toners, and radio parts. Alerts can be dismissed per item; the badge re-appears if quantity changes after dismissal.
+- **Activity Log** — Full chronological history of every change across inventory items, toners, and radio parts at your site. Filterable by date range and action type, exportable as CSV.
 - **Asset Disposal** — Log disposals with quantity and reason; automatically subtracts from inventory stock. Partial disposals leave the remainder in inventory.
 - **Vendor Directory** — Store and search vendor, IT, maintenance, and facilities contacts. Tap the phone icon to dial or the mail icon to email directly from the app.
 - **CSV Import / Export** — Bulk import any section from a spreadsheet (flexible column name matching). Export to CSV via the native share sheet.
