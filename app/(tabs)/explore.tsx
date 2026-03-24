@@ -95,6 +95,7 @@ export default function DirectoryScreen() {
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
   const [vendorForm, setVendorForm] = useState({ ...emptyVendorForm });
   const [savingVendor, setSavingVendor] = useState(false);
+  const [importingVendors, setImportingVendors] = useState(false);
 
   // ── Listeners ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -385,6 +386,92 @@ export default function DirectoryScreen() {
     }
   }, [vendors]);
 
+  const downloadContactTemplate = useCallback(async () => {
+    try {
+      const content = [
+        "Name,Department,Phone,Email,Notes",
+        '"John Smith","Information Technology","401-618-1234","jsmith@example.com","Main IT contact"',
+        '"Jane Doe","Restaurant & Bar","401-618-5678","jdoe@example.com",""',
+      ].join("\n");
+      const uri = FileSystem.cacheDirectory + "contacts_template.csv";
+      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Contacts CSV Template" });
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not generate template.");
+    }
+  }, []);
+
+  const importVendorsFromCSV = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
+      if (result.canceled) return;
+      setImportingVendors(true);
+      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const rows = parseCSV(content);
+      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found."); return; }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/[\s#]+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
+        return -1;
+      };
+      const iCompany     = col(["company", "vendor", "business", "organization"]);
+      const iContactName = col(["contactname", "contact", "name", "person"]);
+      const iPhone       = col(["phone", "tel", "mobile", "cell"]);
+      const iEmail       = col(["email", "mail"]);
+      const iWebsite     = col(["website", "web", "url", "site"]);
+      const iAccount     = col(["accountnumber", "account", "acct", "customer"]);
+      const iService     = col(["servicetype", "service", "type", "category"]);
+      const iNotes       = col(["notes", "note", "comment"]);
+
+      const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
+      let batch = writeBatch(db);
+      let count = 0;
+      let batchCount = 0;
+
+      for (const row of dataRows) {
+        const company = normalizeCell(row[iCompany] ?? "");
+        if (!company) continue;
+        const stableId = `${siteId}_vendor_${company}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+        batch.set(doc(db, "vendors", stableId), {
+          company,
+          contactName:   normalizeCell(row[iContactName] ?? ""),
+          phone:         normalizeCell(row[iPhone] ?? ""),
+          email:         normalizeCell(row[iEmail] ?? ""),
+          website:       normalizeCell(row[iWebsite] ?? ""),
+          accountNumber: normalizeCell(row[iAccount] ?? ""),
+          serviceType:   normalizeCell(row[iService] ?? ""),
+          notes:         normalizeCell(row[iNotes] ?? ""),
+          siteId: siteId || "default", importedAt: new Date().toISOString(),
+        }, { merge: true });
+        count++;
+        batchCount++;
+        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
+      }
+      if (batchCount > 0) await batch.commit();
+      Alert.alert("Import Complete", `${count} vendor${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingVendors(false);
+    }
+  }, [siteId]);
+
+  const downloadVendorTemplate = useCallback(async () => {
+    try {
+      const content = [
+        "Company,Contact Name,Phone,Email,Website,Account #,Service Type,Notes",
+        '"Acme Copiers","Jane Doe","401-555-0100","jane@acme.com","acme.com","ACC-12345","Copier Maintenance","Annual service contract"',
+        '"Tech Support LLC","Bob Smith","401-555-0200","bob@techsupport.com","techsupport.com","","IT Support",""',
+      ].join("\n");
+      const uri = FileSystem.cacheDirectory + "vendors_template.csv";
+      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Vendors CSV Template" });
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not generate template.");
+    }
+  }, []);
+
   // ── Render helpers ───────────────────────────────────────────────────────
   const renderContact = useCallback(({ item }: { item: Contact }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -466,17 +553,22 @@ export default function DirectoryScreen() {
             </Pressable>
           </View>
 
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
             <Pressable onPress={importContactsFromCSV} disabled={importingContacts}
               style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
               {importingContacts
                 ? <ActivityIndicator size="small" color={theme.text} />
-                : <><Ionicons name="cloud-upload-outline" size={15} color={theme.text} style={{ marginRight: 5 }} /><Text style={[styles.csvBtnText, { color: theme.text }]}>Import CSV</Text></>}
+                : <><Ionicons name="cloud-upload-outline" size={15} color={theme.text} style={{ marginRight: 4 }} /><Text style={[styles.csvBtnText, { color: theme.text }]}>Import</Text></>}
             </Pressable>
             <Pressable onPress={exportContactsToCSV}
               style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
-              <Ionicons name="cloud-download-outline" size={15} color={theme.text} style={{ marginRight: 5 }} />
-              <Text style={[styles.csvBtnText, { color: theme.text }]}>Export CSV</Text>
+              <Ionicons name="cloud-download-outline" size={15} color={theme.text} style={{ marginRight: 4 }} />
+              <Text style={[styles.csvBtnText, { color: theme.text }]}>Export</Text>
+            </Pressable>
+            <Pressable onPress={downloadContactTemplate}
+              style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
+              <Ionicons name="document-outline" size={15} color={theme.text} style={{ marginRight: 4 }} />
+              <Text style={[styles.csvBtnText, { color: theme.text }]}>Template</Text>
             </Pressable>
           </View>
 
@@ -540,11 +632,22 @@ export default function DirectoryScreen() {
             </Pressable>
           </View>
 
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+            <Pressable onPress={importVendorsFromCSV} disabled={importingVendors}
+              style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
+              {importingVendors
+                ? <ActivityIndicator size="small" color={theme.text} />
+                : <><Ionicons name="cloud-upload-outline" size={15} color={theme.text} style={{ marginRight: 4 }} /><Text style={[styles.csvBtnText, { color: theme.text }]}>Import</Text></>}
+            </Pressable>
             <Pressable onPress={exportVendorsToCSV}
               style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
-              <Ionicons name="cloud-download-outline" size={15} color={theme.text} style={{ marginRight: 5 }} />
-              <Text style={[styles.csvBtnText, { color: theme.text }]}>Export CSV</Text>
+              <Ionicons name="cloud-download-outline" size={15} color={theme.text} style={{ marginRight: 4 }} />
+              <Text style={[styles.csvBtnText, { color: theme.text }]}>Export</Text>
+            </Pressable>
+            <Pressable onPress={downloadVendorTemplate}
+              style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
+              <Ionicons name="document-outline" size={15} color={theme.text} style={{ marginRight: 4 }} />
+              <Text style={[styles.csvBtnText, { color: theme.text }]}>Template</Text>
             </Pressable>
           </View>
 
