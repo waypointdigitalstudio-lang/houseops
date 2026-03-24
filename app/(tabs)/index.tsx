@@ -212,7 +212,7 @@ export default function IndexScreen() {
   // Tab state
   const [activeTab, setActiveTab] = useState<TabMode>("inventory");
   const [tonerSubTab, setTonerSubTab] = useState<TonerSubTab>("toners");
-  const [radioSubTab, setRadioSubTab] = useState<RadioSubTab>("radios");
+  const [radioSubTab, setRadioSubTab] = useState<RadioSubTab>("parts");
 
   // --- Radios state ---
   const [radios, setRadios] = useState<Radio[]>([]);
@@ -2300,19 +2300,19 @@ export default function IndexScreen() {
           {/* Radios sub-tab bar */}
           <View style={{ flexDirection: "row", paddingHorizontal: 16, marginBottom: 12, gap: 12 }}>
             <Pressable
-              onPress={() => setRadioSubTab("radios")}
-              style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: radioSubTab === "radios" ? theme.text : "transparent" }}
-            >
-              <Text style={{ textAlign: "center", color: radioSubTab === "radios" ? theme.text : theme.mutedText, fontWeight: "700" }}>
-                Radios ({radios.length})
-              </Text>
-            </Pressable>
-            <Pressable
               onPress={() => setRadioSubTab("parts")}
               style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: radioSubTab === "parts" ? theme.text : "transparent" }}
             >
               <Text style={{ textAlign: "center", color: radioSubTab === "parts" ? theme.text : theme.mutedText, fontWeight: "700" }}>
                 Parts ({radioParts.length})
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setRadioSubTab("radios")}
+              style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: radioSubTab === "radios" ? theme.text : "transparent" }}
+            >
+              <Text style={{ textAlign: "center", color: radioSubTab === "radios" ? theme.text : theme.mutedText, fontWeight: "700" }}>
+                Radios ({radios.length})
               </Text>
             </Pressable>
           </View>
