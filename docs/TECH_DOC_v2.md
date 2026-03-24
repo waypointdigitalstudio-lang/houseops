@@ -70,6 +70,12 @@ houseops/
 │   │   ├── disposal.tsx     # Asset disposal records
 │   │   ├── settings.tsx     # User settings & sign-out
 │   │   └── admin.tsx        # Admin: user & site management
+│   ├── item/
+│   │   └── [id].tsx         # Inventory item detail screen (full-screen edit + stock adjust)
+│   ├── toners/
+│   │   └── [id].tsx         # Toner detail screen (full-screen edit + stock adjust)
+│   ├── radiopart/
+│   │   └── [id].tsx         # Radio part detail screen (full-screen edit + stock adjust)
 │   └── _layout.tsx          # Root layout (auth gate)
 ├── constants/
 │   ├── branding.ts          # App name, colors (BRAND constant)
@@ -519,6 +525,18 @@ Rendered as a ternary chain:
   : activeTab === "radios" ? <RadiosView>
   : null}
 ```
+
+### Detail Screens
+
+Tapping an existing item, toner, or radio part card navigates to a dedicated full-screen detail route:
+
+| Card type | Route |
+|---|---|
+| Inventory item | `app/item/[id].tsx` → `/item/:id` |
+| Toner | `app/toners/[id].tsx` → `/toners/:id` |
+| Radio part | `app/radiopart/[id].tsx` → `/radiopart/:id` |
+
+Each detail screen has the same layout: a status banner (OK/LOW), a Stock section with two rows of `±1/5/10/25` adjustment buttons that write directly to Firestore and append an `alertsLog` entry, and a Details section with editable fields plus Save Changes and Delete buttons. The **Add New** flow for toners and radio parts still uses a `pageSheet` slide-up modal from `index.tsx`.
 
 ---
 

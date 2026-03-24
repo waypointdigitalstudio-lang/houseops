@@ -125,7 +125,7 @@ Access the **Toners** subtab from inside the Inventory tab by tapping the **Tone
 3. Tap **Add Toner**.
 
 #### Editing a Toner
-- Tap any toner card to open the edit modal.
+- Tap any toner card to open the toner detail page, where you can adjust stock and edit all fields.
 
 #### Deleting a Toner
 - Tap the **trash icon** on the toner card. A 5-second undo banner appears.
@@ -158,6 +158,9 @@ The **Parts** subtab opens by default. Tracks spare parts and accessories (batte
 #### Adding a Radio Part
 1. Tap **+** and fill in: Name, Compatible Model, Quantity, Minimum Quantity, Location, Notes.
 2. Tap **Add Part**.
+
+#### Editing a Radio Part
+- Tap any radio part card to open the part detail page, where you can adjust stock and edit all fields.
 
 > Radio parts trigger low-stock alerts and appear in the Alerts tab badge when quantity falls at or below the minimum.
 

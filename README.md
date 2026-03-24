@@ -53,6 +53,9 @@ app/
     disposal.tsx   # Asset disposal records
     settings.tsx   # User settings & sign-out
     admin.tsx      # Admin: user & site management
+  item/[id].tsx    # Inventory item detail (stock adjust + edit)
+  toners/[id].tsx  # Toner detail (stock adjust + edit)
+  radiopart/[id].tsx  # Radio part detail (stock adjust + edit)
 constants/
   branding.ts      # BRAND constant (app name, accent colors)
   theme.ts         # useAppTheme hook (light/dark tokens)
