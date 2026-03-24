@@ -579,9 +579,7 @@ export default function IndexScreen() {
       const radioPartSnap = await getDocs(query(collection(db, "radioParts"), where("barcode", "==", clean), where("siteId", "==", siteId)));
       if (!radioPartSnap.empty) {
         setShowScanModal(false);
-        setActiveTab("radios");
-        setRadioSubTab("parts");
-        openRadioPartModal(({ id: radioPartSnap.docs[0].id, ...radioPartSnap.docs[0].data() } as RadioPart));
+        router.push(`/radiopart/${radioPartSnap.docs[0].id}` as any);
         return;
       }
 
@@ -1868,7 +1866,7 @@ export default function IndexScreen() {
   };
 
   const renderToner = ({ item }: { item: Toner }) => (
-    <Pressable onPress={() => openTonerModal(item)}>
+    <Pressable onPress={() => router.push(`/toners/${item.id}` as any)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.itemName, { color: theme.text }]}>{item.model}</Text>
@@ -2013,7 +2011,7 @@ export default function IndexScreen() {
 
   const renderRadioPart = ({ item }: { item: RadioPart }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Pressable onPress={() => openRadioPartModal(item)} style={{ flex: 1 }}>
+      <Pressable onPress={() => router.push(`/radiopart/${item.id}` as any)} style={{ flex: 1 }}>
         <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
         {item.compatibleModel ? <Text style={{ color: theme.mutedText, fontSize: 12 }}>Compatible: {item.compatibleModel}</Text> : null}
         {item.location ? (
