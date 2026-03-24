@@ -76,27 +76,22 @@ export const deleteAuthUserOnRemoval = onDocumentDeleted("users/{uid}", async (e
   }
 });
 
-export const notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
+// Shared logic for low-stock notification across collections
+async function handleLowStockUpdate({ event, itemId, itemType, getQty, getMin, getName }) {
   const before = event.data.before.data();
   const after = event.data.after.data();
-  const itemId = event.params.itemId;
-
   if (!before || !after) return;
 
-  const beforeQty = Number(before.currentQuantity ?? 0);
-  const afterQty = Number(after.currentQuantity ?? 0);
-  const minQty = Number(after.minQuantity ?? 0);
+  const beforeQty = Number(getQty(before));
+  const afterQty = Number(getQty(after));
+  const minQty = Number(getMin(after));
 
-  // only care when quantity changes
   if (beforeQty === afterQty) return;
 
   const prevState = getState(beforeQty, minQty);
   const nextState = getState(afterQty, minQty);
-
-  // state didn't change = no alert
   if (prevState === nextState) return;
 
-  // ---- cooldown ----
   const COOLDOWN_MINUTES = 10;
   const lastAlertAt = after.lastAlertAt ?? null;
   const lastAlertState = after.lastAlertState ?? null;
@@ -107,127 +102,99 @@ export const notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) 
     return;
   }
 
-  // update item alert markers
   const alertMarkers = {
     alertState: nextState,
     lastAlertAt: admin.firestore.FieldValue.serverTimestamp(),
-    // Reset lastAlertState when restocked so the cooldown doesn't block
-    // the next LOW/OUT notification after an OK→LOW cycle.
     lastAlertState: nextState === "OK" ? null : nextState,
   };
-
-  // When restocked, clear dismiss flags so the alert can show again
-  // next time the item goes low — even if it returns to the same quantity.
   if (nextState === "OK") {
     alertMarkers.userDismissedAlert = false;
     alertMarkers.userDismissedAlertQuantity = null;
   }
-
   await event.data.after.ref.set(alertMarkers, { merge: true });
 
   const itemSiteId = after.siteId;
-  console.log("🔍 Item siteId:", itemSiteId);
-  console.log("🔍 Item name:", after.name);
-  console.log("🔍 State change:", prevState, "→", nextState);
+  const itemName = getName(after);
+  logger.info(`[${itemType}] ${prevState} → ${nextState}: ${itemName}`);
 
   const tokens = await getEnabledTokens(itemSiteId);
-  console.log("🔍 Found tokens:", tokens.length, "for siteId:", itemSiteId);
 
-  const itemName = after.name ?? "Unnamed item";
-
-  // ---- message text ----
   let title = "Stock update";
   let body = `${itemName} changed.`;
+  if (nextState === "OUT") { title = "Out of stock"; body = `${itemName} is OUT (0 left).`; }
+  else if (nextState === "LOW") { title = "Low stock"; body = `${itemName} is LOW (${afterQty} left, min ${minQty}).`; }
+  else if (nextState === "OK") { title = "Restocked"; body = `${itemName} was restocked (${afterQty} now in stock).`; }
 
-  if (nextState === "OUT") {
-    title = "Out of stock";
-    body = `${itemName} is OUT (0 left).`;
-  } else if (nextState === "LOW") {
-    title = "Low stock";
-    body = `${itemName} is LOW (${afterQty} left, min ${minQty}).`;
-  } else if (nextState === "OK") {
-    title = "Restocked";
-    body = `${itemName} was restocked (${afterQty} now in stock).`;
-  }
-
-  console.log("📧 Notification:", title, "-", body);
-
-  // ---- audit log ----
-  const action =
-    nextState === "OK" ? "added" :
-    (nextState === "LOW" || nextState === "OUT") ? "deducted" :
-    "edited";
-
+  const action = nextState === "OK" ? "added" : "deducted";
   const logRef = db.collection("alertsLog").doc();
   await logRef.set({
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    siteId: itemSiteId,
-    itemId,
-    itemName,
-    prevState,
-    nextState,
-    qty: afterQty,
-    min: minQty,
-    action,
-    itemType: "inventory",
-    dismissed: false,
-    userDismissed: false,
-    tokenCount: tokens.length,
-    status: tokens.length ? "sending" : "no_tokens",
+    siteId: itemSiteId, itemId, itemName, prevState, nextState,
+    qty: afterQty, min: minQty, action, itemType,
+    dismissed: false, userDismissed: false,
+    tokenCount: tokens.length, status: tokens.length ? "sending" : "no_tokens",
   });
 
-  // ---- app-facing alerts collection ----
-  const type =
-    nextState === "OUT" ? "out" : nextState === "LOW" ? "low" : "restock";
-
+  const type = nextState === "OUT" ? "out" : nextState === "LOW" ? "low" : "restock";
   await db.collection("alerts").add({
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    type,
-    title,
-    body,
-    itemId,
-    itemName,
-    qty: afterQty,
-    min: minQty,
-    siteId: itemSiteId,
-    readBy: {},
+    type, title, body, itemId, itemName,
+    qty: afterQty, min: minQty, siteId: itemSiteId, readBy: {},
   });
 
-  if (!tokens.length) {
-    console.log("⚠️ No tokens found - skipping notification send");
-    return;
-  }
+  if (!tokens.length) return;
 
   const messages = tokens.map((to) => ({
-    to,
-    sound: "default",
-    title,
-    body,
-    priority: "high",
-    channelId: "default",
+    to, sound: "default", title, body, priority: "high", channelId: "default",
     data: { itemId, state: nextState, qty: afterQty, min: minQty },
   }));
 
-  console.log("🚀 Sending notifications to", messages.length, "devices");
-
   try {
     const result = await sendExpoPush(messages);
-    console.log("✅ Notifications sent successfully");
     await logRef.set({ status: "sent" }, { merge: true });
-
     const tickets = result?.data ?? [];
     for (let i = 0; i < tickets.length; i++) {
       const t = tickets[i];
       if (t?.status === "error") {
         const reason = t?.details?.error || t?.message || "unknown";
-        const token = messages[i]?.to;
-        console.log("❌ Token error:", token, reason);
-        if (reason === "DeviceNotRegistered") await disableToken(token, reason);
+        if (reason === "DeviceNotRegistered") await disableToken(messages[i]?.to, reason);
       }
     }
   } catch (err) {
-    console.log("❌ Send failed:", err);
     await logRef.set({ status: "error", error: String(err) }, { merge: true });
     throw err;
   }
+}
+
+export const notifyLowStock = onDocumentUpdated("items/{itemId}", async (event) => {
+  await handleLowStockUpdate({
+    event,
+    itemId: event.params.itemId,
+    itemType: "inventory",
+    getQty: (d) => d.currentQuantity ?? 0,
+    getMin: (d) => d.minQuantity ?? 0,
+    getName: (d) => d.name ?? "Unnamed item",
+  });
+});
+
+export const notifyLowToner = onDocumentUpdated("toners/{tonerId}", async (event) => {
+  await handleLowStockUpdate({
+    event,
+    itemId: event.params.tonerId,
+    itemType: "toner",
+    getQty: (d) => d.quantity ?? 0,
+    getMin: (d) => d.minQuantity ?? 0,
+    getName: (d) => `${d.model ?? "Unknown toner"} (${d.color ?? ""})`.trim(),
+  });
+});
+
+export const notifyLowRadioPart = onDocumentUpdated("radioParts/{partId}", async (event) => {
+  await handleLowStockUpdate({
+    event,
+    itemId: event.params.partId,
+    itemType: "radioPart",
+    getQty: (d) => d.quantity ?? 0,
+    getMin: (d) => d.minQuantity ?? 0,
+    getName: (d) => d.name ?? "Unnamed part",
+  });
 });

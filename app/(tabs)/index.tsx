@@ -97,6 +97,7 @@ type RadioPart = {
   name: string;
   compatibleModel?: string;
   quantity: number;
+  minQuantity: number;
   location?: string;
   barcode?: string;
   notes?: string;
@@ -225,7 +226,7 @@ export default function IndexScreen() {
 
   const [showRadioPartModal, setShowRadioPartModal] = useState(false);
   const [editingRadioPart, setEditingRadioPart] = useState<RadioPart | null>(null);
-  const [radioPartForm, setRadioPartForm] = useState({ name: "", compatibleModel: "", quantity: "", location: "", barcode: "", notes: "" });
+  const [radioPartForm, setRadioPartForm] = useState({ name: "", compatibleModel: "", quantity: "", minQuantity: "", location: "", barcode: "", notes: "" });
 
   // --- Inventory state ---
   const [items, setItems] = useState<Item[]>([]);
@@ -610,7 +611,7 @@ export default function IndexScreen() {
               setActiveTab("radios");
               setRadioSubTab("parts");
               setEditingRadioPart(null);
-              setRadioPartForm({ name: "", compatibleModel: "", quantity: "", location: "", barcode: clean, notes: "" });
+              setRadioPartForm({ name: "", compatibleModel: "", quantity: "", minQuantity: "", location: "", barcode: clean, notes: "" });
               setShowRadioPartModal(true);
             },
           },
@@ -1065,9 +1066,9 @@ export default function IndexScreen() {
     setEditingRadioPart(part ?? null);
     setRadioPartForm(part ? {
       name: part.name, compatibleModel: part.compatibleModel ?? "",
-      quantity: String(part.quantity), location: part.location ?? "",
-      barcode: part.barcode ?? "", notes: part.notes ?? "",
-    } : { name: "", compatibleModel: "", quantity: "", location: "", barcode: "", notes: "" });
+      quantity: String(part.quantity), minQuantity: String(part.minQuantity ?? 0),
+      location: part.location ?? "", barcode: part.barcode ?? "", notes: part.notes ?? "",
+    } : { name: "", compatibleModel: "", quantity: "", minQuantity: "", location: "", barcode: "", notes: "" });
     setShowRadioPartModal(true);
   }, []);
 
@@ -1076,6 +1077,7 @@ export default function IndexScreen() {
     const data = {
       name: radioPartForm.name.trim(), compatibleModel: radioPartForm.compatibleModel.trim(),
       quantity: parseInt(radioPartForm.quantity) || 0,
+      minQuantity: parseInt(radioPartForm.minQuantity) || 0,
       location: radioPartForm.location.trim(), barcode: radioPartForm.barcode.trim(),
       notes: radioPartForm.notes.trim(), siteId: siteId || "default",
     };
@@ -2554,6 +2556,15 @@ export default function IndexScreen() {
               keyboardType="numeric"
               value={radioPartForm.quantity}
               onChangeText={(v) => setRadioPartForm((p) => ({ ...p, quantity: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Min Quantity</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="0"
+              placeholderTextColor={theme.mutedText}
+              keyboardType="numeric"
+              value={radioPartForm.minQuantity}
+              onChangeText={(v) => setRadioPartForm((p) => ({ ...p, minQuantity: v }))}
             />
             <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
             <TextInput

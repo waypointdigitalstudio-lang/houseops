@@ -1,0 +1,77 @@
+[debug] [2026-03-24T14:24:48.135Z] ----------------------------------------------------------------------
+[debug] [2026-03-24T14:24:48.138Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Blest\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only functions
+[debug] [2026-03-24T14:24:48.139Z] CLI Version:   15.11.0
+[debug] [2026-03-24T14:24:48.139Z] Platform:      win32
+[debug] [2026-03-24T14:24:48.139Z] Node Version:  v24.11.1
+[debug] [2026-03-24T14:24:48.139Z] Time:          Tue Mar 24 2026 10:24:48 GMT-0400 (Eastern Daylight Time)
+[debug] [2026-03-24T14:24:48.139Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-24T14:24:50.574Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-24T14:24:50.574Z] > authorizing via signed-in user (trsorx@gmail.com)
+[debug] [2026-03-24T14:24:50.574Z] [iam] checking project houseops-55490 for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]
+[debug] [2026-03-24T14:24:50.575Z] Checked if tokens are valid: false, expires at: 1774311317307
+[debug] [2026-03-24T14:24:50.575Z] Checked if tokens are valid: false, expires at: 1774311317307
+[debug] [2026-03-24T14:24:50.575Z] > refreshing access token with scopes: []
+[debug] [2026-03-24T14:24:50.576Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-03-24T14:24:50.576Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-03-24T14:24:50.734Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-03-24T14:24:50.734Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-03-24T14:24:50.744Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490:testIamPermissions [none]
+[debug] [2026-03-24T14:24:50.744Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490:testIamPermissions  x-goog-user-project=houseops-55490
+[debug] [2026-03-24T14:24:50.744Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]}
+[debug] [2026-03-24T14:24:50.986Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490:testIamPermissions 200
+[debug] [2026-03-24T14:24:50.986Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]}
+[debug] [2026-03-24T14:24:50.987Z] Checked if tokens are valid: true, expires at: 1774365889734
+[debug] [2026-03-24T14:24:50.987Z] Checked if tokens are valid: true, expires at: 1774365889734
+[debug] [2026-03-24T14:24:50.987Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/houseops-55490/serviceAccounts/houseops-55490@appspot.gserviceaccount.com:testIamPermissions [none]
+[debug] [2026-03-24T14:24:50.988Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/houseops-55490/serviceAccounts/houseops-55490@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2026-03-24T14:24:51.218Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/houseops-55490/serviceAccounts/houseops-55490@appspot.gserviceaccount.com:testIamPermissions 200
+[debug] [2026-03-24T14:24:51.219Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/houseops-55490/serviceAccounts/houseops-55490@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[info] 
+[info] === Deploying to 'houseops-55490'...
+[info] 
+[info] i  deploying functions 
+[debug] [2026-03-24T14:24:51.231Z] Checked if tokens are valid: true, expires at: 1774365889734
+[debug] [2026-03-24T14:24:51.231Z] Checked if tokens are valid: true, expires at: 1774365889734
+[debug] [2026-03-24T14:24:51.232Z] >>> [apiv2][query] GET https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490 [none]
+[debug] [2026-03-24T14:24:51.327Z] <<< [apiv2][status] GET https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490 200
+[debug] [2026-03-24T14:24:51.327Z] <<< [apiv2][body] GET https://cloudresourcemanager.googleapis.com/v1/projects/houseops-55490 {"projectNumber":"954807448148","projectId":"houseops-55490","lifecycleState":"ACTIVE","name":"houseops","labels":{"firebase":"enabled","firebase-core":"disabled"},"createTime":"2025-12-09T17:52:49.333365Z"}
+[info] i  functions: preparing codebase default for deployment 
+[info] i  functions: ensuring required API cloudfunctions.googleapis.com is enabled... 
+[info] i  functions: ensuring required API cloudbuild.googleapis.com is enabled... 
+[info] i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled... 
+[debug] [2026-03-24T14:24:51.330Z] Checked if tokens are valid: true, expires at: 1774365889734
+[debug] [2026-03-24T14:24:51.330Z] Checked if tokens are valid: true, expires at: 1774365889734
+[debug] [2026-03-24T14:24:51.330Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/houseops-55490/adminSdkConfig [none]
+[debug] [2026-03-24T14:24:51.576Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/houseops-55490/adminSdkConfig 200
+[debug] [2026-03-24T14:24:51.576Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/houseops-55490/adminSdkConfig {"projectId":"houseops-55490","storageBucket":"houseops-55490.firebasestorage.app"}
+[debug] [2026-03-24T14:24:51.579Z] Validating nodejs source
+[warn] !  functions: Runtime Node.js 20 will be deprecated on 2026-04-30 and will be decommissioned on 2026-10-30, after which you will not be able to deploy without upgrading. Consider upgrading now to avoid disruption. See https://cloud.google.com/functions/docs/runtime-support for full details on the lifecycle policy 
+[warn] !  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[debug] [2026-03-24T14:24:52.341Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^7.0.0"
+  },
+  "private": true
+}
+[debug] [2026-03-24T14:24:52.342Z] Building nodejs source
+[info] i  functions: Loading and analyzing source code for codebase default to determine what to deploy 
+[debug] [2026-03-24T14:24:52.342Z] Could not find functions.yaml. Must use http discovery
+[debug] [2026-03-24T14:24:52.350Z] Found firebase-functions binary at 'C:\Users\Blest\houseops\functions\node_modules\.bin\firebase-functions'
+[info] Serving at port 8608
+
+[debug] [2026-03-24T14:24:53.416Z] Got response from /__/functions.yaml {"endpoints":{"deleteAuthUserOnRemoval":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"eventTrigger":{"eventType":"google.cloud.firestore.document.v1.deleted","eventFilters":{"database":"(default)","namespace":"(default)"},"eventFilterPathPatterns":{"document":"users/{uid}"},"retry":false},"entryPoint":"deleteAuthUserOnRemoval"},"notifyLowRadioPart":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"eventTrigger":{"eventType":"google.cloud.firestore.document.v1.updated","eventFilters":{"database":"(default)","namespace":"(default)"},"eventFilterPathPatterns":{"document":"radioParts/{partId}"},"retry":false},"entryPoint":"notifyLowRadioPart"},"notifyLowStock":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"eventTrigger":{"eventType":"google.cloud.firestore.document.v1.updated","eventFilters":{"database":"(default)","namespace":"(default)"},"eventFilterPathPatterns":{"document":"items/{itemId}"},"retry":false},"entryPoint":"notifyLowStock"},"notifyLowToner":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"eventTrigger":{"eventType":"google.cloud.firestore.document.v1.updated","eventFilters":{"database":"(default)","namespace":"(default)"},"eventFilterPathPatterns":{"document":"toners/{tonerId}"},"retry":false},"entryPoint":"notifyLowToner"}},"specVersion":"v1alpha1","requiredAPIs":[],"extensions":{}}
