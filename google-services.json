@@ -9,6 +9,25 @@
       "client_info": {
         "mobilesdk_app_id": "1:954807448148:android:20aae76b654d1d64cb33c1",
         "android_client_info": {
+          "package_name": "com.houseops.houseops"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDIRv-BwAsqgRra66XTBDLGALagkjhE4bE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954807448148:android:4f5a6654f2582de2cb33c1",
+        "android_client_info": {
           "package_name": "com.houseops.nexus"
         }
       },
