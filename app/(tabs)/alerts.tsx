@@ -14,7 +14,7 @@
 // NOTE: You will need a composite Firestore index on alertsLog for:
 //   siteId (ASC) + createdAt (DESC)
 // Firestore will throw an error with a direct link to create it on first run.
- 
+
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -45,9 +45,9 @@ import {
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
- 
+
 // ─── Types ───────────────────────────────────────────────────────────
- 
+
 interface ActivityEntry {
   id: string;
   siteId: string;
@@ -59,15 +59,16 @@ interface ActivityEntry {
   nextState: string;
   status: string;
   action: string;
-  itemType: "inventory" | "toner" | "printer";
+  itemType: "inventory" | "toner" | "radioPart";
   createdAt: Timestamp | null;
   dismissed: boolean;
   userDismissed: boolean;
 }
- 
+
 interface AlertEntry {
   id: string;
   itemId: string;
+  itemType: "inventory" | "toner" | "radioPart";
   itemName: string;
   location: string;
   siteId: string;
@@ -79,23 +80,23 @@ interface AlertEntry {
   userDismissedAlert: boolean;
   userDismissedAlertQuantity: number | null;
 }
- 
+
 // ─── Active-state accent color ──────────────────────────────────────
 const ACTIVE_BG = "#2563eb";
 const ACTIVE_TEXT = "#ffffff";
- 
+
 // ─── Constants ───────────────────────────────────────────────────────
- 
+
 type DateFilter = "today" | "7days" | "30days" | "all";
 type ActionFilter = "all" | "added" | "edited" | "deleted" | "deducted" | "linked" | "unlinked" | "disposed";
- 
+
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
   { label: "Today", value: "today" },
   { label: "7 Days", value: "7days" },
   { label: "30 Days", value: "30days" },
   { label: "All", value: "all" },
 ];
- 
+
 const ACTION_FILTERS: { label: string; value: ActionFilter }[] = [
   { label: "All", value: "all" },
   { label: "Added", value: "added" },
@@ -106,9 +107,9 @@ const ACTION_FILTERS: { label: string; value: ActionFilter }[] = [
   { label: "Unlinked", value: "unlinked" },
   { label: "Disposed", value: "disposed" },
 ];
- 
+
 // ─── Helpers ─────────────────────────────────────────────────────────
- 
+
 function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; color: string } {
   switch (action) {
     case "added":     return { name: "add-circle",    color: "#22c55e" };
@@ -121,7 +122,7 @@ function getActionIcon(action: string): { name: keyof typeof Ionicons.glyphMap; 
     default:          return { name: "ellipse",        color: "#6b7280" };
   }
 }
- 
+
 function getSeverityLevel(state: string): number {
   switch (state.toUpperCase()) {
     case "OUT":      return 3;
@@ -130,14 +131,14 @@ function getSeverityLevel(state: string): number {
     default:         return 0;
   }
 }
- 
+
 function calculateAlertState(currentQty: number, minQty: number): string {
   if (currentQty <= 0)             return "OUT";
   if (currentQty <= minQty * 0.5) return "CRITICAL";
   if (currentQty <= minQty)       return "LOW";
   return "OK";
 }
- 
+
 function getStatusColor(status: string): string {
   switch (status.toUpperCase()) {
     case "OK":                  return "#22c55e";
@@ -146,7 +147,7 @@ function getStatusColor(status: string): string {
     default:                    return "#6b7280";
   }
 }
- 
+
 function formatTimestamp(ts: Timestamp | null): string {
   if (!ts || typeof ts.toDate !== "function") return "—";
   try {
@@ -156,12 +157,12 @@ function formatTimestamp(ts: Timestamp | null): string {
     const mins  = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days  = Math.floor(diff / 86400000);
- 
+
     if (mins < 1)   return "Just now";
     if (mins < 60)  return `${mins}m ago`;
     if (hours < 24) return `${hours}h ago`;
     if (days < 7)   return `${days}d ago`;
- 
+
     return d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -173,7 +174,7 @@ function formatTimestamp(ts: Timestamp | null): string {
     return "—";
   }
 }
- 
+
 function formatFullTimestamp(ts: Timestamp | null): string {
   if (!ts || typeof ts.toDate !== "function") return "";
   try {
@@ -189,7 +190,7 @@ function formatFullTimestamp(ts: Timestamp | null): string {
     return "";
   }
 }
- 
+
 function inferActionFromStates(prev?: string, next?: string): string {
   if (!prev && !next) return "added";
   const p = (prev ?? "").toUpperCase();
@@ -198,7 +199,7 @@ function inferActionFromStates(prev?: string, next?: string): string {
   if (p === "OK" && (n === "LOW" || n === "OUT" || n === "CRITICAL")) return "deducted";
   return "edited";
 }
- 
+
 function getDateCutoff(filter: DateFilter): Date | null {
   if (filter === "all") return null;
   const now = new Date();
@@ -208,17 +209,28 @@ function getDateCutoff(filter: DateFilter): Date | null {
   if (filter === "30days") { now.setDate(now.getDate() - 30); return now; }
   return null;
 }
- 
+
 function shouldShowAlert(item: AlertEntry): boolean {
   if (!item.userDismissedAlert) return true;
   if (item.userDismissedAlertQuantity === null || item.userDismissedAlertQuantity === undefined) return true;
   return item.currentQuantity !== item.userDismissedAlertQuantity;
 }
- 
+
+function getItemCollection(itemType: AlertEntry["itemType"]): string {
+  if (itemType === "toner") return "toners";
+  if (itemType === "radioPart") return "radioParts";
+  return "items";
+}
+
+function formatItemType(t: string): string {
+  if (t === "radioPart") return "Radio Part";
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 // ─── FilterChips — extracted to React.memo to prevent remounting ────
 // Previously defined as an inline function inside AlertsScreen, which
 // caused full remounts on every state change.
- 
+
 const FilterChips = React.memo(function FilterChips({
   dateFilter,
   actionFilter,
@@ -260,7 +272,7 @@ const FilterChips = React.memo(function FilterChips({
           );
         })}
       </View>
- 
+
       {/* Action filters */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         <Text style={{ color: theme.mutedText, fontSize: 12, fontWeight: "600", alignSelf: "center", marginRight: 4 }}>
@@ -290,9 +302,9 @@ const FilterChips = React.memo(function FilterChips({
     </View>
   );
 });
- 
+
 // ─── Animated Alert Card Component ──────────────────────────────────
- 
+
 function AlertCard({
   item,
   theme,
@@ -306,11 +318,12 @@ function AlertCard({
   const dismissingRef = useRef(false);
   const statusColor = getStatusColor(item.alertState);
   const isOut = item.alertState === "OUT" || item.alertState === "CRITICAL";
- 
+  const typeLabel = item.itemType !== "inventory" ? formatItemType(item.itemType) : null;
+
   const handlePress = useCallback(() => {
     if (dismissingRef.current) return;
     dismissingRef.current = true;
- 
+
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
@@ -320,7 +333,7 @@ function AlertCard({
       onDismiss(item);
     });
   }, [item, onDismiss, fadeAnim]);
- 
+
   return (
     <Animated.View style={{ opacity: fadeAnim }}>
       <TouchableOpacity activeOpacity={0.6} onPress={handlePress}>
@@ -338,35 +351,40 @@ function AlertCard({
           <View style={[styles.iconCircle, { backgroundColor: statusColor + "1A" }]}>
             <Ionicons name={isOut ? "alert-circle" : "warning"} size={20} color={statusColor} />
           </View>
- 
+
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
               {item.itemName}
             </Text>
- 
+
             {item.location ? (
               <Text style={{ color: theme.mutedText, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
                 📍 {item.location}
               </Text>
             ) : null}
- 
+
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
               <View style={[styles.actionBadge, { backgroundColor: statusColor + "1A" }]}>
                 <Text style={{ color: statusColor, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
                   {item.alertState}
                 </Text>
               </View>
+              {typeLabel && (
+                <View style={[styles.actionBadge, { backgroundColor: theme.border + "60" }]}>
+                  <Text style={{ color: theme.mutedText, fontSize: 11, fontWeight: "600" }}>{typeLabel}</Text>
+                </View>
+              )}
               <Text style={{ color: theme.mutedText, fontSize: 11 }}>
                 Qty: {item.currentQuantity} / Min: {item.minQuantity}
               </Text>
             </View>
- 
+
             {item.lastAlertAt && (
               <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 3 }}>
                 Last alert {formatTimestamp(item.lastAlertAt)}
               </Text>
             )}
- 
+
             <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 4, fontStyle: "italic", opacity: 0.7 }}>
               Tap to dismiss
             </Text>
@@ -376,102 +394,121 @@ function AlertCard({
     </Animated.View>
   );
 }
- 
+
 // ─── Main Component ──────────────────────────────────────────────────
- 
+
 export default function AlertsScreen() {
   const theme = useAppTheme();
   const { siteId, loading: profileLoading } = useUserProfile();
- 
+
   const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
- 
+
   // ─── Alerts state ─────────────────────────────────────────────────
   const [alerts, setAlerts] = useState<AlertEntry[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
   const [locallyDismissedIds, setLocallyDismissedIds] = useState<Set<string>>(new Set());
   const alertGenRef = useRef(0);
- 
+
   // ─── Activity log state ──────────────────────────────────────────
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
- 
+
   // ─── Fetch low-stock items ────────────────────────────────────────
   useEffect(() => {
     const thisGeneration = ++alertGenRef.current;
- 
+
     if (!siteId) {
       setAlerts([]);
       setLoadingAlerts(false);
       return;
     }
- 
+
     setLoadingAlerts(true);
     setLocallyDismissedIds(new Set());
- 
-    const q = query(collection(db, "items"), where("siteId", "==", siteId));
- 
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        if (alertGenRef.current !== thisGeneration) return;
- 
- 
-        const alertItems: AlertEntry[] = [];
- 
-        for (const d of snapshot.docs) {
-          const data = d.data();
-          const currentQty: number = typeof data.currentQuantity === "number" ? data.currentQuantity : 0;
-          const minQty: number     = typeof data.minQuantity === "number"     ? data.minQuantity     : 0;
- 
-          if (minQty > 0 && currentQty <= minQty) {
-            const alertState = calculateAlertState(currentQty, minQty);
-            const entry: AlertEntry = {
-              id: d.id,
-              itemId: d.id,
-              itemName: data.name ?? "(unknown)",
-              location: data.location ?? "",
-              siteId: data.siteId ?? "",
-              alertState,
-              currentQuantity: currentQty,
-              minQuantity: minQty,
-              lastAlertAt: data.lastAlertAt ?? data.updatedAt ?? null,
-              isLowStock: true,
-              userDismissedAlert: data.userDismissedAlert ?? false,
-              userDismissedAlertQuantity:
-                typeof data.userDismissedAlertQuantity === "number"
-                  ? data.userDismissedAlertQuantity
-                  : null,
-            };
- 
-            if (shouldShowAlert(entry)) alertItems.push(entry);
-          }
-        }
- 
-        alertItems.sort((a, b) => getSeverityLevel(b.alertState) - getSeverityLevel(a.alertState));
- 
-        // If an item reappears (qty changed, shouldShowAlert = true again),
-        // clear it from locallyDismissedIds so it is no longer hidden.
-        const alertItemIds = new Set(alertItems.map(a => a.itemId));
-        setLocallyDismissedIds(prev => {
-          if (prev.size === 0) return prev;
-          const next = new Set([...prev].filter(id => !alertItemIds.has(id)));
-          return next.size === prev.size ? prev : next;
-        });
- 
-        setAlerts(alertItems);
-        setLoadingAlerts(false);
-      },
-      (err) => {
-        console.error("[AlertsScreen] Error fetching items for alerts:", err);
-        if (alertGenRef.current === thisGeneration) setLoadingAlerts(false);
+
+    // Each source accumulates here; all three listeners share this closure
+    const data: Record<string, AlertEntry[]> = { items: [], toners: [], radioParts: [] };
+    const loaded = new Set<string>();
+
+    function buildEntries(
+      snapshot: any,
+      itemType: AlertEntry["itemType"],
+      getName: (d: any) => string,
+      getQty: (d: any) => number,
+      getMin: (d: any) => number,
+      getLoc: (d: any) => string,
+    ): AlertEntry[] {
+      const result: AlertEntry[] = [];
+      for (const docSnap of snapshot.docs) {
+        const d = docSnap.data();
+        const currentQty = Number(getQty(d) ?? 0);
+        const minQty = Number(getMin(d) ?? 0);
+        // Alert if out of stock OR below minimum threshold
+        if (currentQty > 0 && (minQty === 0 || currentQty > minQty)) continue;
+        const alertState = calculateAlertState(currentQty, minQty);
+        const entry: AlertEntry = {
+          id: docSnap.id, itemId: docSnap.id, itemType,
+          itemName: getName(d), location: getLoc(d) ?? "",
+          siteId: d.siteId ?? "", alertState,
+          currentQuantity: currentQty, minQuantity: minQty,
+          lastAlertAt: d.lastAlertAt ?? null,
+          isLowStock: true,
+          userDismissedAlert: d.userDismissedAlert ?? false,
+          userDismissedAlertQuantity: typeof d.userDismissedAlertQuantity === "number" ? d.userDismissedAlertQuantity : null,
+        };
+        if (shouldShowAlert(entry)) result.push(entry);
       }
+      return result;
+    }
+
+    function commit(source: string, entries: AlertEntry[]) {
+      if (alertGenRef.current !== thisGeneration) return;
+      data[source] = entries;
+      loaded.add(source);
+      const all = [...data.items, ...data.toners, ...data.radioParts];
+      all.sort((a, b) => getSeverityLevel(b.alertState) - getSeverityLevel(a.alertState));
+      const allIds = new Set(all.map((a) => a.itemId));
+      setLocallyDismissedIds((prev) => {
+        if (prev.size === 0) return prev;
+        const next = new Set([...prev].filter((id) => !allIds.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
+      setAlerts(all);
+      if (loaded.size >= 3) setLoadingAlerts(false);
+    }
+
+    function onErr(source: string, err: any) {
+      console.error(`[alerts] ${source}:`, err);
+      loaded.add(source);
+      if (alertGenRef.current === thisGeneration && loaded.size >= 3) setLoadingAlerts(false);
+    }
+
+    const unsubItems = onSnapshot(
+      query(collection(db, "items"), where("siteId", "==", siteId)),
+      (snap) => commit("items", buildEntries(snap, "inventory",
+        (d) => d.name ?? "(unknown)", (d) => d.currentQuantity, (d) => d.minQuantity, (d) => d.location ?? "")),
+      (err) => onErr("items", err)
     );
- 
-    return () => unsub();
+
+    const unsubToners = onSnapshot(
+      query(collection(db, "toners"), where("siteId", "==", siteId)),
+      (snap) => commit("toners", buildEntries(snap, "toner",
+        (d) => `${d.model ?? "Unknown"} (${d.color ?? ""})`.trim(), (d) => d.quantity, (d) => d.minQuantity, () => "")),
+      (err) => onErr("toners", err)
+    );
+
+    const unsubParts = onSnapshot(
+      query(collection(db, "radioParts"), where("siteId", "==", siteId)),
+      (snap) => commit("radioParts", buildEntries(snap, "radioPart",
+        (d) => d.name ?? "(unknown)", (d) => d.quantity, (d) => d.minQuantity, (d) => d.location ?? "")),
+      (err) => onErr("radioParts", err)
+    );
+
+    return () => { unsubItems(); unsubToners(); unsubParts(); };
   }, [siteId]);
- 
+
   // ─── Fetch activity log ───────────────────────────────────────────
   // FIX: Now filters by siteId, orders in Firestore, and limits to 100 docs.
   // Previously queried the entire alertsLog collection with no filter.
@@ -483,20 +520,20 @@ export default function AlertsScreen() {
       setLoadingActivities(false);
       return;
     }
- 
+
     setLoadingActivities(true);
- 
+
     const q = query(
       collection(db, "alertsLog"),
       where("siteId", "==", siteId),
       orderBy("createdAt", "desc"),
       limit(100)
     );
- 
+
     const unsub = onSnapshot(
       q,
       (snapshot) => {
- 
+
         const items: ActivityEntry[] = snapshot.docs.map((d) => {
           const data = d.data();
           return {
@@ -516,7 +553,7 @@ export default function AlertsScreen() {
             userDismissed: data.userDismissed ?? false,
           } as ActivityEntry;
         });
- 
+
         // No JS sort needed — Firestore orderBy handles it
         setActivities(items);
         setLoadingActivities(false);
@@ -526,25 +563,25 @@ export default function AlertsScreen() {
         setLoadingActivities(false);
       }
     );
- 
+
     return () => unsub();
   }, [siteId]); // FIX: was missing siteId dependency
- 
+
   // ─── Dismiss handler ──────────────────────────────────────────────
   const handleDismiss = useCallback(async (item: AlertEntry) => {
     if (!item.itemId) {
       Alert.alert("Dismiss Error", "Invalid item ID. Cannot dismiss this alert.");
       return;
     }
- 
+
     setLocallyDismissedIds((prev) => {
       const next = new Set(prev);
       next.add(item.itemId);
       return next;
     });
- 
+
     try {
-      await updateDoc(doc(db, "items", item.itemId), {
+      await updateDoc(doc(db, getItemCollection(item.itemType), item.itemId), {
         userDismissedAlert: true,
         userDismissedAlertQuantity: item.currentQuantity,
       });
@@ -561,17 +598,17 @@ export default function AlertsScreen() {
       });
     }
   }, []);
- 
+
   // ─── Visible alerts (exclude locally dismissed) ───────────────────
   const visibleAlerts = useMemo(() => {
     if (locallyDismissedIds.size === 0) return alerts;
     return alerts.filter((a) => !locallyDismissedIds.has(a.itemId));
   }, [alerts, locallyDismissedIds]);
- 
+
   // ─── Filtered activities (client-side date/action filter) ─────────
   const filteredActivities = useMemo(() => {
     let result = activities;
- 
+
     const cutoff = getDateCutoff(dateFilter);
     if (cutoff) {
       result = result.filter((a) => {
@@ -579,14 +616,14 @@ export default function AlertsScreen() {
         try { return a.createdAt.toDate() >= cutoff; } catch { return true; }
       });
     }
- 
+
     if (actionFilter !== "all") {
       result = result.filter((a) => a.action === actionFilter);
     }
- 
+
     return result;
   }, [activities, dateFilter, actionFilter]);
- 
+
   // ─── Reorder List Export ─────────────────────────────────────────
   const generateReorderList = useCallback(async () => {
     const outItems = visibleAlerts.filter(
@@ -656,7 +693,7 @@ export default function AlertsScreen() {
         return `"${ts}","${a.action}","${a.itemType}","${a.itemName}",${a.qty},${a.min},"${a.prevState}","${a.nextState}"`;
       });
       const csv = header + rows.join("\n");
- 
+
       if (Platform.OS === "web") {
         const blob = new Blob([csv], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
@@ -679,7 +716,7 @@ export default function AlertsScreen() {
       console.error("CSV export error:", err);
     }
   }, [filteredActivities]);
- 
+
   // ─── Render: Alert Item ───────────────────────────────────────────
   const renderAlertItem = useCallback(
     ({ item }: { item: AlertEntry }) => (
@@ -687,7 +724,7 @@ export default function AlertsScreen() {
     ),
     [theme, handleDismiss]
   );
- 
+
   // ─── Render: Activity Item ────────────────────────────────────────
   // FIX: Wrapped in useCallback — was an inline function causing FlatList
   // to re-render every row on every parent state change.
@@ -695,13 +732,13 @@ export default function AlertsScreen() {
     ({ item }: { item: ActivityEntry }) => {
       const icon = getActionIcon(item.action);
       const statusColor = getStatusColor(item.nextState);
- 
+
       return (
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={[styles.iconCircle, { backgroundColor: icon.color + "1A" }]}>
             <Ionicons name={icon.name} size={20} color={icon.color} />
           </View>
- 
+
           <View style={{ flex: 1, marginLeft: 12 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
@@ -711,7 +748,7 @@ export default function AlertsScreen() {
                 {formatTimestamp(item.createdAt)}
               </Text>
             </View>
- 
+
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap", gap: 6 }}>
               <View style={[styles.actionBadge, { backgroundColor: icon.color + "1A" }]}>
                 <Text style={{ color: icon.color, fontSize: 11, fontWeight: "700", textTransform: "capitalize" }}>
@@ -721,7 +758,7 @@ export default function AlertsScreen() {
               <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.itemType}</Text>
               <Text style={{ color: theme.mutedText, fontSize: 11 }}>Qty: {item.qty}</Text>
             </View>
- 
+
             {item.prevState && item.nextState && item.prevState.toLowerCase() !== item.nextState.toLowerCase() && (
               <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
                 <View style={[styles.stateDot, { backgroundColor: getStatusColor(item.prevState) }]} />
@@ -737,18 +774,18 @@ export default function AlertsScreen() {
     },
     [theme]
   );
- 
+
   // ─── Loading states ───────────────────────────────────────────────
   const isAlertsLoading     = profileLoading || loadingAlerts;
   const isActivitiesLoading = profileLoading || loadingActivities;
- 
+
   // ─── Main Render ──────────────────────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.text }]}>Alerts & Activity</Text>
- 
+
         <View style={[styles.tabBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Pressable
             onPress={() => setActiveView("alerts")}
@@ -768,7 +805,7 @@ export default function AlertsScreen() {
           </Pressable>
         </View>
       </View>
- 
+
       {/* ─── Alerts View ──────────────────────────────────────────── */}
       {activeView === "alerts" && (
         <>
@@ -810,7 +847,7 @@ export default function AlertsScreen() {
           )}
         </>
       )}
- 
+
       {/* ─── Activity Log View ────────────────────────────────────── */}
       {activeView === "activity" && (
         <>
@@ -821,7 +858,7 @@ export default function AlertsScreen() {
             onActionChange={setActionFilter}
             theme={theme}
           />
- 
+
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
             <Pressable
               onPress={exportCSV}
@@ -833,7 +870,7 @@ export default function AlertsScreen() {
               </Text>
             </Pressable>
           </View>
- 
+
           {isActivitiesLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={theme.text} />
@@ -862,9 +899,9 @@ export default function AlertsScreen() {
     </View>
   );
 }
- 
+
 // ─── Styles ──────────────────────────────────────────────────────────
- 
+
 const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 16,
@@ -954,4 +991,3 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
 });
- 
