@@ -151,9 +151,19 @@ Access the **Toners** subtab from inside the Inventory tab by tapping the **Tone
 
 Access the **Radios** subtab from inside the Inventory tab by tapping the **Radios** button in the tab row.
 
-### 5.1 Radios Subtab
+### 5.1 Radio Parts Subtab
 
-Tracks individual radio units assigned across your site.
+The **Parts** subtab opens by default. Tracks spare parts and accessories (batteries, antennas, chargers, etc.) with quantity and minimum threshold tracking.
+
+#### Adding a Radio Part
+1. Tap **+** and fill in: Name, Compatible Model, Quantity, Minimum Quantity, Location, Notes.
+2. Tap **Add Part**.
+
+> Radio parts trigger low-stock alerts and appear in the Alerts tab badge when quantity falls at or below the minimum.
+
+### 5.2 Radios Subtab
+
+Tap **Radios** in the sub-tab row to switch to the radio units list. Tracks individual radio units assigned across your site.
 
 #### Adding a Radio
 1. Tap **+** in the Radios list.
@@ -174,15 +184,6 @@ Tracks individual radio units assigned across your site.
 | Fair | Amber |
 | Poor | Red |
 | Out of Service | Gray |
-
-### 5.2 Radio Parts Subtab
-
-Tracks spare parts and accessories (batteries, antennas, chargers, etc.).
-
-#### Adding a Radio Part
-1. Tap the **Parts** sub-tab.
-2. Tap **+** and fill in: Name, Compatible Model, Quantity, Location, Notes.
-3. Tap **Add Part**.
 
 ---
 
@@ -256,6 +257,8 @@ The **Alerts** tab shows real-time stock notifications and a full activity log.
 
 ### 8.1 Alert Types
 
+Alerts are generated for **inventory items, toners, and radio parts**.
+
 | Type | Meaning |
 |---|---|
 | **Out of Stock** | Quantity dropped to 0 |
@@ -264,11 +267,14 @@ The **Alerts** tab shows real-time stock notifications and a full activity log.
 
 ### 8.2 Reading Alerts
 
-- Each alert card shows: item name, status, quantity, and timestamp.
-- Unread alerts display a colored left border (red for out/low, green for restock).
-- Tap an alert to mark it as read.
+- Each alert card shows: item name, item type (Toner or Radio Part badge where applicable), status, current and minimum quantity, and timestamp.
+- Alerts are color-coded by severity: red for Out, orange for Critical, amber for Low, green for restock.
 
-### 8.3 Filtering
+### 8.3 Dismissing an Alert
+
+Tap **Dismiss** on an alert card to hide it. The alert will reappear (and the tab badge will re-increment) if the quantity changes again after dismissal.
+
+### 8.4 Filtering
 
 Use the filter chips at the top of the Alerts tab:
 - **All** — shows everything
@@ -276,13 +282,13 @@ Use the filter chips at the top of the Alerts tab:
 - **Out** — out-of-stock alerts only
 - **Restock** — restock confirmations only
 
-### 8.4 Activity Log
+### 8.5 Activity Log
 
-Scroll down or tap the **Activity Log** section to see a full chronological history of all inventory changes at your site — including who changed what and when.
+Scroll down or tap the **Activity Log** section to see a full chronological history of all changes across inventory items, toners, and radio parts at your site. Filter by date range (Today / 7 Days / 30 Days / All) and by action type (Added, Edited, Deleted, Deducted, etc.).
 
 - Tap **Export CSV** in the Activity Log to save a full log to your device.
 
-### 8.5 Push Notifications
+### 8.6 Push Notifications
 
 Control Deck sends push notifications to your device when:
 - An item goes **out of stock**

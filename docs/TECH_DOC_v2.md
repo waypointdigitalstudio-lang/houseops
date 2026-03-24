@@ -181,6 +181,8 @@ Every document in every collection (except `users` and `sites`) carries a `siteI
   notes?: string;
   siteId: string;
   importedAt?: string;
+  userDismissedAlert?: boolean;
+  userDismissedAlertQuantity?: number | null;
 }
 ```
 
@@ -229,10 +231,13 @@ Every document in every collection (except `users` and `sites`) carries a `siteI
   name: string;
   compatibleModel?: string;
   quantity: number;
+  minQuantity: number;
   location?: string;
   notes?: string;
   siteId: string;
   importedAt?: string;
+  userDismissedAlert?: boolean;
+  userDismissedAlertQuantity?: number | null;
 }
 ```
 
@@ -303,8 +308,8 @@ Append-only. Written by Cloud Function and also by client-side `logActivity()` c
   prevState: "OK" | "LOW" | "OUT";
   nextState: "OK" | "LOW" | "OUT";
   status: string;
-  action: "added" | "deducted" | "edited" | "deleted" | "linked";
-  itemType: "inventory" | "toner" | "printer";
+  action: "added" | "deducted" | "edited" | "deleted" | "linked" | "unlinked" | "disposed";
+  itemType: "inventory" | "toner" | "radioPart";
   createdAt: Timestamp;
   dismissed?: boolean;
   userDismissed?: boolean;
@@ -516,8 +521,8 @@ Rendered as a ternary chain:
 - Returns `{ uid, profile, siteId, loading }`.
 
 ### `useLowStockCount(siteId)`
-- Real-time Firestore query on `items` where `siteId == siteId`.
-- Returns count of items where `currentQuantity <= minQuantity`.
+- Three parallel real-time Firestore listeners on `items`, `toners`, and `radioParts`, all filtered by `siteId`.
+- Returns the combined count of documents where qty ≤ `minQuantity` and the alert has not been dismissed (or quantity has changed since dismissal).
 - Used to drive the badge on the Alerts tab icon.
 
 ### `usePushNotifications({ saveToFirestore, siteId })`
@@ -615,6 +620,9 @@ The `alertsLog` query filters by `siteId` and orders by `createdAt DESC`. This r
 
 ### Expo Camera on Android
 The `CameraView` component from `expo-camera` requires the `android.permission.CAMERA` permission, which is declared in `app.json`. On Android 13+, the permission dialog is shown once; if denied, the user must manually enable it in device settings.
+
+### Push Notifications Only Cover `items`
+The `notifyLowStock` Cloud Function only triggers on `onDocumentUpdated("items/{itemId}")`. Low-stock changes to **toners** and **radioParts** update the in-app badge and Alerts feed (via client-side listeners) but do **not** send push notifications. To cover all three collections, separate Cloud Function triggers would be needed for `toners/{tonerId}` and `radioParts/{partId}`.
 
 ### `expo-file-system` Legacy API
 The import uses `expo-file-system/legacy`. If upgrading to a newer Expo SDK, verify whether the modern API (`expo-file-system`) has breaking changes for `readAsStringAsync` and `writeAsStringAsync`.
