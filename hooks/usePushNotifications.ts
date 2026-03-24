@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -64,7 +65,8 @@ export function usePushNotifications(options?: PushOptions) {
           });
         }
 
-        const expoToken = (await Notifications.getExpoPushTokenAsync()).data;
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+        const expoToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
 
         if (!mounted) return;
         setToken(expoToken);
