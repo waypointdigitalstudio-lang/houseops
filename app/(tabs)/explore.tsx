@@ -469,8 +469,10 @@ export default function DirectoryScreen() {
     try {
       const content = [
         "Company,Contact Name,Phone,Email,Website,Account #,Service Type,Notes",
-        '"Acme Copiers","Jane Doe","401-555-0100","jane@acme.com","acme.com","ACC-12345","Copier Maintenance","Annual service contract"',
-        '"Tech Support LLC","Bob Smith","401-555-0200","bob@techsupport.com","techsupport.com","","IT Support",""',
+        "Ipourit,Customer Service,949-270-0548,support@ipourit.com,https://ipouritinc.com/,Ballys Tiverton,Beer Wall,mainly a F&B product but still have to step in once in a while",
+        "Light and Wonder,Customer Care,877-462-2559,email per Vendor,https://portal.lnw.com/,tivertonitsupport@ballystiverton.com,Player Tracking/Gaming,All passwords should be saved in Keeper/password reminder",
+        "Everi,Customer Service,702-360-8550,support.loyalty@everi.com,https://everi.zendesk.com,tivertonitsupport@ballystiverton.com,Player Tracking/Gaming,All passwords should be saved in Keeper/password reminder",
+        "Toshiba,,,, https://tbs.toshiba.com/tbs/supplies/,pagesmart@tabs.toshiba.com,Printers,",
       ].join("\n");
       const uri = FileSystem.cacheDirectory + "vendors_template.csv";
       await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
