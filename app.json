@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Control Deck",
-    "slug": "houseops",
-    "version": "2.0.0",
+    "name": "Nexus",
+    "slug": "nexus",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/houseops-icon.png",
-    "scheme": "houseops",
+    "scheme": "nexus",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.houseops.houseops",
+      "bundleIdentifier": "com.houseops.nexus",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -19,7 +19,7 @@
       }
     },
     "android": {
-      "package": "com.houseops.houseops",
+      "package": "com.houseops.nexus",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/houseops-icon.png",

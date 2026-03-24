@@ -1,5 +1,5 @@
 export const BRAND = {
-  appName: "ControlDeck",
+  appName: "Nexus",
   primary: "#00b894",
   bg: "#070708",
   border: "#222222",

@@ -5,8 +5,8 @@ import React, { memo, useState } from "react";
 import { Alert, Pressable, Text, TextInput } from "react-native";
 import { db } from "../firebaseConfig";
 
-const STORAGE_LABEL_KEY = "houseops_device_label_v1";
-const STORAGE_PREFS_KEY = "houseops_alert_prefs_v1";
+const STORAGE_LABEL_KEY = "nexus_device_label_v1";
+const STORAGE_PREFS_KEY = "nexus_alert_prefs_v1";
 
 type Prefs = { low: boolean; out: boolean; restock: boolean };
 const DEFAULT_PREFS: Prefs = { low: true, out: true, restock: true };

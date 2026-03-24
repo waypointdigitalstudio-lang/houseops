@@ -1,6 +1,6 @@
-# Control Deck (HouseOps)
+# Nexus (HouseOps)
 
-Control Deck is a multi-site inventory and asset management app focused on printers, toners, and general IT assets. It helps teams track stock levels, receive alerts, and audit disposals across locations.
+Nexus is a multi-site inventory and asset management app focused on printers, toners, and general IT assets. It helps teams track stock levels, receive alerts, and audit disposals across locations.
 
 ---
 

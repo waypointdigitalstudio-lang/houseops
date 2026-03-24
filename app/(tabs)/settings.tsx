@@ -29,10 +29,10 @@ type RegistrationDoc = {
   prefs?: { low?: boolean; out?: boolean; restock?: boolean };
 };
 
-const STORAGE_LABEL_KEY = "houseops_device_label_v1";
-const STORAGE_PREFS_KEY = "houseops_alert_prefs_v1";
-const STORAGE_NOTIF_SOUND_KEY = "houseops_notif_sound_v1";
-const STORAGE_NOTIF_VIBRATE_KEY = "houseops_notif_vibrate_v1";
+const STORAGE_LABEL_KEY = "nexus_device_label_v1";
+const STORAGE_PREFS_KEY = "nexus_alert_prefs_v1";
+const STORAGE_NOTIF_SOUND_KEY = "nexus_notif_sound_v1";
+const STORAGE_NOTIF_VIBRATE_KEY = "nexus_notif_vibrate_v1";
 
 type Prefs = { low: boolean; out: boolean; restock: boolean };
 const DEFAULT_PREFS: Prefs = { low: true, out: true, restock: true };

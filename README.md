@@ -1,9 +1,9 @@
-# Control Deck
+# Nexus
 
-**Version 2.0.0**
+**Version 2.1.0**
 A mobile operations management app built with React Native / Expo and Firebase.
 
-Control Deck helps site teams track inventory, toners, printers, radios, asset disposals, and vendor contacts — all synced in real time across every device on a site.
+Nexus helps site teams track inventory, toners, printers, radios, asset disposals, and vendor contacts — all synced in real time across every device on a site.
 
 ---
 

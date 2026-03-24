@@ -1,5 +1,5 @@
-# Control Deck — Technical Documentation
-**Version 2.0.0 | March 2026**
+# Nexus — Technical Documentation
+**Version 2.1.0 | March 2026**
 
 ---
 
@@ -26,12 +26,12 @@
 
 ## 1. Project Overview
 
-**Control Deck** is a React Native / Expo mobile application for operations management. It is built for multi-site organizations and supports inventory tracking, toner/printer management, radio tracking, asset disposal, push notifications, and a vendor contact directory.
+**Nexus** is a React Native / Expo mobile application for operations management. It is built for multi-site organizations and supports inventory tracking, toner/printer management, radio tracking, asset disposal, push notifications, and a vendor contact directory.
 
 All application data is persisted in **Google Firestore** with real-time listeners. Authentication is handled by **Firebase Auth**. Push notifications are delivered via **Expo Push Notification Service** (EPN), triggered by **Firebase Cloud Functions**.
 
-**Bundle ID (iOS):** `com.houseops.houseops`
-**Package (Android):** `com.houseops.houseops`
+**Bundle ID (iOS):** `com.houseops.nexus`
+**Package (Android):** `com.houseops.nexus`
 **EAS Project ID:** `98f68256-6eef-4add-b46a-42f4564a8cb7`
 
 ---
@@ -583,7 +583,7 @@ eas update --branch production --message "describe what changed"
 ### 14.2 New Native Build
 
 Required when:
-- The app version is bumped (e.g., 1.x → 2.0.0)
+- The app version is bumped (e.g., 2.1.0 → 2.2.0)
 - Native dependencies change (new Expo modules, etc.)
 - `app.json` native config changes (permissions, bundle ID, etc.)
 
@@ -652,5 +652,5 @@ The import uses `expo-file-system/legacy`. If upgrading to a newer Expo SDK, ver
 
 ---
 
-*Control Deck v2.0.0 — Technical Documentation*
+*Nexus v2.1.0 — Technical Documentation*
 *Last updated: March 2026*

@@ -2100,7 +2100,7 @@ export default function IndexScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Control Deck</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Nexus</Text>
         <View style={[styles.tabBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Pressable
             onPress={() => setActiveTab("inventory")}

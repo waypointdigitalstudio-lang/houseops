@@ -1,5 +1,5 @@
-# Control Deck — Standard Operating Procedures
-**Version 2.0.0 | Effective: March 2026**
+# Nexus — Standard Operating Procedures
+**Version 2.1.0 | Effective: March 2026**
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## 1. Overview
 
-**Control Deck** is a site-scoped operations management app for tracking inventory, toners, printers, radios, contacts, and asset disposals. All data is stored in real time to the cloud, meaning every device on your site sees the same up-to-date information instantly.
+**Nexus** is a site-scoped operations management app for tracking inventory, toners, printers, radios, contacts, and asset disposals. All data is stored in real time to the cloud, meaning every device on your site sees the same up-to-date information instantly.
 
 **Key principles:**
 - All data is scoped to your assigned site — staff at different sites cannot see each other's data.
@@ -37,7 +37,7 @@
 
 ### 2.1 Creating an Account
 
-1. Open Control Deck and tap **Sign Up**.
+1. Open Nexus and tap **Sign Up**.
 2. Enter your **work email address** and choose a password.
 3. Tap **Create Account**.
 4. Your account will be created with the **Staff** role.
@@ -62,7 +62,7 @@ After your site is created by an admin:
 
 ## 3. Inventory Management
 
-The **Inventory** tab is the home screen of Control Deck. It shows all tracked items at your site.
+The **Inventory** tab is the home screen of Nexus. It shows all tracked items at your site.
 
 ### 3.1 Viewing Inventory
 
@@ -293,7 +293,7 @@ Scroll down or tap the **Activity Log** section to see a full chronological hist
 
 ### 8.6 Push Notifications
 
-Control Deck sends push notifications to your device when:
+Nexus sends push notifications to your device when:
 - An item goes **out of stock**
 - An item drops to **low stock**
 - An item is **restocked**
@@ -417,11 +417,11 @@ The **Admin** tab is only visible to users with the Admin role.
 - Contact an admin to confirm your `siteId` is set correctly.
 
 ### The barcode scanner doesn't work
-- Check that camera permission is granted for Control Deck in your device Settings > Apps > Control Deck > Permissions.
+- Check that camera permission is granted for Nexus in your device Settings > Apps > Nexus > Permissions.
 - Ensure the barcode exists in inventory with the matching barcode field filled in.
 
 ### I'm not receiving push notifications
-- Check that notifications are enabled for Control Deck in your device settings.
+- Check that notifications are enabled for Nexus in your device settings.
 - Sign out and sign back in — this re-registers your device push token.
 - Contact your admin to confirm your device token is enabled in the system.
 
@@ -437,4 +437,4 @@ The **Admin** tab is only visible to users with the Admin role.
 
 ---
 
-*Control Deck v2.0.0 — For support, contact your site administrator.*
+*Nexus v2.1.0 — For support, contact your site administrator.*

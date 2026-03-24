@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Nexus Icon — Concept B: N Lettermark with Node Points
+    The letter N formed by teal lines, white circles at each connection point
+  -->
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="#0F172A"/>
+
+  <!-- N strokes (teal) -->
+  <!-- Left vertical -->
+  <line x1="284" y1="214" x2="284" y2="810" stroke="#14B8A6" stroke-width="60" stroke-linecap="round"/>
+  <!-- Right vertical -->
+  <line x1="740" y1="214" x2="740" y2="810" stroke="#14B8A6" stroke-width="60" stroke-linecap="round"/>
+  <!-- Diagonal (top-left to bottom-right) -->
+  <line x1="284" y1="214" x2="740" y2="810" stroke="#14B8A6" stroke-width="60" stroke-linecap="round"/>
+
+  <!-- Node circles at each corner (white) -->
+  <circle cx="284" cy="214" r="62" fill="white"/>
+  <circle cx="740" cy="214" r="62" fill="white"/>
+  <circle cx="284" cy="810" r="62" fill="white"/>
+  <circle cx="740" cy="810" r="62" fill="white"/>
+
+  <!-- Inner accent dots (teal inside white nodes) -->
+  <circle cx="284" cy="214" r="24" fill="#14B8A6"/>
+  <circle cx="740" cy="214" r="24" fill="#14B8A6"/>
+  <circle cx="284" cy="810" r="24" fill="#14B8A6"/>
+  <circle cx="740" cy="810" r="24" fill="#14B8A6"/>
+</svg>

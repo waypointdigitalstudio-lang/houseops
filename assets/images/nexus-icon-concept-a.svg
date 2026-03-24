@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Nexus Icon — Concept A: Hub & Spoke Node Network
+    Dark navy background, teal center hub, white outer nodes
+  -->
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="#0F172A"/>
+
+  <!-- Connection lines (center to outer nodes) -->
+  <line x1="512" y1="512" x2="792" y2="512"  stroke="#1E3A5F" stroke-width="14" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="652" y2="268"  stroke="#1E3A5F" stroke-width="14" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="372" y2="268"  stroke="#1E3A5F" stroke-width="14" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="232" y2="512"  stroke="#1E3A5F" stroke-width="14" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="372" y2="756"  stroke="#1E3A5F" stroke-width="14" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="652" y2="756"  stroke="#1E3A5F" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Outer nodes (white) -->
+  <circle cx="792" cy="512" r="42" fill="white"/>
+  <circle cx="652" cy="268" r="42" fill="white"/>
+  <circle cx="372" cy="268" r="42" fill="white"/>
+  <circle cx="232" cy="512" r="42" fill="white"/>
+  <circle cx="372" cy="756" r="42" fill="white"/>
+  <circle cx="652" cy="756" r="42" fill="white"/>
+
+  <!-- Outer node inner dots (teal accent) -->
+  <circle cx="792" cy="512" r="16" fill="#14B8A6"/>
+  <circle cx="652" cy="268" r="16" fill="#14B8A6"/>
+  <circle cx="372" cy="268" r="16" fill="#14B8A6"/>
+  <circle cx="232" cy="512" r="16" fill="#14B8A6"/>
+  <circle cx="372" cy="756" r="16" fill="#14B8A6"/>
+  <circle cx="652" cy="756" r="16" fill="#14B8A6"/>
+
+  <!-- Center hub outer ring -->
+  <circle cx="512" cy="512" r="105" fill="#14B8A6"/>
+
+  <!-- Center hub inner dark ring -->
+  <circle cx="512" cy="512" r="68"  fill="#0F172A"/>
+
+  <!-- Center hub core -->
+  <circle cx="512" cy="512" r="38"  fill="#14B8A6"/>
+</svg>
