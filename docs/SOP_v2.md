@@ -354,7 +354,8 @@ The **Directory** tab stores contact information for vendors, IT support, mainte
 The **Settings** tab allows each user to manage their personal app preferences.
 
 - **Dark / Light Mode** — toggle the app theme.
-- **Notification preferences** — manage push notification settings.
+- **Notification preferences** — manage push notification settings (sound, vibration).
+- **Device Registration** — register this device to receive push notifications. Enter a label (e.g., your name or "Front Desk") and tap **Save Device**. Use **Reset Device Token** when changing phones or if notifications stop working.
 - **Account information** — view your email, site, and role.
 - **Sign Out** — logs you out of the app.
 
@@ -422,7 +423,7 @@ The **Admin** tab is only visible to users with the Admin role.
 
 ### I'm not receiving push notifications
 - Check that notifications are enabled for Nexus in your device settings.
-- Sign out and sign back in — this re-registers your device push token.
+- Go to **Settings → Reset Device Token**, fully close and reopen the app, then re-enter your device label and tap **Save Device**.
 - Contact your admin to confirm your device token is enabled in the system.
 
 ### My CSV import failed

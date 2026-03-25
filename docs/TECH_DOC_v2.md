@@ -470,6 +470,22 @@ Item qty updated in Firestore
 - Tokens with `DeviceNotRegistered` errors are automatically disabled by the Cloud Function.
 - Admins can delete stale token documents from the Admin panel or directly in Firestore.
 
+### 9.4 FCM V1 Credentials (Required for Android)
+
+Expo Push uses Firebase Cloud Messaging V1 (HTTP v1 API) for Android delivery. A **Google Service Account JSON** must be uploaded to EAS credentials for push notifications to reach Android devices.
+
+```bash
+eas credentials --platform android
+# → Google Service Account
+# → Manage your Google Service Account Key for Push Notifications (FCM V1)
+# → Set up a Google Service Account Key for Push Notifications (FCM V1)
+```
+
+The Service Account JSON is downloaded from:
+**Firebase Console → Project Settings → Service Accounts → Generate new private key**
+
+Use the `firebase-adminsdk-...` service account. This only needs to be done once per EAS project.
+
 ---
 
 ## 10. CSV Import / Export
