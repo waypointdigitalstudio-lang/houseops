@@ -81,6 +81,18 @@ type Printer = {
   importedAt?: string;
 };
 
+type DataCardPrinter = {
+  id: string;
+  name: string;
+  location?: string;
+  ipAddress?: string;
+  assetNumber?: string;
+  serial?: string;
+  ribbonType?: string;
+  notes?: string;
+  siteId: string;
+};
+
 type Radio = {
   id: string;
   model: string;
@@ -114,7 +126,7 @@ type TonerLink = {
 
 type SortMode = "name" | "stock";
 type TabMode = "inventory" | "toners" | "radios";
-type TonerSubTab = "toners" | "printers";
+type TonerSubTab = "toners" | "printers" | "datacard";
 type RadioSubTab = "radios" | "parts";
 
 // ACTIVITY: Stock status type for activity logging
@@ -326,6 +338,21 @@ export default function IndexScreen() {
     serial: "",
     tonerSeries: "",
     barcode: "",
+    notes: "",
+  });
+
+  // Data Card Printer state
+  const [datacardPrinters, setDatacardPrinters] = useState<DataCardPrinter[]>([]);
+  const [datacardSearch, setDatacardSearch] = useState("");
+  const [showDatacardModal, setShowDatacardModal] = useState(false);
+  const [editingDatacard, setEditingDatacard] = useState<DataCardPrinter | null>(null);
+  const [datacardForm, setDatacardForm] = useState({
+    name: "",
+    location: "",
+    ipAddress: "",
+    assetNumber: "",
+    serial: "",
+    ribbonType: "",
     notes: "",
   });
 
@@ -1000,6 +1027,29 @@ export default function IndexScreen() {
       .filter((p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [printers, printerSearch]);
+
+  // --- Data Card Printer Logic ---
+  useEffect(() => {
+    if (!siteId) return;
+    const q = query(collection(db, "datacardPrinters"), where("siteId", "==", siteId));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const list = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as DataCardPrinter));
+        setDatacardPrinters(list.sort((a, b) => a.name.localeCompare(b.name)));
+      },
+      (err) => console.error("datacardPrinters onSnapshot error:", err)
+    );
+    return () => unsub();
+  }, [siteId]);
+
+  const filteredDatacardPrinters = useMemo(() => {
+    if (!datacardSearch) return datacardPrinters;
+    const q = datacardSearch.toLowerCase();
+    return datacardPrinters.filter(
+      (p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q)
+    );
+  }, [datacardPrinters, datacardSearch]);
 
   // --- Radio Logic ---
   useEffect(() => {
@@ -1865,6 +1915,72 @@ export default function IndexScreen() {
     ]);
   };
 
+  const saveDatacard = async () => {
+    if (!datacardForm.name) { Alert.alert("Error", "Name is required."); return; }
+    const data = { ...datacardForm, siteId };
+    try {
+      if (editingDatacard) {
+        await setDoc(doc(db, "datacardPrinters", editingDatacard.id), data, { merge: true });
+      } else {
+        await addDoc(collection(db, "datacardPrinters"), data);
+      }
+      setShowDatacardModal(false);
+    } catch {
+      Alert.alert("Error", "Failed to save data card printer.");
+    }
+  };
+
+  const deleteDatacard = (printer: DataCardPrinter) => {
+    Alert.alert("Delete Printer", `Remove ${printer.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive", onPress: async () => {
+          try { await deleteDoc(doc(db, "datacardPrinters", printer.id)); setShowDatacardModal(false); setEditingDatacard(null); }
+          catch (err: any) { Alert.alert("Error", err.message || "Failed to delete."); }
+        },
+      },
+    ]);
+  };
+
+  const renderDatacardPrinter = ({ item }: { item: DataCardPrinter }) => (
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <Pressable
+        style={{ flex: 1 }}
+        onPress={() => {
+          setEditingDatacard(item);
+          setDatacardForm({
+            name: item.name || "",
+            location: item.location || "",
+            ipAddress: item.ipAddress || "",
+            assetNumber: item.assetNumber || "",
+            serial: item.serial || "",
+            ribbonType: item.ribbonType || "",
+            notes: item.notes || "",
+          });
+          setShowDatacardModal(true);
+        }}
+      >
+        <Text style={[styles.itemName, { color: theme.text }]}>{item.name}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+          <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
+          <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
+          {item.ribbonType && (
+            <>
+              <Ionicons name="pricetag-outline" size={12} color={theme.mutedText} style={{ marginLeft: 8, marginRight: 4 }} />
+              <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.ribbonType}</Text>
+            </>
+          )}
+        </View>
+      </Pressable>
+      <View style={{ alignItems: "flex-end", gap: 8 }}>
+        <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
+        <Pressable onPress={() => deleteDatacard(item)} hitSlop={8} style={{ padding: 4 }}>
+          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+        </Pressable>
+      </View>
+    </View>
+  );
+
   const renderToner = ({ item }: { item: Toner }) => (
     <Pressable onPress={() => router.push(`/toners/${item.id}` as any)}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -2222,7 +2338,7 @@ export default function IndexScreen() {
               onPress={() => setTonerSubTab("toners")}
               style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: tonerSubTab === "toners" ? theme.text : "transparent" }}
             >
-              <Text style={{ textAlign: "center", color: tonerSubTab === "toners" ? theme.text : theme.mutedText, fontWeight: "700" }}>
+              <Text style={{ textAlign: "center", color: tonerSubTab === "toners" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>
                 Toner Inventory
               </Text>
             </Pressable>
@@ -2230,8 +2346,16 @@ export default function IndexScreen() {
               onPress={() => setTonerSubTab("printers")}
               style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: tonerSubTab === "printers" ? theme.text : "transparent" }}
             >
-              <Text style={{ textAlign: "center", color: tonerSubTab === "printers" ? theme.text : theme.mutedText, fontWeight: "700" }}>
+              <Text style={{ textAlign: "center", color: tonerSubTab === "printers" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>
                 Printers ({printers.length})
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setTonerSubTab("datacard")}
+              style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: tonerSubTab === "datacard" ? theme.text : "transparent" }}
+            >
+              <Text style={{ textAlign: "center", color: tonerSubTab === "datacard" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>
+                Data Card ({datacardPrinters.length})
               </Text>
             </Pressable>
           </View>
@@ -2283,7 +2407,7 @@ export default function IndexScreen() {
                 </>
               }
             />
-          ) : (
+          ) : tonerSubTab === "printers" ? (
             <FlatList
               data={filteredPrinters}
               keyExtractor={(item) => item.id}
@@ -2323,6 +2447,35 @@ export default function IndexScreen() {
                   onChangeText={setPrinterSearch}
                 />
               </>
+              }
+            />
+          ) : (
+            <FlatList
+              data={filteredDatacardPrinters}
+              keyExtractor={(item) => item.id}
+              renderItem={renderDatacardPrinter}
+              contentContainerStyle={{ padding: 16 }}
+              ListHeaderComponent={
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <TextInput
+                    style={[styles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+                    placeholder="Search data card printers..."
+                    placeholderTextColor={theme.mutedText}
+                    value={datacardSearch}
+                    onChangeText={setDatacardSearch}
+                  />
+                  <Pressable
+                    onPress={() => { setEditingDatacard(null); setDatacardForm({ name: '', location: '', ipAddress: '', assetNumber: '', serial: '', ribbonType: '', notes: '' }); setShowDatacardModal(true); }}
+                    style={[styles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}
+                  >
+                    <Ionicons name="add" size={18} color={theme.text} />
+                  </Pressable>
+                </View>
+              }
+              ListEmptyComponent={
+                <Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>
+                  {datacardSearch ? "No results match." : "No data card printers yet. Tap + to add one."}
+                </Text>
               }
             />
           )}
@@ -2961,6 +3114,88 @@ export default function IndexScreen() {
                 onPress={() => { setShowTonerModal(false); scheduleTonerDelete(editingToner); setEditingToner(null); }}
               >
                 <Text style={[styles.saveBtnText, { color: "#ef4444" }]}>Delete Toner</Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Data Card Printer Modal */}
+      <Modal visible={showDatacardModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDatacardModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingDatacard ? "Edit Data Card Printer" : "Add Data Card Printer"}</Text>
+            <Pressable onPress={() => setShowDatacardModal(false)}>
+              <Ionicons name="close" size={24} color={theme.text} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Name *</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Printer name"
+              placeholderTextColor={theme.mutedText}
+              value={datacardForm.name}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, name: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Location</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Location"
+              placeholderTextColor={theme.mutedText}
+              value={datacardForm.location}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, location: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>IP Address</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="192.168.x.x"
+              placeholderTextColor={theme.mutedText}
+              value={datacardForm.ipAddress}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, ipAddress: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Asset Number</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Asset #"
+              placeholderTextColor={theme.mutedText}
+              value={datacardForm.assetNumber}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, assetNumber: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Serial</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="Serial #"
+              placeholderTextColor={theme.mutedText}
+              value={datacardForm.serial}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, serial: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Ribbon Type</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+              placeholder="e.g. YMCKO, KO, Monochrome"
+              placeholderTextColor={theme.mutedText}
+              value={datacardForm.ribbonType}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, ribbonType: v }))}
+            />
+            <Text style={[styles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100 }]}
+              placeholder="Notes"
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={datacardForm.notes}
+              onChangeText={(v) => setDatacardForm((p) => ({ ...p, notes: v }))}
+            />
+            <Pressable style={[styles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveDatacard}>
+              <Text style={styles.saveBtnText}>{editingDatacard ? "Update Printer" : "Add Printer"}</Text>
+            </Pressable>
+            {editingDatacard && (
+              <Pressable
+                style={[styles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ef4444", marginTop: 8 }]}
+                onPress={() => deleteDatacard(editingDatacard)}
+              >
+                <Text style={[styles.saveBtnText, { color: "#ef4444" }]}>Delete Printer</Text>
               </Pressable>
             )}
           </ScrollView>
