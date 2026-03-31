@@ -68,6 +68,20 @@ const emptyVendorForm = {
   company: "", contactName: "", phone: "", email: "", website: "", accountNumber: "", serviceType: "", notes: "",
 };
 
+type LincolnTech = {
+  id: string;
+  name: string;
+  title?: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  siteId: string;
+};
+
+const emptyLincolnForm = {
+  name: "", title: "", phone: "", email: "", notes: "",
+};
+
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function DirectoryScreen() {
@@ -75,7 +89,7 @@ export default function DirectoryScreen() {
   const { profile, siteId } = useUserProfile();
   const role = profile?.role ?? "staff";
 
-  const [tab, setTab] = useState<"contacts" | "vendors">("contacts");
+  const [tab, setTab] = useState<"contacts" | "vendors" | "lincoln">("contacts");
 
   // ── Contacts state ──────────────────────────────────────────────────────
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -96,6 +110,14 @@ export default function DirectoryScreen() {
   const [vendorForm, setVendorForm] = useState({ ...emptyVendorForm });
   const [savingVendor, setSavingVendor] = useState(false);
   const [importingVendors, setImportingVendors] = useState(false);
+
+  // ── Lincoln Techs state ─────────────────────────────────────────────────
+  const [lincolnTechs, setLincolnTechs] = useState<LincolnTech[]>([]);
+  const [lincolnSearch, setLincolnSearch] = useState("");
+  const [showLincolnModal, setShowLincolnModal] = useState(false);
+  const [editingLincoln, setEditingLincoln] = useState<LincolnTech | null>(null);
+  const [lincolnForm, setLincolnForm] = useState({ ...emptyLincolnForm });
+  const [savingLincoln, setSavingLincoln] = useState(false);
 
   // ── Listeners ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -122,6 +144,20 @@ export default function DirectoryScreen() {
         setVendors(docs);
       },
       (err) => console.error("Vendors listener error:", err)
+    );
+    return unsub;
+  }, [siteId]);
+
+  useEffect(() => {
+    if (!siteId) return;
+    const unsub = onSnapshot(
+      query(collection(db, "lincolnTechs"), where("siteId", "==", siteId)),
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as LincolnTech));
+        docs.sort((a, b) => a.name.localeCompare(b.name));
+        setLincolnTechs(docs);
+      },
+      (err) => console.error("LincolnTechs listener error:", err)
     );
     return unsub;
   }, [siteId]);
@@ -273,6 +309,72 @@ export default function DirectoryScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
         try { await deleteDoc(doc(db, "vendors", vendor.id)); }
+        catch (err: any) { Alert.alert("Error", err.message); }
+      }},
+    ]);
+  }, []);
+
+  // ── Lincoln Techs helpers ────────────────────────────────────────────────
+  const filteredLincolnTechs = useMemo(() => {
+    if (!lincolnSearch.trim()) return lincolnTechs;
+    const s = lincolnSearch.toLowerCase();
+    return lincolnTechs.filter(
+      (lt) =>
+        lt.name.toLowerCase().includes(s) ||
+        lt.title?.toLowerCase().includes(s) ||
+        lt.phone?.includes(s) ||
+        lt.email?.toLowerCase().includes(s)
+    );
+  }, [lincolnTechs, lincolnSearch]);
+
+  const openAddLincoln = useCallback(() => {
+    setEditingLincoln(null);
+    setLincolnForm({ ...emptyLincolnForm });
+    setShowLincolnModal(true);
+  }, []);
+
+  const openEditLincoln = useCallback((lt: LincolnTech) => {
+    setEditingLincoln(lt);
+    setLincolnForm({
+      name: lt.name,
+      title: lt.title ?? "",
+      phone: lt.phone ?? "",
+      email: lt.email ?? "",
+      notes: lt.notes ?? "",
+    });
+    setShowLincolnModal(true);
+  }, []);
+
+  const saveLincoln = useCallback(async () => {
+    if (!lincolnForm.name.trim()) { Alert.alert("Error", "Name is required."); return; }
+    setSavingLincoln(true);
+    try {
+      const data = {
+        name: lincolnForm.name.trim(),
+        title: lincolnForm.title.trim(),
+        phone: lincolnForm.phone.trim(),
+        email: lincolnForm.email.trim(),
+        notes: lincolnForm.notes.trim(),
+        siteId: siteId || "default",
+      };
+      if (editingLincoln) {
+        await updateDoc(doc(db, "lincolnTechs", editingLincoln.id), data);
+      } else {
+        await addDoc(collection(db, "lincolnTechs"), { ...data, createdAt: serverTimestamp() });
+      }
+      setShowLincolnModal(false);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Failed to save.");
+    } finally {
+      setSavingLincoln(false);
+    }
+  }, [lincolnForm, editingLincoln, siteId]);
+
+  const deleteLincoln = useCallback((lt: LincolnTech) => {
+    Alert.alert("Delete", `Remove ${lt.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try { await deleteDoc(doc(db, "lincolnTechs", lt.id)); }
         catch (err: any) { Alert.alert("Error", err.message); }
       }},
     ]);
@@ -528,20 +630,39 @@ export default function DirectoryScreen() {
     </View>
   ), [theme, openEditVendor, call, email, web, deleteVendor]);
 
+  const renderLincolnTech = useCallback(({ item }: { item: LincolnTech }) => (
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <Pressable onPress={() => openEditLincoln(item)} style={{ flex: 1 }}>
+        <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
+        {item.title ? (
+          <View style={[styles.badge, { backgroundColor: theme.tint + "22", marginBottom: 4, alignSelf: "flex-start" }]}>
+            <Text style={{ color: theme.tint, fontSize: 11, fontWeight: "700" }}>{item.title}</Text>
+          </View>
+        ) : null}
+        {item.notes ? <Text style={{ color: theme.mutedText, fontSize: 11, fontStyle: "italic" }} numberOfLines={1}>{item.notes}</Text> : null}
+      </Pressable>
+      <View style={{ alignItems: "flex-end", gap: 8 }}>
+        {item.phone ? <Pressable onPress={() => call(item.phone!)} hitSlop={8}><Ionicons name="call-outline" size={20} color={theme.tint} /></Pressable> : null}
+        {item.email ? <Pressable onPress={() => email(item.email!)} hitSlop={8}><Ionicons name="mail-outline" size={20} color={theme.tint} /></Pressable> : null}
+        <Pressable onPress={() => deleteLincoln(item)} hitSlop={8}><Ionicons name="trash-outline" size={18} color="#ef4444" /></Pressable>
+      </View>
+    </View>
+  ), [theme, openEditLincoln, call, email, deleteLincoln]);
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
 
       {/* Subtab switcher */}
       <View style={[styles.tabRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        {(["contacts", "vendors"] as const).map((t) => (
+        {(["contacts", "vendors", "lincoln"] as const).map((t) => (
           <Pressable
             key={t}
             onPress={() => setTab(t)}
             style={[styles.tabBtn, tab === t && { backgroundColor: theme.tint }]}
           >
-            <Text style={{ color: tab === t ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 14, textTransform: "capitalize" }}>
-              {t === "contacts" ? "Contacts" : "Vendors"}
+            <Text style={{ color: tab === t ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 13, textTransform: "capitalize" }}>
+              {t === "contacts" ? "Contacts" : t === "vendors" ? "Vendors" : "Lincoln Tech"}
             </Text>
           </Pressable>
         ))}
@@ -675,6 +796,35 @@ export default function DirectoryScreen() {
         </>
       )}
 
+      {/* ── LINCOLN TECHS TAB ── */}
+      {tab === "lincoln" && (
+        <>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
+            <TextInput
+              style={[styles.search, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, flex: 1 }]}
+              placeholder="Search Lincoln Techs..."
+              placeholderTextColor={theme.mutedText}
+              value={lincolnSearch}
+              onChangeText={setLincolnSearch}
+            />
+            <Pressable onPress={openAddLincoln} style={[styles.addBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Ionicons name="add" size={22} color={theme.text} />
+            </Pressable>
+          </View>
+          <FlatList
+            data={filteredLincolnTechs}
+            keyExtractor={(lt) => lt.id}
+            renderItem={renderLincolnTech}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            ListEmptyComponent={
+              <Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>
+                {lincolnSearch ? "No results match." : "No Lincoln Techs yet. Tap + to add one."}
+              </Text>
+            }
+          />
+        </>
+      )}
+
       {/* ── CONTACT MODAL ── */}
       <Modal visible={showContactModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowContactModal(false)}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
@@ -765,6 +915,52 @@ export default function DirectoryScreen() {
               style={[styles.saveBtn, { backgroundColor: theme.tint, opacity: savingVendor ? 0.6 : 1 }]}>
               <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>
                 {savingVendor ? "Saving…" : editingVendor ? "Save Changes" : "Add Vendor"}
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── LINCOLN MODAL ── */}
+      <Modal visible={showLincolnModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowLincolnModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingLincoln ? "Edit Lincoln Tech" : "Add Lincoln Tech"}</Text>
+            <Pressable onPress={() => setShowLincolnModal(false)}><Ionicons name="close" size={24} color={theme.text} /></Pressable>
+          </View>
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
+            {[
+              { label: "Name *", key: "name", placeholder: "Full name", keyboard: "default" },
+              { label: "Title / Role", key: "title", placeholder: "e.g. Field Technician", keyboard: "default" },
+              { label: "Phone", key: "phone", placeholder: "Phone number", keyboard: "phone-pad" },
+              { label: "Email", key: "email", placeholder: "Email address", keyboard: "email-address" },
+            ].map(({ label, key, placeholder, keyboard }) => (
+              <View key={key}>
+                <Text style={[styles.label, { color: theme.mutedText }]}>{label}</Text>
+                <TextInput
+                  style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                  placeholder={placeholder}
+                  placeholderTextColor={theme.mutedText}
+                  keyboardType={keyboard as any}
+                  autoCapitalize={keyboard === "email-address" ? "none" : "sentences"}
+                  value={(lincolnForm as any)[key]}
+                  onChangeText={(v) => setLincolnForm((p) => ({ ...p, [key]: v }))}
+                />
+              </View>
+            ))}
+            <Text style={[styles.label, { color: theme.mutedText }]}>Notes</Text>
+            <TextInput
+              style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]}
+              placeholder="Any additional notes..."
+              placeholderTextColor={theme.mutedText}
+              multiline
+              value={lincolnForm.notes}
+              onChangeText={(v) => setLincolnForm((p) => ({ ...p, notes: v }))}
+            />
+            <Pressable onPress={saveLincoln} disabled={savingLincoln}
+              style={[styles.saveBtn, { backgroundColor: theme.tint, opacity: savingLincoln ? 0.6 : 1 }]}>
+              <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>
+                {savingLincoln ? "Saving…" : editingLincoln ? "Save Changes" : "Add Lincoln Tech"}
               </Text>
             </Pressable>
           </ScrollView>

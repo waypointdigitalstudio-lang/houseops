@@ -2620,6 +2620,7 @@ export default function IndexScreen() {
           <CameraView
             style={StyleSheet.absoluteFill}
             facing="back"
+            autofocus="on"
             onBarcodeScanned={scanningEnabled ? handleBarcodeScanned : undefined}
           />
           <View style={{ position: "absolute", left: 16, right: 16, bottom: 48, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 16, padding: 16 }}>
