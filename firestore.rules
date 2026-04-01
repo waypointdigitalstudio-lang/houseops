@@ -137,6 +137,27 @@ service cloud.firestore {
     }
 
     // =========================
+    // Data Card Printers (site-scoped)
+    // =========================
+    match /datacardPrinters/{printerId} {
+      allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && mySiteId() != null
+        && request.resource.data.siteId == mySiteId()
+      );
+
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && sameSite(resource.data)
+        && request.resource.data.siteId == resource.data.siteId
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && sameSite(resource.data));
+    }
+
+    // =========================
     // Toners (site-scoped)
     // =========================
     match /toners/{tonerId} {
