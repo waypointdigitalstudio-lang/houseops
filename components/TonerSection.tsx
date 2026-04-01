@@ -455,25 +455,47 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
       const rows = parseCSV(content);
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = (names: string[]) => { for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; } return -1; };
-      const iName = col(["name", "printer"]);
+      // Exact-match first, then partial — prevents "printerip" from matching "printer" as a name column
+      const col = (names: string[]) => {
+        for (const n of names) { const idx = headers.findIndex((h) => h === n); if (idx !== -1) return idx; }
+        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
+        return -1;
+      };
+      const iModel = col(["datacard", "model", "name"]);
+      const iSerial = col(["serial", "sn", "serialnumber"]);
       const iLocation = col(["location", "loc"]);
-      const iIp = col(["ip", "ipaddress", "ip_address"]);
+      const iIp = col(["printerip", "ipaddress", "ip_address", "ip"]);
       const iAsset = col(["asset", "assetnumber"]);
-      const iSerial = col(["serial", "sn"]);
       const iRibbon = col(["ribbon", "ribbontype"]);
+      const iWarranty = col(["warranty"]);
+      const iStatus = col(["status"]);
+      const iMac = col(["mac", "macaddress"]);
       const iNotes = col(["notes", "note"]);
-      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' column."); return; }
-      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+      if (iModel === -1 && iSerial === -1) { Alert.alert("Import Failed", "Could not find a model or serial number column."); return; }
+      // Filter out blank rows using whichever identifier column is available
+      const idCol = iModel !== -1 ? iModel : iSerial;
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[idCol] ?? "") !== "");
       let count = 0;
       for (let i = 0; i < dataRows.length; i += 499) {
         const chunk = dataRows.slice(i, i + 499);
         const batch = writeBatch(db);
         for (const row of chunk) {
-          const name = normalizeCell(row[iName] ?? "");
+          const model = iModel !== -1 ? normalizeCell(row[iModel] ?? "") : "";
+          const serial = iSerial !== -1 ? normalizeCell(row[iSerial] ?? "") : "";
+          // Build a unique display name: "CD800 - C25132" or just model/serial if only one exists
+          const name = model && serial ? `${model} - ${serial}` : model || serial;
           if (!name) continue;
-          const stableId = `${siteId}_dc_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-          batch.set(doc(db, "datacardPrinters", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), serial: normalizeCell(row[iSerial] ?? ""), ribbonType: normalizeCell(row[iRibbon] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });
+          // Fold warranty, status, MAC into notes since they aren't dedicated fields
+          const noteParts: string[] = [];
+          if (iWarranty !== -1 && normalizeCell(row[iWarranty] ?? "")) noteParts.push(`Warranty: ${normalizeCell(row[iWarranty])}`);
+          if (iStatus !== -1 && normalizeCell(row[iStatus] ?? "")) noteParts.push(`Status: ${normalizeCell(row[iStatus])}`);
+          if (iMac !== -1 && normalizeCell(row[iMac] ?? "")) noteParts.push(`MAC: ${normalizeCell(row[iMac])}`);
+          if (iNotes !== -1 && normalizeCell(row[iNotes] ?? "")) noteParts.push(normalizeCell(row[iNotes]));
+          const notes = noteParts.join(" | ");
+          // Use serial as the stable ID key when available (model alone isn't unique)
+          const idBase = serial || name;
+          const stableId = `${siteId}_dc_${idBase}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+          batch.set(doc(db, "datacardPrinters", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: iAsset !== -1 ? normalizeCell(row[iAsset] ?? "") : "", serial, ribbonType: iRibbon !== -1 ? normalizeCell(row[iRibbon] ?? "") : "", notes, siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });
           count++;
         }
         await batch.commit();
