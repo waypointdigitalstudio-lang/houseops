@@ -91,6 +91,11 @@ export default function DirectoryScreen() {
 
   const [tab, setTab] = useState<"contacts" | "vendors" | "lincoln">("contacts");
 
+  const techTabLabel =
+    siteId === "ballys_tiverton" ? "Lincoln Tech" :
+    siteId === "ballys_lincoln"  ? "Tiverton Tech" :
+    "Tech Contacts";
+
   // ── Contacts state ──────────────────────────────────────────────────────
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactSearch, setContactSearch] = useState("");
@@ -662,7 +667,7 @@ export default function DirectoryScreen() {
             style={[styles.tabBtn, tab === t && { backgroundColor: theme.tint }]}
           >
             <Text style={{ color: tab === t ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 13, textTransform: "capitalize" }}>
-              {t === "contacts" ? "Contacts" : t === "vendors" ? "Vendors" : siteId === "ballys_tiverton" ? "Lincoln Tech" : siteId === "ballys_lincoln" ? "Tiverton Tech" : "Tech Contacts"}
+              {t === "contacts" ? "Contacts" : t === "vendors" ? "Vendors" : techTabLabel}
             </Text>
           </Pressable>
         ))}
@@ -802,7 +807,7 @@ export default function DirectoryScreen() {
           <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
             <TextInput
               style={[styles.search, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, flex: 1 }]}
-              placeholder="Search Lincoln Techs..."
+              placeholder={`Search ${techTabLabel}s...`}
               placeholderTextColor={theme.mutedText}
               value={lincolnSearch}
               onChangeText={setLincolnSearch}
@@ -925,7 +930,7 @@ export default function DirectoryScreen() {
       <Modal visible={showLincolnModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowLincolnModal(false)}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingLincoln ? "Edit Lincoln Tech" : "Add Lincoln Tech"}</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editingLincoln ? `Edit ${techTabLabel}` : `Add ${techTabLabel}`}</Text>
             <Pressable onPress={() => setShowLincolnModal(false)}><Ionicons name="close" size={24} color={theme.text} /></Pressable>
           </View>
           <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
@@ -960,7 +965,7 @@ export default function DirectoryScreen() {
             <Pressable onPress={saveLincoln} disabled={savingLincoln}
               style={[styles.saveBtn, { backgroundColor: theme.tint, opacity: savingLincoln ? 0.6 : 1 }]}>
               <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>
-                {savingLincoln ? "Saving…" : editingLincoln ? "Save Changes" : "Add Lincoln Tech"}
+                {savingLincoln ? "Saving…" : editingLincoln ? "Save Changes" : `Add ${techTabLabel}`}
               </Text>
             </Pressable>
           </ScrollView>

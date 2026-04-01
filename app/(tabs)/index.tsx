@@ -1916,8 +1916,17 @@ export default function IndexScreen() {
   };
 
   const saveDatacard = async () => {
-    if (!datacardForm.name) { Alert.alert("Error", "Name is required."); return; }
-    const data = { ...datacardForm, siteId };
+    if (!datacardForm.name.trim()) { Alert.alert("Error", "Name is required."); return; }
+    const data = {
+      name: datacardForm.name.trim(),
+      location: datacardForm.location.trim(),
+      ipAddress: datacardForm.ipAddress.trim(),
+      assetNumber: datacardForm.assetNumber.trim(),
+      serial: datacardForm.serial.trim(),
+      ribbonType: datacardForm.ribbonType.trim(),
+      notes: datacardForm.notes.trim(),
+      siteId: siteId || "default",
+    };
     try {
       if (editingDatacard) {
         await setDoc(doc(db, "datacardPrinters", editingDatacard.id), data, { merge: true });
