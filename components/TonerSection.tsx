@@ -52,7 +52,7 @@ import {
   UNDO_TIMEOUT_MS,
 } from "../types/inventory";
 import { getStockStatus, logActivity } from "../utils/activity";
-import { normalizeCell, parseCSV, downloadTonerTemplate, downloadPrinterTemplate, downloadDatacardTemplate } from "../utils/csvHelpers";
+import { normalizeCell, parseCSV, makeColFinder, downloadTonerTemplate, downloadPrinterTemplate, downloadDatacardTemplate } from "../utils/csvHelpers";
 import TonerStockBadge from "./TonerStockBadge";
 
 interface TonerSectionProps {
@@ -379,7 +379,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
       const rows = parseCSV(content);
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = (names: string[]) => { for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; } return -1; };
+      const col = makeColFinder(headers);
       const iModel = col(["model", "name", "toner"]);
       const iPart = col(["part", "partnumber", "sku"]);
       const iColor = col(["color", "colour", "type"]);
@@ -418,7 +418,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
       const rows = parseCSV(content);
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = (names: string[]) => { for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; } return -1; };
+      const col = makeColFinder(headers);
       const iName = col(["name", "printer"]);
       const iLocation = col(["location", "loc"]);
       const iIp = col(["ip", "ipaddress", "ip_address"]);
@@ -455,12 +455,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
       const rows = parseCSV(content);
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      // Exact-match first, then partial — prevents "printerip" from matching "printer" as a name column
-      const col = (names: string[]) => {
-        for (const n of names) { const idx = headers.findIndex((h) => h === n); if (idx !== -1) return idx; }
-        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
-        return -1;
-      };
+      const col = makeColFinder(headers);
       const iModel = col(["datacard", "model", "name"]);
       const iSerial = col(["serial", "sn", "serialnumber"]);
       const iLocation = col(["location", "loc"]);
@@ -472,7 +467,6 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
       const iMac = col(["mac", "macaddress"]);
       const iNotes = col(["notes", "note"]);
       if (iModel === -1 && iSerial === -1) { Alert.alert("Import Failed", "Could not find a model or serial number column."); return; }
-      // Filter out blank rows using whichever identifier column is available
       const idCol = iModel !== -1 ? iModel : iSerial;
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[idCol] ?? "") !== "");
       let count = 0;
@@ -482,17 +476,18 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
         for (const row of chunk) {
           const model = iModel !== -1 ? normalizeCell(row[iModel] ?? "") : "";
           const serial = iSerial !== -1 ? normalizeCell(row[iSerial] ?? "") : "";
-          // Build a unique display name: "CD800 - C25132" or just model/serial if only one exists
           const name = model && serial ? `${model} - ${serial}` : model || serial;
           if (!name) continue;
-          // Fold warranty, status, MAC into notes since they aren't dedicated fields
           const noteParts: string[] = [];
-          if (iWarranty !== -1 && normalizeCell(row[iWarranty] ?? "")) noteParts.push(`Warranty: ${normalizeCell(row[iWarranty])}`);
-          if (iStatus !== -1 && normalizeCell(row[iStatus] ?? "")) noteParts.push(`Status: ${normalizeCell(row[iStatus])}`);
-          if (iMac !== -1 && normalizeCell(row[iMac] ?? "")) noteParts.push(`MAC: ${normalizeCell(row[iMac])}`);
-          if (iNotes !== -1 && normalizeCell(row[iNotes] ?? "")) noteParts.push(normalizeCell(row[iNotes]));
+          const warranty = iWarranty !== -1 ? normalizeCell(row[iWarranty] ?? "") : "";
+          if (warranty) noteParts.push(`Warranty: ${warranty}`);
+          const status = iStatus !== -1 ? normalizeCell(row[iStatus] ?? "") : "";
+          if (status) noteParts.push(`Status: ${status}`);
+          const mac = iMac !== -1 ? normalizeCell(row[iMac] ?? "") : "";
+          if (mac) noteParts.push(`MAC: ${mac}`);
+          const existingNotes = iNotes !== -1 ? normalizeCell(row[iNotes] ?? "") : "";
+          if (existingNotes) noteParts.push(existingNotes);
           const notes = noteParts.join(" | ");
-          // Use serial as the stable ID key when available (model alone isn't unique)
           const idBase = serial || name;
           const stableId = `${siteId}_dc_${idBase}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
           batch.set(doc(db, "datacardPrinters", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: iAsset !== -1 ? normalizeCell(row[iAsset] ?? "") : "", serial, ribbonType: iRibbon !== -1 ? normalizeCell(row[iRibbon] ?? "") : "", notes, siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });

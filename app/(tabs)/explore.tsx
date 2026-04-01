@@ -590,38 +590,36 @@ export default function DirectoryScreen() {
   }, []);
 
   // ── Render helpers ───────────────────────────────────────────────────────
-  const renderContact = useCallback(({ item }: { item: Contact }) => (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Pressable onPress={() => openEditContact(item)} style={{ flex: 1 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-          <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
-          {item.category ? (
-            <View style={[styles.badge, { backgroundColor: theme.tint + "22" }]}>
-              <Text style={{ color: theme.tint, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>{item.category}</Text>
-            </View>
-          ) : null}
-        </View>
-        {item.company ? <Text style={{ color: theme.mutedText, fontSize: 13, marginBottom: 2 }}>{item.company}</Text> : null}
-        {item.notes ? <Text style={{ color: theme.mutedText, fontSize: 11, fontStyle: "italic" }} numberOfLines={1}>{item.notes}</Text> : null}
+  const renderContact = useCallback(({ item }: { item: Contact }) => {
+    const phoneBtn = (phone: string, secondary?: boolean) => (
+      <Pressable onPress={() => call(phone)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+        <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700", opacity: secondary ? 0.6 : 1 }}>{phone.replace(/\D/g, "").slice(-4)}</Text>
+        <Ionicons name="call-outline" size={20} color={theme.tint} style={secondary ? { opacity: 0.6 } : undefined} />
       </Pressable>
-      <View style={{ alignItems: "flex-end", gap: 8 }}>
-        {item.phone ? (
-          <Pressable onPress={() => call(item.phone!)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700" }}>{item.phone.replace(/\D/g, "").slice(-4)}</Text>
-            <Ionicons name="call-outline" size={20} color={theme.tint} />
-          </Pressable>
-        ) : null}
-        {item.phone2 ? (
-          <Pressable onPress={() => call(item.phone2!)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700", opacity: 0.6 }}>{item.phone2.replace(/\D/g, "").slice(-4)}</Text>
-            <Ionicons name="call-outline" size={20} color={theme.tint} style={{ opacity: 0.6 }} />
-          </Pressable>
-        ) : null}
-        {item.email  ? <Pressable onPress={() => email(item.email!)} hitSlop={8}><Ionicons name="mail-outline" size={20} color={theme.tint} /></Pressable> : null}
-        <Pressable onPress={() => deleteContact(item)} hitSlop={8}><Ionicons name="trash-outline" size={18} color="#ef4444" /></Pressable>
+    );
+    return (
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Pressable onPress={() => openEditContact(item)} style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+            <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
+            {item.category ? (
+              <View style={[styles.badge, { backgroundColor: theme.tint + "22" }]}>
+                <Text style={{ color: theme.tint, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>{item.category}</Text>
+              </View>
+            ) : null}
+          </View>
+          {item.company ? <Text style={{ color: theme.mutedText, fontSize: 13, marginBottom: 2 }}>{item.company}</Text> : null}
+          {item.notes ? <Text style={{ color: theme.mutedText, fontSize: 11, fontStyle: "italic" }} numberOfLines={1}>{item.notes}</Text> : null}
+        </Pressable>
+        <View style={{ alignItems: "flex-end", gap: 8 }}>
+          {item.phone  ? phoneBtn(item.phone) : null}
+          {item.phone2 ? phoneBtn(item.phone2, true) : null}
+          {item.email  ? <Pressable onPress={() => email(item.email!)} hitSlop={8}><Ionicons name="mail-outline" size={20} color={theme.tint} /></Pressable> : null}
+          <Pressable onPress={() => deleteContact(item)} hitSlop={8}><Ionicons name="trash-outline" size={18} color="#ef4444" /></Pressable>
+        </View>
       </View>
-    </View>
-  ), [theme, openEditContact, call, email, deleteContact]);
+    );
+  }, [theme, openEditContact, call, email, deleteContact]);
 
   const renderVendor = useCallback(({ item }: { item: Vendor }) => (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
