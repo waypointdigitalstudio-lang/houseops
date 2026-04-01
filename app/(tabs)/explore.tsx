@@ -593,7 +593,7 @@ export default function DirectoryScreen() {
   const renderContact = useCallback(({ item }: { item: Contact }) => {
     const phoneBtn = (phone: string, secondary?: boolean) => (
       <Pressable onPress={() => call(phone)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-        <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700", opacity: secondary ? 0.6 : 1 }}>{phone.replace(/\D/g, "").slice(-4)}</Text>
+        {!secondary && <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700" }}>{phone.replace(/\D/g, "").slice(-4)}</Text>}
         <Ionicons name="call-outline" size={20} color={theme.tint} style={secondary ? { opacity: 0.6 } : undefined} />
       </Pressable>
     );
