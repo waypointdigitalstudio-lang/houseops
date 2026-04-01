@@ -818,7 +818,7 @@ export default function DirectoryScreen() {
             contentContainerStyle={{ paddingBottom: 40 }}
             ListEmptyComponent={
               <Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>
-                {lincolnSearch ? "No results match." : "No Lincoln Techs yet. Tap + to add one."}
+                {lincolnSearch ? "No results match." : "No Techs have been added yet. Tap + to add one."}
               </Text>
             }
           />
