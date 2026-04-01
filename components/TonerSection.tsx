@@ -52,7 +52,7 @@ import {
   UNDO_TIMEOUT_MS,
 } from "../types/inventory";
 import { getStockStatus, logActivity } from "../utils/activity";
-import { normalizeCell, parseCSV, downloadTonerTemplate, downloadPrinterTemplate } from "../utils/csvHelpers";
+import { normalizeCell, parseCSV, downloadTonerTemplate, downloadPrinterTemplate, downloadDatacardTemplate } from "../utils/csvHelpers";
 import TonerStockBadge from "./TonerStockBadge";
 
 interface TonerSectionProps {
@@ -100,6 +100,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
 
   // Import state
   const [importingToners, setImportingToners] = useState(false);
+  const [importingDatacardPrinters, setImportingDatacardPrinters] = useState(false);
 
   // Link Toner Modal state
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -445,6 +446,42 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
     } catch (err: any) { Alert.alert("Import Failed", err.message || "An unexpected error occurred."); } finally { setImportingPrinters(false); }
   };
 
+  const importDatacardPrintersFromCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
+      if (result.canceled) return;
+      setImportingDatacardPrinters(true);
+      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const rows = parseCSV(content);
+      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => { for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; } return -1; };
+      const iName = col(["name", "printer"]);
+      const iLocation = col(["location", "loc"]);
+      const iIp = col(["ip", "ipaddress", "ip_address"]);
+      const iAsset = col(["asset", "assetnumber"]);
+      const iSerial = col(["serial", "sn"]);
+      const iRibbon = col(["ribbon", "ribbontype"]);
+      const iNotes = col(["notes", "note"]);
+      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' column."); return; }
+      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
+      let count = 0;
+      for (let i = 0; i < dataRows.length; i += 499) {
+        const chunk = dataRows.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const row of chunk) {
+          const name = normalizeCell(row[iName] ?? "");
+          if (!name) continue;
+          const stableId = `${siteId}_dc_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+          batch.set(doc(db, "datacardPrinters", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), serial: normalizeCell(row[iSerial] ?? ""), ribbonType: normalizeCell(row[iRibbon] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });
+          count++;
+        }
+        await batch.commit();
+      }
+      Alert.alert("Import Complete", `${count} data card printer${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) { Alert.alert("Import Failed", err.message || "An unexpected error occurred."); } finally { setImportingDatacardPrinters(false); }
+  };
+
   // Render functions
   const renderToner = ({ item }: { item: Toner }) => (
     <Pressable onPress={() => router.push(`/toners/${item.id}` as any)}>
@@ -611,12 +648,20 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
           renderItem={renderDatacardPrinter}
           contentContainerStyle={{ padding: 16 }}
           ListHeaderComponent={
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <TextInput style={[inventoryStyles.searchInput, { flex: 1, backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]} placeholder="Search data card printers..." placeholderTextColor={theme.mutedText} value={datacardSearch} onChangeText={setDatacardSearch} />
-              <Pressable onPress={() => { setEditingDatacard(null); setDatacardForm({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "", ribbonType: "", notes: "" }); setShowDatacardModal(true); }} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
-                <Ionicons name="add" size={18} color={theme.text} />
-              </Pressable>
-            </View>
+            <>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <Pressable onPress={importDatacardPrintersFromCSV} disabled={importingDatacardPrinters} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1 }]}>
+                  {importingDatacardPrinters ? <ActivityIndicator size="small" color={theme.text} /> : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[inventoryStyles.importBtnText, { color: theme.text }]}>Import CSV</Text></>}
+                </Pressable>
+                <Pressable onPress={() => downloadDatacardTemplate().catch((e) => Alert.alert("Error", e.message))} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
+                  <Ionicons name="document-outline" size={18} color={theme.text} />
+                </Pressable>
+                <Pressable onPress={() => { setEditingDatacard(null); setDatacardForm({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "", ribbonType: "", notes: "" }); setShowDatacardModal(true); }} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
+                  <Ionicons name="add" size={18} color={theme.text} />
+                </Pressable>
+              </View>
+              <TextInput style={[inventoryStyles.searchInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]} placeholder="Search data card printers..." placeholderTextColor={theme.mutedText} value={datacardSearch} onChangeText={setDatacardSearch} />
+            </>
           }
           ListEmptyComponent={<Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>{datacardSearch ? "No results match." : "No data card printers yet. Tap + to add one."}</Text>}
         />

@@ -91,6 +91,21 @@ export const downloadRadioPartTemplate = async () => {
   }
 };
 
+export const downloadDatacardTemplate = async () => {
+  try {
+    const content = [
+      "Name,Location,IP Address,Asset Number,Serial,Ribbon Type,Notes",
+      '"HID FARGO DTC1250e","Security Office","192.168.1.60","AST-010","FG123456","YMCKO","Front desk ID printer"',
+      '"Zebra ZC300","HR Office","192.168.1.61","AST-011","ZB789012","Color","Employee badge printer"',
+    ].join("\n");
+    const uri = FileSystem.cacheDirectory + "datacard_template.csv";
+    await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+    await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Data Card Printer CSV Template" });
+  } catch (err: any) {
+    throw err;
+  }
+};
+
 export const downloadDisposalTemplate = async () => {
   try {
     const content = [
