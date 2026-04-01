@@ -115,6 +115,7 @@ export default function DirectoryScreen() {
   const [vendorForm, setVendorForm] = useState({ ...emptyVendorForm });
   const [savingVendor, setSavingVendor] = useState(false);
   const [importingVendors, setImportingVendors] = useState(false);
+  const [importingLincolnTechs, setImportingLincolnTechs] = useState(false);
 
   // ── Lincoln Techs state ─────────────────────────────────────────────────
   const [lincolnTechs, setLincolnTechs] = useState<LincolnTech[]>([]);
@@ -589,6 +590,72 @@ export default function DirectoryScreen() {
     }
   }, []);
 
+  const importLincolnTechsFromCSV = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
+      if (result.canceled) return;
+      setImportingLincolnTechs(true);
+      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const rows = parseCSV(content);
+      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found."); return; }
+
+      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
+      const col = (names: string[]) => {
+        for (const n of names) { const idx = headers.findIndex((h) => h === n); if (idx !== -1) return idx; }
+        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
+        return -1;
+      };
+      const iName  = col(["name", "fullname", "contact"]);
+      const iTitle = col(["title", "role", "position", "jobtitle"]);
+      const iPhone = col(["phone", "tel", "mobile", "cell"]);
+      const iEmail = col(["email", "mail"]);
+      const iNotes = col(["notes", "note", "comment"]);
+
+      const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
+      let batch = writeBatch(db);
+      let count = 0;
+      let batchCount = 0;
+
+      for (const row of dataRows) {
+        const name = normalizeCell(row[iName] ?? "");
+        if (!name) continue;
+        const stableId = `${siteId}_lt_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+        batch.set(doc(db, "lincolnTechs", stableId), {
+          name,
+          title:  iTitle !== -1 ? normalizeCell(row[iTitle] ?? "") : "",
+          phone:  iPhone !== -1 ? normalizeCell(row[iPhone] ?? "") : "",
+          email:  iEmail !== -1 ? normalizeCell(row[iEmail] ?? "") : "",
+          notes:  iNotes !== -1 ? normalizeCell(row[iNotes] ?? "") : "",
+          siteId: siteId || "default", importedAt: new Date().toISOString(),
+        }, { merge: true });
+        count++;
+        batchCount++;
+        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
+      }
+      if (batchCount > 0) await batch.commit();
+      Alert.alert("Import Complete", `${count} tech${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setImportingLincolnTechs(false);
+    }
+  }, [siteId]);
+
+  const downloadLincolnTechTemplate = useCallback(async () => {
+    try {
+      const content = [
+        "Name,Title,Phone,Email,Notes",
+        "Jane Smith,IT Manager,401-816-1234,jsmith@lincoln.edu,Primary contact for network issues",
+        "John Doe,Help Desk,401-816-5678,jdoe@lincoln.edu,",
+      ].join("\n");
+      const uri = FileSystem.cacheDirectory + "lincoln_techs_template.csv";
+      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Lincoln Techs CSV Template" });
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not generate template.");
+    }
+  }, []);
+
   // ── Render helpers ───────────────────────────────────────────────────────
   const renderContact = useCallback(({ item }: { item: Contact }) => {
     const phoneBtn = (phone: string, secondary?: boolean) => (
@@ -822,6 +889,20 @@ export default function DirectoryScreen() {
             />
             <Pressable onPress={openAddLincoln} style={[styles.addBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <Ionicons name="add" size={22} color={theme.text} />
+            </Pressable>
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+            <Pressable onPress={importLincolnTechsFromCSV} disabled={importingLincolnTechs}
+              style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
+              {importingLincolnTechs
+                ? <ActivityIndicator size="small" color={theme.text} />
+                : <><Ionicons name="cloud-upload-outline" size={15} color={theme.text} style={{ marginRight: 4 }} /><Text style={[styles.csvBtnText, { color: theme.text }]}>Import</Text></>}
+            </Pressable>
+            <Pressable onPress={downloadLincolnTechTemplate}
+              style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
+              <Ionicons name="document-outline" size={15} color={theme.text} style={{ marginRight: 4 }} />
+              <Text style={[styles.csvBtnText, { color: theme.text }]}>Template</Text>
             </Pressable>
           </View>
           <FlatList
