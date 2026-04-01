@@ -662,7 +662,7 @@ export default function DirectoryScreen() {
             style={[styles.tabBtn, tab === t && { backgroundColor: theme.tint }]}
           >
             <Text style={{ color: tab === t ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 13, textTransform: "capitalize" }}>
-              {t === "contacts" ? "Contacts" : t === "vendors" ? "Vendors" : "Lincoln Tech"}
+              {t === "contacts" ? "Contacts" : t === "vendors" ? "Vendors" : siteId === "ballys_tiverton" ? "Lincoln Tech" : siteId === "ballys_lincoln" ? "Tiverton Tech" : "Tech Contacts"}
             </Text>
           </Pressable>
         ))}
