@@ -605,8 +605,18 @@ export default function DirectoryScreen() {
         {item.notes ? <Text style={{ color: theme.mutedText, fontSize: 11, fontStyle: "italic" }} numberOfLines={1}>{item.notes}</Text> : null}
       </Pressable>
       <View style={{ alignItems: "flex-end", gap: 8 }}>
-        {item.phone  ? <Pressable onPress={() => call(item.phone!)} hitSlop={8}><Ionicons name="call-outline" size={20} color={theme.tint} /></Pressable> : null}
-        {item.phone2 ? <Pressable onPress={() => call(item.phone2!)} hitSlop={8}><Ionicons name="call-outline" size={20} color={theme.tint} style={{ opacity: 0.6 }} /></Pressable> : null}
+        {item.phone ? (
+          <Pressable onPress={() => call(item.phone!)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700" }}>{item.phone.replace(/\D/g, "").slice(-4)}</Text>
+            <Ionicons name="call-outline" size={20} color={theme.tint} />
+          </Pressable>
+        ) : null}
+        {item.phone2 ? (
+          <Pressable onPress={() => call(item.phone2!)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Text style={{ color: theme.tint, fontSize: 12, fontWeight: "700", opacity: 0.6 }}>{item.phone2.replace(/\D/g, "").slice(-4)}</Text>
+            <Ionicons name="call-outline" size={20} color={theme.tint} style={{ opacity: 0.6 }} />
+          </Pressable>
+        ) : null}
         {item.email  ? <Pressable onPress={() => email(item.email!)} hitSlop={8}><Ionicons name="mail-outline" size={20} color={theme.tint} /></Pressable> : null}
         <Pressable onPress={() => deleteContact(item)} hitSlop={8}><Ionicons name="trash-outline" size={18} color="#ef4444" /></Pressable>
       </View>
