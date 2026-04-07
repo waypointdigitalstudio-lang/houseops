@@ -32,6 +32,7 @@ import {
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
+import { downloadLincolnTechTemplate, makeColFinder, normalizeCell, parseCSV } from "../../utils/csvHelpers";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,6 @@ export default function DirectoryScreen() {
   const [vendorForm, setVendorForm] = useState({ ...emptyVendorForm });
   const [savingVendor, setSavingVendor] = useState(false);
   const [importingVendors, setImportingVendors] = useState(false);
-  const [importingLincolnTechs, setImportingLincolnTechs] = useState(false);
 
   // ── Lincoln Techs state ─────────────────────────────────────────────────
   const [lincolnTechs, setLincolnTechs] = useState<LincolnTech[]>([]);
@@ -124,6 +124,7 @@ export default function DirectoryScreen() {
   const [editingLincoln, setEditingLincoln] = useState<LincolnTech | null>(null);
   const [lincolnForm, setLincolnForm] = useState({ ...emptyLincolnForm });
   const [savingLincoln, setSavingLincoln] = useState(false);
+  const [importingLincolnTechs, setImportingLincolnTechs] = useState(false);
 
   // ── Listeners ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -391,21 +392,6 @@ export default function DirectoryScreen() {
   const email = useCallback((addr: string)  => Linking.openURL(`mailto:${addr}`), []);
   const web   = useCallback((url: string)   => Linking.openURL(url.startsWith("http") ? url : `https://${url}`), []);
 
-  const normalizeCell = (val: string): string => {
-    if (!val) return "";
-    const trimmed = val.trim();
-    if (["nan", "none", "null", "-", "n/a"].includes(trimmed.toLowerCase())) return "";
-    return trimmed;
-  };
-
-  const parseCSV = (content: string): string[][] => {
-    const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
-    if (lines.length === 0) return [];
-    const firstLine = lines[0];
-    const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
-    return lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
-  };
-
   const importContactsFromCSV = useCallback(async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
@@ -416,10 +402,7 @@ export default function DirectoryScreen() {
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found."); return; }
 
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = (names: string[]) => {
-        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
-        return -1;
-      };
+      const col = makeColFinder(headers);
       const iName     = col(["name", "contact", "fullname"]);
       const iCompany  = col(["company", "organization", "org", "business", "department", "dept"]);
       const iRole     = col(["role/description", "roledescription", "role", "description", "title", "position"]);
@@ -527,10 +510,7 @@ export default function DirectoryScreen() {
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found."); return; }
 
       const headers = rows[0].map((h) => h.toLowerCase().replace(/[\s#]+/g, ""));
-      const col = (names: string[]) => {
-        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
-        return -1;
-      };
+      const col = makeColFinder(headers);
       const iCompany     = col(["company", "vendor", "business", "organization"]);
       const iContactName = col(["contactname", "contact", "name", "person"]);
       const iPhone       = col(["phone", "tel", "mobile", "cell"]);
@@ -600,11 +580,7 @@ export default function DirectoryScreen() {
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found."); return; }
 
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = (names: string[]) => {
-        for (const n of names) { const idx = headers.findIndex((h) => h === n); if (idx !== -1) return idx; }
-        for (const n of names) { const idx = headers.findIndex((h) => h.includes(n)); if (idx !== -1) return idx; }
-        return -1;
-      };
+      const col = makeColFinder(headers);
       const iName  = col(["name", "fullname", "contact"]);
       const iTitle = col(["title", "role", "position", "jobtitle"]);
       const iPhone = col(["phone", "tel", "mobile", "cell"]);
@@ -640,21 +616,6 @@ export default function DirectoryScreen() {
       setImportingLincolnTechs(false);
     }
   }, [siteId]);
-
-  const downloadLincolnTechTemplate = useCallback(async () => {
-    try {
-      const content = [
-        "Name,Title,Phone,Email,Notes",
-        "Jane Smith,IT Manager,401-816-1234,jsmith@lincoln.edu,Primary contact for network issues",
-        "John Doe,Help Desk,401-816-5678,jdoe@lincoln.edu,",
-      ].join("\n");
-      const uri = FileSystem.cacheDirectory + "lincoln_techs_template.csv";
-      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
-      await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Lincoln Techs CSV Template" });
-    } catch (err: any) {
-      Alert.alert("Error", err.message || "Could not generate template.");
-    }
-  }, []);
 
   // ── Render helpers ───────────────────────────────────────────────────────
   const renderContact = useCallback(({ item }: { item: Contact }) => {
@@ -899,7 +860,7 @@ export default function DirectoryScreen() {
                 ? <ActivityIndicator size="small" color={theme.text} />
                 : <><Ionicons name="cloud-upload-outline" size={15} color={theme.text} style={{ marginRight: 4 }} /><Text style={[styles.csvBtnText, { color: theme.text }]}>Import</Text></>}
             </Pressable>
-            <Pressable onPress={downloadLincolnTechTemplate}
+            <Pressable onPress={() => downloadLincolnTechTemplate().catch((e: any) => Alert.alert("Error", e.message))}
               style={[styles.csvBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}>
               <Ionicons name="document-outline" size={15} color={theme.text} style={{ marginRight: 4 }} />
               <Text style={[styles.csvBtnText, { color: theme.text }]}>Template</Text>

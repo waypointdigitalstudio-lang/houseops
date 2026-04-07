@@ -99,3 +99,14 @@ export const downloadDisposalTemplate = async () => {
   await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
   await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Asset Disposal CSV Template" });
 };
+
+export const downloadLincolnTechTemplate = async () => {
+  const content = [
+    "Name,Title,Phone,Email,Notes",
+    "Jane Smith,IT Manager,401-816-1234,jsmith@lincoln.edu,Primary contact for network issues",
+    "John Doe,Help Desk,401-816-5678,jdoe@lincoln.edu,",
+  ].join("\n");
+  const uri = FileSystem.cacheDirectory + "lincoln_techs_template.csv";
+  await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+  await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Lincoln Techs CSV Template" });
+};
