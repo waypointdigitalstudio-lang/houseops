@@ -3,7 +3,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,19 @@ import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
 
 type DisposalReason = "broken" | "obsolete" | "lost" | "damaged" | "other";
+
+type PreviewRow = {
+  stableId: string;
+  name: string;
+  model: string;
+  vendor: string;
+  quantity: number;
+  approxValue: string;
+  totalValue: string;
+  approxAge: string;
+  notes: string;
+  warning?: string;
+};
 
 type DisposalRecord = {
   id: string;
@@ -45,6 +58,9 @@ export default function DisposalScreen() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [committing, setCommitting] = useState(false);
 
   // --- ADD RECORD: Manual disposal record modal state ---
   const [showAddModal, setShowAddModal] = useState(false);
@@ -271,14 +287,14 @@ export default function DisposalScreen() {
         return -1;
       };
 
-      const iItem     = col(["item", "name", "description"]);
-      const iModel    = col(["model"]);
-      const iAmount   = col(["amount", "qty", "quantity"]);
-      const iVendor   = col(["vendor", "supplier"]);
-      const iTotal    = col(["multipleamount", "totalvalue", "total"]);
-      const iApprox   = col(["approxamount", "approxprice", "unitprice"]);
-      const iAge      = col(["approxage", "age"]);
-      const iNotes    = col(["notes", "desc"]);
+      const iItem   = col(["item", "name", "description"]);
+      const iModel  = col(["model"]);
+      const iAmount = col(["amount", "qty", "quantity"]);
+      const iVendor = col(["vendor", "supplier"]);
+      const iTotal  = col(["multipleamount", "totalvalue", "total"]);
+      const iApprox = col(["approxamount", "approxprice", "unitprice"]);
+      const iAge    = col(["approxage", "age"]);
+      const iNotes  = col(["notes", "desc"]);
 
       if (iItem === -1) {
         Alert.alert("Import Failed", "Could not find an 'ITEM' or 'Name' column in the CSV.");
@@ -291,15 +307,12 @@ export default function DisposalScreen() {
         return cell !== "" && cell !== headerItemVal && !cell.startsWith("---");
       });
 
-      const batch = writeBatch(db);
-      let count = 0;
-
-      for (const row of dataRows) {
+      const parsed: PreviewRow[] = dataRows.map((row) => {
         const name   = normalizeCell(row[iItem]   ?? "");
         const model  = normalizeCell(row[iModel]  ?? "");
         const vendor = normalizeCell(row[iVendor] ?? "");
-
-        if (!name) continue;
+        const qtyRaw = normalizeCell(row[iAmount] ?? "");
+        const qty    = parseInt(qtyRaw) || 0;
 
         const stableId = `${name}_${model}_${vendor}`
           .toLowerCase()
@@ -307,35 +320,26 @@ export default function DisposalScreen() {
           .replace(/_+/g, "_")
           .slice(0, 100);
 
-        const docRef = doc(db, "disposals", stableId);
+        let warning: string | undefined;
+        if (!name) warning = "Missing item name — row will be skipped";
+        else if (qty === 0) warning = "Invalid quantity — will default to 1";
 
-        const data: Record<string, any> = {
-          itemName:    name,
-          model:       model,
-          vendor:      vendor,
-          quantity:    parseInt(normalizeCell(row[iAmount] ?? "")) || 1,
+        return {
+          stableId,
+          name: name || "(empty)",
+          model,
+          vendor,
+          quantity: qty || 1,
           approxValue: normalizeCell(row[iApprox] ?? ""),
           totalValue:  normalizeCell(row[iTotal]  ?? ""),
           approxAge:   normalizeCell(row[iAge]    ?? ""),
           notes:       normalizeCell(row[iNotes]  ?? ""),
-          siteId:      siteId || "default",
-          reason:      "obsolete" as DisposalReason,
-          // FIX: Use 'uid' from hook and a generic name since profile doesn't have one
-          disposedBy:  profile?.role === "admin" ? "Admin" : "Staff",
-          disposedByUid: uid || "", 
-          importedAt:  new Date().toISOString(),
-          disposedAt:  new Date(),
+          warning,
         };
+      });
 
-        batch.set(docRef, data, { merge: true });
-        count++;
-      }
-
-      await batch.commit();
-      Alert.alert(
-        "Import Complete",
-        `${count} disposal item${count !== 1 ? "s" : ""} imported/updated successfully.`
-      );
+      setPreviewRows(parsed);
+      setShowPreviewModal(true);
     } catch (err: any) {
       console.error("Import error:", err);
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
@@ -343,6 +347,74 @@ export default function DisposalScreen() {
       setImporting(false);
     }
   };
+
+  const commitImport = async () => {
+    const valid = previewRows.filter((r) => r.name !== "(empty)");
+    if (valid.length === 0) {
+      Alert.alert("Nothing to Import", "All rows are invalid and will be skipped.");
+      return;
+    }
+
+    setCommitting(true);
+    try {
+      const batch = writeBatch(db);
+
+      for (const row of valid) {
+        const docRef = doc(db, "disposals", row.stableId);
+        batch.set(docRef, {
+          itemName:      row.name,
+          model:         row.model,
+          vendor:        row.vendor,
+          quantity:      row.quantity,
+          approxValue:   row.approxValue,
+          totalValue:    row.totalValue,
+          approxAge:     row.approxAge,
+          notes:         row.notes,
+          siteId:        siteId || "default",
+          reason:        "obsolete" as DisposalReason,
+          disposedBy:    profile?.role === "admin" ? "Admin" : "Staff",
+          disposedByUid: uid || "",
+          importedAt:    new Date().toISOString(),
+          disposedAt:    new Date(),
+        }, { merge: true });
+      }
+
+      await batch.commit();
+      setShowPreviewModal(false);
+      setPreviewRows([]);
+      Alert.alert(
+        "Import Complete",
+        `${valid.length} disposal item${valid.length !== 1 ? "s" : ""} imported/updated successfully.`
+      );
+    } catch (err: any) {
+      console.error("Commit error:", err);
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const renderPreviewRow = useCallback(({ item, index }: { item: PreviewRow; index: number }) => {
+    const rowBg = item.name === "(empty)" || item.warning
+      ? "rgba(251,191,36,0.12)"
+      : "transparent";
+    return (
+      <View style={[styles.previewRow, { borderBottomColor: theme.border, backgroundColor: rowBg }]}>
+        <View style={styles.previewRowLeft}>
+          <Text style={[styles.previewRowName, { color: theme.text }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={[styles.previewRowSub, { color: theme.mutedText }]} numberOfLines={1}>
+            {[item.model, item.vendor].filter(Boolean).join(" · ") || "—"}
+          </Text>
+          {item.warning ? (
+            <Text style={styles.previewRowWarning}>{item.warning}</Text>
+          ) : null}
+        </View>
+        <Text style={[styles.previewRowQty, { color: theme.mutedText }]}>×{item.quantity}</Text>
+      </View>
+    );
+  }, [theme]);
 
   // ── Add Record helpers ───────────────────────────────────────────────────────
 
@@ -526,6 +598,74 @@ export default function DisposalScreen() {
           )}
         />
       )}
+      {/* IMPORT PREVIEW MODAL */}
+      <Modal
+        visible={showPreviewModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => { if (!committing) { setShowPreviewModal(false); setPreviewRows([]); } }}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Review Import</Text>
+              <Text style={{ color: theme.mutedText, fontSize: 13, marginTop: 2 }}>
+                {previewRows.length} row{previewRows.length !== 1 ? "s" : ""} parsed
+                {previewRows.filter((r) => r.warning).length > 0
+                  ? ` · ${previewRows.filter((r) => r.warning).length} with warnings`
+                  : ""}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => { if (!committing) { setShowPreviewModal(false); setPreviewRows([]); } }}
+            >
+              <Text style={{ color: theme.primary, fontSize: 16, fontWeight: "700" }}>Cancel</Text>
+            </Pressable>
+          </View>
+
+          {/* Column labels */}
+          <View style={[styles.previewHeader, { borderBottomColor: theme.border }]}>
+            <Text style={[styles.previewHeaderText, { color: theme.mutedText, flex: 1 }]}>ITEM · MODEL · VENDOR</Text>
+            <Text style={[styles.previewHeaderText, { color: theme.mutedText }]}>QTY</Text>
+          </View>
+
+          {/* Row list */}
+          <FlatList
+            data={previewRows}
+            keyExtractor={(_, i) => String(i)}
+            renderItem={renderPreviewRow}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 8 }}
+          />
+
+          {/* Footer */}
+          <View style={[styles.previewFooter, { borderTopColor: theme.border }]}>
+            {previewRows.filter((r) => r.name === "(empty)").length > 0 && (
+              <Text style={{ color: "#fbbf24", fontSize: 12, marginBottom: 10, textAlign: "center" }}>
+                {previewRows.filter((r) => r.name === "(empty)").length} row{previewRows.filter((r) => r.name === "(empty)").length !== 1 ? "s" : ""} will be skipped (missing name)
+              </Text>
+            )}
+            <Pressable
+              style={[
+                styles.saveBtn,
+                { backgroundColor: "#34C759", opacity: committing ? 0.6 : 1 },
+              ]}
+              onPress={commitImport}
+              disabled={committing}
+            >
+              {committing ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>
+                  Import {previewRows.filter((r) => r.name !== "(empty)").length} Record{previewRows.filter((r) => r.name !== "(empty)").length !== 1 ? "s" : ""}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       {/* ADD RECORD: Manual Disposal Record Modal */}
       <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { if (!addSaving) setShowAddModal(false); }}>
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
@@ -686,4 +826,13 @@ const styles = StyleSheet.create({
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center", marginBottom: 20 },
   saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
+  previewHeader: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: 1 },
+  previewHeaderText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  previewRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
+  previewRowLeft: { flex: 1, marginRight: 12 },
+  previewRowName: { fontSize: 14, fontWeight: "700" },
+  previewRowSub: { fontSize: 12, marginTop: 2 },
+  previewRowWarning: { fontSize: 11, color: "#fbbf24", marginTop: 3 },
+  previewRowQty: { fontSize: 14, fontWeight: "600", minWidth: 30, textAlign: "right" },
+  previewFooter: { paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1 },
 });

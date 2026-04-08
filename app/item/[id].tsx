@@ -31,6 +31,7 @@ import { useAppTheme } from "../../constants/theme";
 import { auth, db } from "../../firebaseConfig";
 import { useToast } from "../../hooks/useToast";
 import { useUserProfile } from "../../hooks/useUserProfile";
+import { SITES } from "../../hooks/useSiteContext";
 
 interface Item {
   id: string;
@@ -65,7 +66,6 @@ export default function ItemDetail() {
   const { profile } = useUserProfile();
   const mySiteId = profile?.siteId ?? null;
 
-  const SITES = ["ballys_tiverton", "ballys_lincoln"];
 
   // Toast hook
   const { toast, fadeAnim, showToast, hideToast } = useToast();
@@ -127,7 +127,7 @@ export default function ItemDetail() {
           setEditLocation(loaded.location || "");
           setEditBarcode(loaded.barcode || "");
           setEditNotes(loaded.notes || "");
-          setEditSiteId(loaded.siteId || mySiteId);
+          setEditSiteId(loaded.siteId || mySiteId || "");
         } else {
           setItem(null);
         }
@@ -242,17 +242,17 @@ export default function ItemDetail() {
         { text: "Cancel", style: "cancel" },
 
         ...SITES.map((s) => ({
-          text: s,
+          text: s.label,
           onPress: async () => {
             try {
               const ref = doc(db, "items", item.id);
               await updateDoc(ref, {
-                siteId: s,
+                siteId: s.id,
                 updatedAt: serverTimestamp(),
               });
 
-              setEditSiteId(s);
-              showToast(`✓ Moved to ${s}`, "success");
+              setEditSiteId(s.id);
+              showToast(`✓ Moved to ${s.label}`, "success");
               
               setTimeout(() => {
                 router.replace("/(tabs)");

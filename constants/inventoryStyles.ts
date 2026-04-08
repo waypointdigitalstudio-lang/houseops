@@ -29,7 +29,7 @@ const inventoryStyles = StyleSheet.create({
   fieldLabel: { fontSize: 13, fontWeight: "600", marginBottom: 6, marginTop: 14 },
   fieldInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  saveBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
+  saveBtnText: { color: "#000000", fontSize: 16, fontWeight: "800" },
   stockBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, alignSelf: "flex-start" },
   stockText: { fontSize: 11, fontWeight: "800" },
   actionButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },

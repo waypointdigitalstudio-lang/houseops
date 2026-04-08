@@ -20,8 +20,10 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import React, {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -55,12 +57,16 @@ import { getStockStatus, logActivity } from "../utils/activity";
 import { normalizeCell, parseCSV, makeColFinder, downloadTonerTemplate, downloadPrinterTemplate, downloadDatacardTemplate } from "../utils/csvHelpers";
 import TonerStockBadge from "./TonerStockBadge";
 
+export interface TonerSectionRef {
+  openAddToner: (barcode: string) => void;
+}
+
 interface TonerSectionProps {
   siteId: string | null;
   onTonerCountChange: (count: number) => void;
 }
 
-export default function TonerSection({ siteId, onTonerCountChange }: TonerSectionProps) {
+const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function TonerSection({ siteId, onTonerCountChange }, ref) {
   const theme = useAppTheme();
   const router = useRouter();
 
@@ -248,6 +254,15 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
   }, [pendingTonerDelete, dismissTonerUndoBanner]);
 
   // Toner CRUD
+  const openAddToner = useCallback((barcode: string) => {
+    setTonerSubTab("toners");
+    setEditingToner(null);
+    setTonerForm({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "", notes: "", barcode });
+    setShowTonerModal(true);
+  }, []);
+
+  useImperativeHandle(ref, () => ({ openAddToner }), [openAddToner]);
+
   const openTonerModal = (toner?: Toner) => {
     if (toner) {
       setEditingToner(toner);
@@ -558,7 +573,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
             </Pressable>
           </>
         ) : (
-          <Pressable hitSlop={8} style={[inventoryStyles.actionButton, { backgroundColor: "#2563eb" }]} onPress={() => { setSelectedPrinter(item); setTonerLinkSearch(""); setShowLinkModal(true); }}>
+          <Pressable hitSlop={8} style={[inventoryStyles.actionButton, { backgroundColor: theme.primary }]} onPress={() => { setSelectedPrinter(item); setTonerLinkSearch(""); setShowLinkModal(true); }}>
             <Text style={inventoryStyles.actionButtonText}>LINK TONER</Text>
           </Pressable>
         )}
@@ -729,7 +744,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]} placeholder="e.g. 123456789012" placeholderTextColor={theme.mutedText} value={tonerForm.barcode} onChangeText={(v) => setTonerForm((p) => ({ ...p, barcode: v }))} />
             <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]} placeholder="Additional notes..." placeholderTextColor={theme.mutedText} multiline value={tonerForm.notes} onChangeText={(v) => setTonerForm((p) => ({ ...p, notes: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveToner}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={saveToner}>
               <Text style={inventoryStyles.saveBtnText}>{editingToner ? "Update Toner" : "Add Toner"}</Text>
             </Pressable>
             {editingToner && (
@@ -765,7 +780,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
             ))}
             <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100 }]} placeholder="Notes" placeholderTextColor={theme.mutedText} multiline value={printerForm.notes} onChangeText={(v) => setPrinterForm((p) => ({ ...p, notes: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={savePrinter}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={savePrinter}>
               <Text style={inventoryStyles.saveBtnText}>{editingPrinter ? "Update Printer" : "Add Printer"}</Text>
             </Pressable>
             {editingPrinter && (
@@ -800,7 +815,7 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
             ))}
             <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100 }]} placeholder="Notes" placeholderTextColor={theme.mutedText} multiline value={datacardForm.notes} onChangeText={(v) => setDatacardForm((p) => ({ ...p, notes: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveDatacard}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={saveDatacard}>
               <Text style={inventoryStyles.saveBtnText}>{editingDatacard ? "Update Printer" : "Add Printer"}</Text>
             </Pressable>
             {editingDatacard && (
@@ -835,4 +850,6 @@ export default function TonerSection({ siteId, onTonerCountChange }: TonerSectio
       </Modal>
     </View>
   );
-}
+});
+
+export default TonerSection;

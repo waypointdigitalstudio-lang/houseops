@@ -42,6 +42,7 @@ import { normalizeCell, parseCSV, downloadRadioTemplate, downloadRadioPartTempla
 
 export interface RadioSectionRef {
   openRadioModal: (radio?: Radio) => void;
+  openAddRadioPart: (barcode: string) => void;
 }
 
 interface RadioSectionProps {
@@ -121,8 +122,15 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
     setShowRadioModal(true);
   }, []);
 
-  // Expose openRadioModal for scanner in parent
-  useImperativeHandle(ref, () => ({ openRadioModal }), [openRadioModal]);
+  const openAddRadioPart = useCallback((barcode: string) => {
+    setRadioSubTab("parts");
+    setEditingRadioPart(null);
+    setRadioPartForm({ name: "", compatibleModel: "", quantity: "", minQuantity: "", location: "", barcode, notes: "" });
+    setShowRadioPartModal(true);
+  }, []);
+
+  // Expose methods for scanner in parent
+  useImperativeHandle(ref, () => ({ openRadioModal, openAddRadioPart }), [openRadioModal, openAddRadioPart]);
 
   const saveRadio = useCallback(async () => {
     if (!radioForm.model.trim()) { Alert.alert("Error", "Model is required."); return; }
@@ -516,7 +524,7 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
               value={radioForm.notes}
               onChangeText={(v) => setRadioForm((p) => ({ ...p, notes: v }))}
             />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.tint }]} onPress={saveRadio}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={saveRadio}>
               <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>{editingRadio ? "Save Changes" : "Add Radio"}</Text>
             </Pressable>
           </ScrollView>
@@ -575,7 +583,7 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
               value={radioPartForm.notes}
               onChangeText={(v) => setRadioPartForm((p) => ({ ...p, notes: v }))}
             />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.tint }]} onPress={saveRadioPart}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={saveRadioPart}>
               <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>{editingRadioPart ? "Save Changes" : "Add Part"}</Text>
             </Pressable>
           </ScrollView>

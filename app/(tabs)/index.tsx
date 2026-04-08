@@ -40,7 +40,7 @@ import { Item, Radio, SortMode, TabMode, UNDO_ANIMATION_MS, UNDO_TIMEOUT_MS } fr
 import { getStockStatus, logActivity } from "../../utils/activity";
 import { downloadDisposalTemplate, downloadInventoryTemplate, normalizeCell, parseCSV } from "../../utils/csvHelpers";
 import RadioSection, { RadioSectionRef } from "../../components/RadioSection";
-import TonerSection from "../../components/TonerSection";
+import TonerSection, { TonerSectionRef } from "../../components/TonerSection";
 
 export default function IndexScreen() {
   const theme = useAppTheme();
@@ -54,8 +54,9 @@ export default function IndexScreen() {
   // Toner count — lifted up from TonerSection for the summary card
   const [visibleTonerCount, setVisibleTonerCount] = useState(0);
 
-  // Ref for RadioSection so scanner can trigger openRadioModal
+  // Refs for scanner → section prefill
   const radioSectionRef = useRef<RadioSectionRef>(null);
+  const tonerSectionRef = useRef<TonerSectionRef>(null);
 
   // --- Inventory state ---
   const [items, setItems] = useState<Item[]>([]);
@@ -99,6 +100,16 @@ export default function IndexScreen() {
       if (undoTimeoutRef.current) { clearTimeout(undoTimeoutRef.current); undoTimeoutRef.current = null; }
     };
   }, []);
+
+  // Route param: deep-link to add toner with prefilled barcode
+  useEffect(() => {
+    const bc = String(addTonerBarcode ?? "").trim();
+    if (!bc) return;
+    setActiveTab("toners");
+    // Use a short delay to let TonerSection mount before calling the ref
+    const t = setTimeout(() => { tonerSectionRef.current?.openAddToner(bc); }, 300);
+    return () => clearTimeout(t);
+  }, [addTonerBarcode]);
 
   // Inventory Firestore listener
   useEffect(() => {
@@ -253,8 +264,8 @@ export default function IndexScreen() {
         `Where would you like to add "${clean}"?`,
         [
           { text: "Inventory", onPress: () => { setShowScanModal(false); setActiveTab("inventory"); setItemForm({ name: "", currentQuantity: "", minQuantity: "", location: "", barcode: clean, notes: "" }); setShowInventoryModal(true); } },
-          { text: "Toner", onPress: () => { setShowScanModal(false); setActiveTab("toners"); } },
-          { text: "Radio Parts", onPress: () => { setShowScanModal(false); setActiveTab("radios"); } },
+          { text: "Toner", onPress: () => { setShowScanModal(false); setActiveTab("toners"); setTimeout(() => tonerSectionRef.current?.openAddToner(clean), 150); } },
+          { text: "Radio Parts", onPress: () => { setShowScanModal(false); setActiveTab("radios"); setTimeout(() => radioSectionRef.current?.openAddRadioPart(clean), 150); } },
           { text: "Scan Again", onPress: () => { setScanBusy(false); setScanningEnabled(true); } },
           { text: "Cancel", style: "cancel", onPress: () => setShowScanModal(false) },
         ]
@@ -443,7 +454,7 @@ export default function IndexScreen() {
           }
         />
       ) : activeTab === "toners" ? (
-        <TonerSection siteId={siteId} onTonerCountChange={setVisibleTonerCount} />
+        <TonerSection ref={tonerSectionRef} siteId={siteId} onTonerCountChange={setVisibleTonerCount} />
       ) : (
         <RadioSection ref={radioSectionRef} siteId={siteId} />
       )}
@@ -505,7 +516,7 @@ export default function IndexScreen() {
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]} placeholder="e.g. 123456789012" placeholderTextColor={theme.mutedText} value={itemForm.barcode} onChangeText={(v) => setItemForm((p) => ({ ...p, barcode: v }))} />
             <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100, textAlignVertical: "top" }]} placeholder="Additional notes about this item..." placeholderTextColor={theme.mutedText} multiline value={itemForm.notes} onChangeText={(v) => setItemForm((p) => ({ ...p, notes: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "#2563eb" }]} onPress={saveItem}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={saveItem}>
               <Text style={inventoryStyles.saveBtnText}>Add Item</Text>
             </Pressable>
           </ScrollView>
@@ -559,7 +570,7 @@ export default function IndexScreen() {
             <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Who is disposing it? *</Text>
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]} placeholder="Your name" placeholderTextColor={theme.mutedText} value={disposeForm.disposedBy} onChangeText={(v) => setDisposeForm((p) => ({ ...p, disposedBy: v }))} />
             <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "#ef4444", opacity: disposeSaving ? 0.6 : 1 }]} onPress={confirmDispose} disabled={disposeSaving}>
-              {disposeSaving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={inventoryStyles.saveBtnText}>Confirm Disposal</Text>}
+              {disposeSaving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={[inventoryStyles.saveBtnText, { color: "#fff" }]}>Confirm Disposal</Text>}
             </Pressable>
             <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: theme.border, marginTop: 10 }]} onPress={() => { if (!disposeSaving) { setShowDisposeModal(false); setDisposingItem(null); } }} disabled={disposeSaving}>
               <Text style={[inventoryStyles.saveBtnText, { color: theme.text }]}>Cancel</Text>

@@ -83,6 +83,17 @@ const emptyLincolnForm = {
   name: "", title: "", phone: "", email: "", notes: "",
 };
 
+type DirectoryPreviewRow = {
+  stableId: string;
+  primary: string;
+  secondary: string;
+  tertiary?: string;
+  warning?: string;
+  data: Record<string, string>;
+};
+
+type DirPreviewKind = "contacts" | "vendors" | "lincoln";
+
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function DirectoryScreen() {
@@ -125,6 +136,11 @@ export default function DirectoryScreen() {
   const [lincolnForm, setLincolnForm] = useState({ ...emptyLincolnForm });
   const [savingLincoln, setSavingLincoln] = useState(false);
   const [importingLincolnTechs, setImportingLincolnTechs] = useState(false);
+
+  // ── Directory import preview ────────────────────────────────────────────
+  const [dirPreviewRows, setDirPreviewRows] = useState<DirectoryPreviewRow[]>([]);
+  const [dirPreviewKind, setDirPreviewKind] = useState<DirPreviewKind | null>(null);
+  const [committingDir, setCommittingDir] = useState(false);
 
   // ── Listeners ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -413,36 +429,33 @@ export default function DirectoryScreen() {
       const iNotes    = col(["notes", "note"]);
 
       const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
-      let batch = writeBatch(db);
-      let count = 0;
-      let batchCount = 0;
-
-      for (const row of dataRows) {
+      const parsed: DirectoryPreviewRow[] = dataRows.map((row) => {
         const rawName    = normalizeCell(row[iName] ?? "");
         const rawCompany = normalizeCell(row[iCompany] ?? "");
         const rawRole    = iRole !== -1 ? normalizeCell(row[iRole] ?? "") : "";
         const rawPhone   = normalizeCell(row[iPhone] ?? "");
         const rawPhone2  = iPhone2 !== -1 ? normalizeCell(row[iPhone2] ?? "") : "";
         const rawNotes   = normalizeCell(row[iNotes] ?? "");
-        // Nameless rows (e.g. "Front Desk") use Role/Description as the display name
-        const name = rawName || rawRole || rawCompany;
-        if (!name) continue;
-        const rawCat  = normalizeCell(row[iCategory] ?? "");
-        const category = rawCompany.trim() || rawCat || "Other";
-        // For named contacts, store their role/title in notes if no explicit notes
-        const notes = rawNotes || (rawName && rawRole ? rawRole : "");
-        const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-        batch.set(doc(db, "contacts", stableId), {
-          name, company: rawCompany, phone: rawPhone, phone2: rawPhone2,
-          email: normalizeCell(row[iEmail] ?? ""), category, notes,
-          siteId: siteId || "default", importedAt: new Date().toISOString(),
-        }, { merge: true });
-        count++;
-        batchCount++;
-        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
-      }
-      if (batchCount > 0) await batch.commit();
-      Alert.alert("Import Complete", `${count} contact${count !== 1 ? "s" : ""} imported/updated.`);
+        const name       = rawName || rawRole || rawCompany;
+        const rawCat     = normalizeCell(row[iCategory] ?? "");
+        const category   = rawCompany.trim() || rawCat || "Other";
+        const notes      = rawNotes || (rawName && rawRole ? rawRole : "");
+        const stableId   = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+        return {
+          stableId,
+          primary:   name || "(empty)",
+          secondary: rawCompany || rawRole || "",
+          tertiary:  rawPhone || undefined,
+          warning:   !name ? "Missing name — row will be skipped" : undefined,
+          data: {
+            name: name || "", company: rawCompany, phone: rawPhone, phone2: rawPhone2,
+            email: normalizeCell(row[iEmail] ?? ""), category, notes,
+          },
+        };
+      });
+
+      setDirPreviewRows(parsed);
+      setDirPreviewKind("contacts");
     } catch (err: any) {
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
     } finally {
@@ -521,31 +534,32 @@ export default function DirectoryScreen() {
       const iNotes       = col(["notes", "note", "comment"]);
 
       const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
-      let batch = writeBatch(db);
-      let count = 0;
-      let batchCount = 0;
+      const parsed: DirectoryPreviewRow[] = dataRows.map((row) => {
+        const company     = normalizeCell(row[iCompany] ?? "");
+        const contactName = normalizeCell(row[iContactName] ?? "");
+        const phone       = normalizeCell(row[iPhone] ?? "");
+        const stableId    = `${siteId}_vendor_${company}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
+        return {
+          stableId,
+          primary:   company || "(empty)",
+          secondary: contactName || normalizeCell(row[iService] ?? "") || "",
+          tertiary:  phone || undefined,
+          warning:   !company ? "Missing company name — row will be skipped" : undefined,
+          data: {
+            company,
+            contactName,
+            phone,
+            email:         normalizeCell(row[iEmail] ?? ""),
+            website:       normalizeCell(row[iWebsite] ?? ""),
+            accountNumber: normalizeCell(row[iAccount] ?? ""),
+            serviceType:   normalizeCell(row[iService] ?? ""),
+            notes:         normalizeCell(row[iNotes] ?? ""),
+          },
+        };
+      });
 
-      for (const row of dataRows) {
-        const company = normalizeCell(row[iCompany] ?? "");
-        if (!company) continue;
-        const stableId = `${siteId}_vendor_${company}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-        batch.set(doc(db, "vendors", stableId), {
-          company,
-          contactName:   normalizeCell(row[iContactName] ?? ""),
-          phone:         normalizeCell(row[iPhone] ?? ""),
-          email:         normalizeCell(row[iEmail] ?? ""),
-          website:       normalizeCell(row[iWebsite] ?? ""),
-          accountNumber: normalizeCell(row[iAccount] ?? ""),
-          serviceType:   normalizeCell(row[iService] ?? ""),
-          notes:         normalizeCell(row[iNotes] ?? ""),
-          siteId: siteId || "default", importedAt: new Date().toISOString(),
-        }, { merge: true });
-        count++;
-        batchCount++;
-        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
-      }
-      if (batchCount > 0) await batch.commit();
-      Alert.alert("Import Complete", `${count} vendor${count !== 1 ? "s" : ""} imported/updated.`);
+      setDirPreviewRows(parsed);
+      setDirPreviewKind("vendors");
     } catch (err: any) {
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
     } finally {
@@ -588,34 +602,100 @@ export default function DirectoryScreen() {
       const iNotes = col(["notes", "note", "comment"]);
 
       const dataRows = rows.slice(1).filter((row) => row.some((cell) => normalizeCell(cell) !== ""));
-      let batch = writeBatch(db);
-      let count = 0;
-      let batchCount = 0;
-
-      for (const row of dataRows) {
-        const name = normalizeCell(row[iName] ?? "");
-        if (!name) continue;
+      const parsed: DirectoryPreviewRow[] = dataRows.map((row) => {
+        const name  = normalizeCell(row[iName] ?? "");
+        const title = iTitle !== -1 ? normalizeCell(row[iTitle] ?? "") : "";
+        const phone = iPhone !== -1 ? normalizeCell(row[iPhone] ?? "") : "";
         const stableId = `${siteId}_lt_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-        batch.set(doc(db, "lincolnTechs", stableId), {
-          name,
-          title:  iTitle !== -1 ? normalizeCell(row[iTitle] ?? "") : "",
-          phone:  iPhone !== -1 ? normalizeCell(row[iPhone] ?? "") : "",
-          email:  iEmail !== -1 ? normalizeCell(row[iEmail] ?? "") : "",
-          notes:  iNotes !== -1 ? normalizeCell(row[iNotes] ?? "") : "",
-          siteId: siteId || "default", importedAt: new Date().toISOString(),
-        }, { merge: true });
-        count++;
-        batchCount++;
-        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
-      }
-      if (batchCount > 0) await batch.commit();
-      Alert.alert("Import Complete", `${count} tech${count !== 1 ? "s" : ""} imported/updated.`);
+        return {
+          stableId,
+          primary:   name || "(empty)",
+          secondary: title,
+          tertiary:  phone || (iEmail !== -1 ? normalizeCell(row[iEmail] ?? "") : undefined) || undefined,
+          warning:   !name ? "Missing name — row will be skipped" : undefined,
+          data: {
+            name,
+            title,
+            phone,
+            email: iEmail !== -1 ? normalizeCell(row[iEmail] ?? "") : "",
+            notes: iNotes !== -1 ? normalizeCell(row[iNotes] ?? "") : "",
+          },
+        };
+      });
+
+      setDirPreviewRows(parsed);
+      setDirPreviewKind("lincoln");
     } catch (err: any) {
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
     } finally {
       setImportingLincolnTechs(false);
     }
   }, [siteId]);
+
+  // ── Directory import commit ──────────────────────────────────────────────
+  const commitDirectoryImport = useCallback(async () => {
+    if (!dirPreviewKind) return;
+    const valid = dirPreviewRows.filter((r) => r.primary !== "(empty)");
+    if (valid.length === 0) { Alert.alert("Nothing to Import", "All rows are invalid."); return; }
+
+    const collectionName =
+      dirPreviewKind === "contacts" ? "contacts" :
+      dirPreviewKind === "vendors"  ? "vendors"  : "lincolnTechs";
+
+    setCommittingDir(true);
+    try {
+      let batch = writeBatch(db);
+      let batchCount = 0;
+      let count = 0;
+
+      for (const row of valid) {
+        batch.set(doc(db, collectionName, row.stableId), {
+          ...row.data,
+          siteId: siteId || "default",
+          importedAt: new Date().toISOString(),
+        }, { merge: true });
+        count++;
+        batchCount++;
+        if (batchCount === 499) { await batch.commit(); batch = writeBatch(db); batchCount = 0; }
+      }
+      if (batchCount > 0) await batch.commit();
+
+      const label =
+        dirPreviewKind === "contacts" ? "contact" :
+        dirPreviewKind === "vendors"  ? "vendor"  : "tech";
+
+      setDirPreviewKind(null);
+      setDirPreviewRows([]);
+      Alert.alert("Import Complete", `${count} ${label}${count !== 1 ? "s" : ""} imported/updated.`);
+    } catch (err: any) {
+      Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
+    } finally {
+      setCommittingDir(false);
+    }
+  }, [dirPreviewKind, dirPreviewRows, siteId]);
+
+  const renderDirPreviewRow = useCallback(({ item }: { item: DirectoryPreviewRow }) => {
+    const hasIssue = item.primary === "(empty)" || !!item.warning;
+    return (
+      <View style={[
+        styles.dirPreviewRow,
+        { borderBottomColor: "#ffffff15", backgroundColor: hasIssue ? "rgba(251,191,36,0.12)" : "transparent" },
+      ]}>
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={{ color: "#f1f5f9", fontSize: 14, fontWeight: "700" }} numberOfLines={1}>{item.primary}</Text>
+          {item.secondary ? (
+            <Text style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }} numberOfLines={1}>{item.secondary}</Text>
+          ) : null}
+          {item.warning ? (
+            <Text style={{ color: "#fbbf24", fontSize: 11, marginTop: 3 }}>{item.warning}</Text>
+          ) : null}
+        </View>
+        {item.tertiary ? (
+          <Text style={{ color: "#64748b", fontSize: 12 }} numberOfLines={1}>{item.tertiary}</Text>
+        ) : null}
+      </View>
+    );
+  }, []);
 
   // ── Render helpers ───────────────────────────────────────────────────────
   const renderContact = useCallback(({ item }: { item: Contact }) => {
@@ -1022,6 +1102,67 @@ export default function DirectoryScreen() {
         </View>
       </Modal>
 
+      {/* DIRECTORY IMPORT PREVIEW MODAL */}
+      <Modal
+        visible={dirPreviewKind !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => { if (!committingDir) { setDirPreviewKind(null); setDirPreviewRows([]); } }}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: "#0f172a" }]}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={[styles.modalTitle, { color: "#f1f5f9" }]}>
+                Review Import
+              </Text>
+              <Text style={{ color: "#94a3b8", fontSize: 13, marginTop: 2 }}>
+                {dirPreviewRows.length} row{dirPreviewRows.length !== 1 ? "s" : ""} parsed
+                {dirPreviewRows.filter((r) => r.warning).length > 0
+                  ? ` · ${dirPreviewRows.filter((r) => r.warning).length} with warnings`
+                  : ""}
+              </Text>
+            </View>
+            <Pressable onPress={() => { if (!committingDir) { setDirPreviewKind(null); setDirPreviewRows([]); } }}>
+              <Text style={{ color: "#60a5fa", fontSize: 16, fontWeight: "700" }}>Cancel</Text>
+            </Pressable>
+          </View>
+
+          <View style={[styles.dirPreviewHeader, { borderBottomColor: "#334155" }]}>
+            <Text style={{ color: "#64748b", fontSize: 11, fontWeight: "700", flex: 1 }}>NAME · TITLE / COMPANY</Text>
+            <Text style={{ color: "#64748b", fontSize: 11, fontWeight: "700" }}>PHONE / EMAIL</Text>
+          </View>
+
+          <FlatList
+            data={dirPreviewRows}
+            keyExtractor={(_, i) => String(i)}
+            renderItem={renderDirPreviewRow}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 8 }}
+          />
+
+          <View style={[styles.dirPreviewFooter, { borderTopColor: "#1e293b" }]}>
+            {dirPreviewRows.filter((r) => r.primary === "(empty)").length > 0 && (
+              <Text style={{ color: "#fbbf24", fontSize: 12, marginBottom: 10, textAlign: "center" }}>
+                {dirPreviewRows.filter((r) => r.primary === "(empty)").length} row{dirPreviewRows.filter((r) => r.primary === "(empty)").length !== 1 ? "s" : ""} will be skipped (missing name)
+              </Text>
+            )}
+            <Pressable
+              style={[styles.saveBtn, { backgroundColor: "#34C759", opacity: committingDir ? 0.6 : 1 }]}
+              onPress={commitDirectoryImport}
+              disabled={committingDir}
+            >
+              {committingDir ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={{ color: "#fff", fontSize: 16, fontWeight: "800" }}>
+                  Import {dirPreviewRows.filter((r) => r.primary !== "(empty)").length} Record{dirPreviewRows.filter((r) => r.primary !== "(empty)").length !== 1 ? "s" : ""}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1047,5 +1188,8 @@ const styles = StyleSheet.create({
   dropdown:       { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 12 },
   dropdownOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", padding: 24 },
   dropdownMenu:   { borderRadius: 16, borderWidth: 1, overflow: "hidden", maxHeight: 400 },
-  dropdownItem:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1 },
+  dropdownItem:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1 },
+  dirPreviewHeader: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: 1 },
+  dirPreviewRow:    { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
+  dirPreviewFooter: { paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1 },
 });

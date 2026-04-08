@@ -10,11 +10,7 @@ import { Toast } from "../components/Toast";
 import { useAppTheme } from "../constants/theme";
 import { auth, db } from "../firebaseConfig";
 import { useToast } from "../hooks/useToast";
-
-const SITES = [
-  { id: "ballys_tiverton", label: "Tiverton" },
-  { id: "ballys_lincoln", label: "Lincoln" },
-];
+import { SITES } from "../hooks/useSiteContext";
 
 export default function SignUpScreen() {
   const theme = useAppTheme();

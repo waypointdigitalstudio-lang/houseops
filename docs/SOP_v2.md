@@ -1,5 +1,5 @@
 # Nexus — Standard Operating Procedures
-**Version 2.1.0 | Effective: March 2026**
+**Version 2.1.0 | Effective: March 2026 | Updated: April 2026**
 
 ---
 
@@ -12,7 +12,7 @@
 5. [Radios & Radio Parts](#5-radios--radio-parts)
 6. [Barcode Scanner](#6-barcode-scanner)
 7. [CSV Import & Export](#7-csv-import--export)
-8. [Stock Alerts](#8-stock-alerts)
+8. [Stock Alerts & Analytics](#8-stock-alerts)
 9. [Asset Disposal](#9-asset-disposal)
 10. [Vendor Directory](#10-vendor-directory)
 11. [Settings](#11-settings)
@@ -254,9 +254,9 @@ All major data sections support CSV import and export, making bulk setup and dat
 
 ---
 
-## 8. Stock Alerts
+## 8. Stock Alerts & Analytics
 
-The **Alerts** tab shows real-time stock notifications and a full activity log.
+The **Alerts** tab has three views — **Alerts**, **Activity**, and **Analytics** — selectable via the buttons at the top of the screen.
 
 ### 8.1 Alert Types
 
@@ -287,11 +287,23 @@ Use the filter chips at the top of the Alerts tab:
 
 ### 8.5 Activity Log
 
-Scroll down or tap the **Activity Log** section to see a full chronological history of all changes across inventory items, toners, and radio parts at your site. Filter by date range (Today / 7 Days / 30 Days / All) and by action type (Added, Edited, Deleted, Deducted, etc.).
+Tap the **Activity** button in the view selector to see a full chronological history of all changes across inventory items, toners, and radio parts at your site. Filter by date range (Today / 7 Days / 30 Days / All) and by action type (Added, Edited, Deleted, Deducted, etc.).
 
 - Tap **Export CSV** in the Activity Log to save a full log to your device.
 
-### 8.6 Push Notifications
+### 8.6 Analytics
+
+Tap the **Analytics** button in the view selector to see a usage summary for your site.
+
+1. Use the period selector to choose a time range: **7 Days**, **30 Days**, or **All**.
+2. The view shows:
+   - **Activity Breakdown** — count of each action type (Added, Deducted, Edited, Deleted, etc.) for the selected period.
+   - **Top Consumed** — the 5 items with the highest total deduction volume, shown with progress bars.
+   - **Most Alerted** — the 5 items that most frequently triggered Low, Critical, or Out of Stock alerts.
+
+> Analytics data is based on up to 500 activity log entries for the selected time period.
+
+### 8.7 Push Notifications
 
 Nexus sends push notifications to your device when:
 - An item goes **out of stock**
@@ -438,4 +450,5 @@ The **Admin** tab is only visible to users with the Admin role.
 
 ---
 
-*Nexus v2.1.0 — For support, contact your site administrator.*
+*Nexus v2.1.0 — For support, contact your site administrator.*  
+*SOP last updated: April 2026*

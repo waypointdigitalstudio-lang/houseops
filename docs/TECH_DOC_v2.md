@@ -1,5 +1,5 @@
 # Nexus — Technical Documentation
-**Version 2.1.0 | March 2026**
+**Version 2.1.0 | March 2026 | Updated: April 2026**
 
 ---
 
@@ -578,7 +578,9 @@ Each detail screen has the same layout: a status banner (OK/LOW), a Stock sectio
 Defined in `constants/theme.ts` via `useAppTheme()`.
 
 Returns a theme object with properties:
-- `background`, `card`, `text`, `mutedText`, `border`, `tint`, `icon`
+- `background`, `card`, `text`, `mutedText`, `border`, `tint`, `icon`, `primary`
+
+> **`primary`** (`"#00b894"`) is the canonical action-button color used across all screens. Do **not** use `tint` as a button background — in dark mode `tint` resolves to `"#ffffff"`, producing an invisible white-on-white button.
 
 Supports automatic light/dark mode switching via `useColorScheme()`.
 
@@ -660,6 +662,16 @@ Firestore batches are limited to **500 operations**. All CSV importers chunk row
 ### `alertsLog` Composite Index
 The `alertsLog` query filters by `siteId` and orders by `createdAt DESC`. This requires a composite index. Firestore will return an error with a console link to create it on first use.
 
+The Analytics view in `alerts.tsx` uses a **second, independent** query on `alertsLog` with `limit(500)` and an optional `createdAt >= cutoff` date filter. This query uses the same composite index. Client-side aggregation (`useMemo`) computes top consumed items, most alerted items, and action-type breakdowns from the returned data.
+
+### `firebaseConfig.ts` TypeScript Error (False Alarm)
+
+```
+Module '"firebase/auth"' has no exported member 'getReactNativePersistence'
+```
+
+This error is reported by `tsc --noEmit` but is **not a runtime bug**. `getReactNativePersistence` is a valid export used correctly; the Firebase SDK v12 type definitions simply lag behind the actual exports. This is the only remaining TypeScript error in the project. Do not attempt to suppress it with casts — it will resolve in a future Firebase SDK type-definition update.
+
 ### Expo Camera on Android
 The `CameraView` component from `expo-camera` requires the `android.permission.CAMERA` permission, which is declared in `app.json`. On Android 13+, the permission dialog is shown once; if denied, the user must manually enable it in device settings.
 
@@ -669,4 +681,4 @@ The import uses `expo-file-system/legacy`. If upgrading to a newer Expo SDK, ver
 ---
 
 *Nexus v2.1.0 — Technical Documentation*
-*Last updated: March 2026*
+*Last updated: April 2026*

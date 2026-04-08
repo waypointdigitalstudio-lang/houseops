@@ -480,7 +480,7 @@ export default function AdminScreen() {
           disabled={saving || !selectedUser || !selectedSiteId}
           style={({ pressed }) => ({
             marginTop: 16,
-            backgroundColor: theme.tint,
+            backgroundColor: theme.primary,
             borderRadius: 999,
             paddingVertical: 12,
             alignItems: "center",

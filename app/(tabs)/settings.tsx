@@ -16,6 +16,7 @@ import { auth, db } from "../../firebaseConfig";
 import { usePushNotifications } from "../../hooks/usePushNotifications";
 import { useToast } from "../../hooks/useToast";
 import { useUserProfile } from "../../hooks/useUserProfile";
+import { SITES } from "../../hooks/useSiteContext";
 import { useThemePreference } from "../../src/theme/ThemeProvider";
 import { exportInventoryToCSV } from "../../utils/exportInventory";
 
@@ -36,11 +37,6 @@ const STORAGE_NOTIF_VIBRATE_KEY = "nexus_notif_vibrate_v1";
 
 type Prefs = { low: boolean; out: boolean; restock: boolean };
 const DEFAULT_PREFS: Prefs = { low: true, out: true, restock: true };
-
-const SITES = [
-  { id: "ballys_tiverton", label: "Tiverton" },
-  { id: "ballys_lincoln", label: "Lincoln" },
-];
 
 export default function SettingsScreen() {
   const theme = useAppTheme();
@@ -505,7 +501,7 @@ export default function SettingsScreen() {
             onPress={handleExport}
             disabled={exporting || !siteId}
             style={{
-              backgroundColor: theme.tint,
+              backgroundColor: theme.primary,
               paddingVertical: 12,
               borderRadius: 999,
               alignItems: "center",

@@ -37,6 +37,7 @@ import {
   FlatList,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -47,6 +48,8 @@ import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
 
 // ─── Types ───────────────────────────────────────────────────────────
+
+type AnalyticsPeriod = "7days" | "30days" | "all";
 
 interface ActivityEntry {
   id: string;
@@ -395,13 +398,24 @@ function AlertCard({
   );
 }
 
+// ─── Horizontal Bar ──────────────────────────────────────────────────
+
+function HBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <View style={{ height: 6, backgroundColor: color + "22", borderRadius: 3, overflow: "hidden", marginTop: 5 }}>
+      <View style={{ width: `${pct}%`, height: "100%", backgroundColor: color, borderRadius: 3 }} />
+    </View>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export default function AlertsScreen() {
   const theme = useAppTheme();
   const { siteId, loading: profileLoading } = useUserProfile();
 
-  const [activeView, setActiveView] = useState<"alerts" | "activity">("alerts");
+  const [activeView, setActiveView] = useState<"alerts" | "activity" | "analytics">("alerts");
 
   // ─── Alerts state ─────────────────────────────────────────────────
   const [alerts, setAlerts] = useState<AlertEntry[]>([]);
@@ -414,6 +428,11 @@ export default function AlertsScreen() {
   const [loadingActivities, setLoadingActivities] = useState(true);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
+
+  // ─── Analytics state ─────────────────────────────────────────────
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("30days");
+  const [analyticsActivities, setAnalyticsActivities] = useState<ActivityEntry[]>([]);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   // ─── Fetch low-stock items ────────────────────────────────────────
   useEffect(() => {
@@ -567,6 +586,62 @@ export default function AlertsScreen() {
     return () => unsub();
   }, [siteId]); // FIX: was missing siteId dependency
 
+  // ─── Fetch analytics data (dedicated query, up to 500 entries) ────
+  useEffect(() => {
+    if (!siteId) {
+      setAnalyticsActivities([]);
+      setLoadingAnalytics(false);
+      return;
+    }
+
+    setLoadingAnalytics(true);
+
+    const cutoffDate = getDateCutoff(analyticsPeriod);
+    const constraints: any[] = [
+      where("siteId", "==", siteId),
+    ];
+    if (cutoffDate) {
+      constraints.push(where("createdAt", ">=", Timestamp.fromDate(cutoffDate)));
+    }
+    constraints.push(orderBy("createdAt", "desc"));
+    constraints.push(limit(500));
+
+    const q = query(collection(db, "alertsLog"), ...constraints);
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const items: ActivityEntry[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            siteId: data.siteId ?? "default",
+            itemName: data.itemName ?? data.name ?? "(unknown)",
+            itemId: data.itemId ?? "",
+            qty: data.qty ?? data.quantity ?? 0,
+            min: data.min ?? data.minQuantity ?? 0,
+            prevState: data.prevState ?? "",
+            nextState: data.nextState ?? "",
+            status: data.status ?? data.nextState ?? "",
+            action: data.action ?? inferActionFromStates(data.prevState, data.nextState),
+            itemType: data.itemType ?? "inventory",
+            createdAt: data.createdAt ?? null,
+            dismissed: data.dismissed ?? false,
+            userDismissed: data.userDismissed ?? false,
+          } as ActivityEntry;
+        });
+        setAnalyticsActivities(items);
+        setLoadingAnalytics(false);
+      },
+      (err) => {
+        console.error("[AlertsScreen] Error fetching analytics:", err);
+        setLoadingAnalytics(false);
+      }
+    );
+
+    return () => unsub();
+  }, [siteId, analyticsPeriod]);
+
   // ─── Dismiss handler ──────────────────────────────────────────────
   const handleDismiss = useCallback(async (item: AlertEntry) => {
     if (!item.itemId) {
@@ -623,6 +698,45 @@ export default function AlertsScreen() {
 
     return result;
   }, [activities, dateFilter, actionFilter]);
+
+  // ─── Analytics aggregation ───────────────────────────────────────
+  const analyticsData = useMemo(() => {
+    const data = analyticsActivities;
+
+    // Top consumed: deducted events grouped by itemName, summing qty
+    const consumptionMap: Record<string, { qty: number; itemType: string }> = {};
+    for (const a of data) {
+      if (a.action === "deducted") {
+        if (!consumptionMap[a.itemName]) consumptionMap[a.itemName] = { qty: 0, itemType: a.itemType };
+        consumptionMap[a.itemName].qty += a.qty;
+      }
+    }
+    const topConsumed = Object.entries(consumptionMap)
+      .sort((a, b) => b[1].qty - a[1].qty)
+      .slice(0, 5)
+      .map(([name, v]) => ({ name, ...v }));
+
+    // Most alerted: entries where nextState degraded (LOW / CRITICAL / OUT)
+    const alertMap: Record<string, number> = {};
+    for (const a of data) {
+      const ns = (a.nextState ?? "").toUpperCase();
+      if (ns === "LOW" || ns === "CRITICAL" || ns === "OUT") {
+        alertMap[a.itemName] = (alertMap[a.itemName] ?? 0) + 1;
+      }
+    }
+    const topAlerted = Object.entries(alertMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
+
+    // Action breakdown counts
+    const breakdown: Record<string, number> = {};
+    for (const a of data) {
+      breakdown[a.action] = (breakdown[a.action] ?? 0) + 1;
+    }
+
+    return { topConsumed, topAlerted, breakdown, total: data.length };
+  }, [analyticsActivities]);
 
   // ─── Reorder List Export ─────────────────────────────────────────
   const generateReorderList = useCallback(async () => {
@@ -800,7 +914,15 @@ export default function AlertsScreen() {
             style={[styles.tab, activeView === "activity" && { backgroundColor: ACTIVE_BG, borderColor: ACTIVE_BG }]}
           >
             <Text style={[styles.tabText, { color: activeView === "activity" ? ACTIVE_TEXT : theme.mutedText }]}>
-              Activity Log
+              Activity
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveView("analytics")}
+            style={[styles.tab, activeView === "analytics" && { backgroundColor: ACTIVE_BG, borderColor: ACTIVE_BG }]}
+          >
+            <Text style={[styles.tabText, { color: activeView === "analytics" ? ACTIVE_TEXT : theme.mutedText }]}>
+              Analytics
             </Text>
           </Pressable>
         </View>
@@ -844,6 +966,138 @@ export default function AlertsScreen() {
                 showsVerticalScrollIndicator={false}
               />
             </>
+          )}
+        </>
+      )}
+
+      {/* ─── Analytics View ──────────────────────────────────────── */}
+      {activeView === "analytics" && (
+        <>
+          {/* Period selector — always visible above content */}
+          <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 10, alignItems: "center" }}>
+            {(["7days", "30days", "all"] as const).map((p) => {
+              const label = p === "7days" ? "7 Days" : p === "30days" ? "30 Days" : "All Time";
+              const active = analyticsPeriod === p;
+              return (
+                <Pressable
+                  key={p}
+                  onPress={() => setAnalyticsPeriod(p)}
+                  style={[
+                    styles.chipSmall,
+                    { backgroundColor: active ? ACTIVE_BG : "transparent", borderColor: active ? ACTIVE_BG : theme.border },
+                  ]}
+                >
+                  <Text style={[styles.chipTextSmall, { color: active ? ACTIVE_TEXT : theme.mutedText }]}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            {!loadingAnalytics && (
+              <Text style={{ color: theme.mutedText, fontSize: 11, marginLeft: 4 }}>
+                {analyticsData.total} entries
+              </Text>
+            )}
+          </View>
+
+          {loadingAnalytics ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color={theme.text} />
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}>
+              {/* Activity Breakdown */}
+              <Text style={[styles.analyticsSection, { color: theme.text }]}>Activity Breakdown</Text>
+              {Object.keys(analyticsData.breakdown).length === 0 ? (
+                <Text style={{ color: theme.mutedText, fontSize: 13, marginBottom: 20 }}>
+                  No activity in this period.
+                </Text>
+              ) : (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
+                  {Object.entries(analyticsData.breakdown).map(([action, count]) => {
+                    const icon = getActionIcon(action);
+                    return (
+                      <View
+                        key={action}
+                        style={[styles.analyticsChip, { backgroundColor: icon.color + "1A", borderColor: icon.color + "44" }]}
+                      >
+                        <Ionicons name={icon.name} size={12} color={icon.color} />
+                        <Text style={{ color: icon.color, fontSize: 12, fontWeight: "700", marginLeft: 4, textTransform: "capitalize" }}>
+                          {action}
+                        </Text>
+                        <Text style={{ color: icon.color, fontSize: 14, fontWeight: "900", marginLeft: 6 }}>
+                          {count}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Top Consumed */}
+              <Text style={[styles.analyticsSection, { color: theme.text }]}>Top Consumed</Text>
+              {analyticsData.topConsumed.length === 0 ? (
+                <Text style={{ color: theme.mutedText, fontSize: 13, marginBottom: 24 }}>
+                  No deductions logged in this period.
+                </Text>
+              ) : (
+                <View style={[styles.analyticsCard, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 24 }]}>
+                  {analyticsData.topConsumed.map((item, i) => (
+                    <View
+                      key={item.name}
+                      style={[
+                        styles.analyticsRow,
+                        i < analyticsData.topConsumed.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.border },
+                      ]}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700", flex: 1 }} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={{ color: "#f97316", fontSize: 14, fontWeight: "900", marginLeft: 8 }}>
+                          -{item.qty}
+                        </Text>
+                      </View>
+                      <HBar value={item.qty} max={analyticsData.topConsumed[0].qty} color="#f97316" />
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Most Alerted */}
+              <Text style={[styles.analyticsSection, { color: theme.text }]}>Most Alerted Items</Text>
+              {analyticsData.topAlerted.length === 0 ? (
+                <Text style={{ color: theme.mutedText, fontSize: 13, marginBottom: 24 }}>
+                  No stock alerts logged in this period.
+                </Text>
+              ) : (
+                <View style={[styles.analyticsCard, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 24 }]}>
+                  {analyticsData.topAlerted.map((item, i) => (
+                    <View
+                      key={item.name}
+                      style={[
+                        styles.analyticsRow,
+                        i < analyticsData.topAlerted.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.border },
+                      ]}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700", flex: 1 }} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={{ color: "#ef4444", fontSize: 14, fontWeight: "900", marginLeft: 8 }}>
+                          {item.count}×
+                        </Text>
+                      </View>
+                      <HBar value={item.count} max={analyticsData.topAlerted[0].count} color="#ef4444" />
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={{ color: theme.mutedText, fontSize: 10, textAlign: "center", fontStyle: "italic" }}>
+                Up to 500 entries for the selected period.
+              </Text>
+            </ScrollView>
           )}
         </>
       )}
@@ -989,5 +1243,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: "dashed",
     alignSelf: "flex-start",
+  },
+  analyticsSection: {
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 10,
+  },
+  analyticsCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  analyticsRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  analyticsChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
   },
 });
