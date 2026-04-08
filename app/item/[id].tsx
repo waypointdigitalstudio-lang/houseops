@@ -693,7 +693,7 @@ export default function ItemDetail() {
               <Pressable
                 style={[
                   styles.saveButton,
-                  { backgroundColor: theme.tint },
+                  { backgroundColor: theme.primary },
                   savingMeta && { opacity: 0.6 },
                 ]}
                 onPress={handleSaveMeta}
@@ -1275,7 +1275,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveButtonText: {
-    color: "#000",
+    color: "#fff",
     fontWeight: "900",
   },
   savingContainer: {

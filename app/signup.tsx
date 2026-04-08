@@ -227,14 +227,14 @@ export default function SignUpScreen() {
         disabled={busy}
         style={{
           marginTop: 20,
-          backgroundColor: theme.tint,
+          backgroundColor: theme.primary,
           padding: 12,
           borderRadius: 999,
           alignItems: "center",
           opacity: busy ? 0.7 : 1,
         }}
       >
-        <Text style={{ fontWeight: "900", color: "#000" }}>
+        <Text style={{ fontWeight: "900", color: "#fff" }}>
           {busy ? "Creating account…" : "Create Account"}
         </Text>
       </Pressable>

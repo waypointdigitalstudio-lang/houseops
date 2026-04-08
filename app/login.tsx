@@ -108,14 +108,14 @@ export default function LoginScreen() {
         disabled={busy}
         style={{
           marginTop: 14,
-          backgroundColor: theme.tint,
+          backgroundColor: theme.primary,
           padding: 12,
           borderRadius: 999,
           alignItems: "center",
           opacity: busy ? 0.7 : 1,
         }}
       >
-        <Text style={{ fontWeight: "900", color: "#000" }}>
+        <Text style={{ fontWeight: "900", color: "#fff" }}>
           {busy ? "Signing in…" : "Sign in"}
         </Text>
       </Pressable>

@@ -780,9 +780,9 @@ export default function DirectoryScreen() {
           <Pressable
             key={t}
             onPress={() => setTab(t)}
-            style={[styles.tabBtn, tab === t && { backgroundColor: theme.tint }]}
+            style={[styles.tabBtn, tab === t && { backgroundColor: theme.primary }]}
           >
-            <Text style={{ color: tab === t ? "#000" : theme.mutedText, fontWeight: "700", fontSize: 13, textTransform: "capitalize" }}>
+            <Text style={{ color: tab === t ? "#fff" : theme.mutedText, fontWeight: "700", fontSize: 13, textTransform: "capitalize" }}>
               {t === "contacts" ? "Contacts" : t === "vendors" ? "Vendors" : techTabLabel}
             </Text>
           </Pressable>
@@ -998,8 +998,8 @@ export default function DirectoryScreen() {
               onChangeText={(v) => setContactForm((p) => ({ ...p, notes: v }))}
             />
             <Pressable onPress={saveContact} disabled={savingContact}
-              style={[styles.saveBtn, { backgroundColor: theme.tint, opacity: savingContact ? 0.6 : 1 }]}>
-              <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>
+              style={[styles.saveBtn, { backgroundColor: theme.primary, opacity: savingContact ? 0.6 : 1 }]}>
+              <Text style={{ color: "#fff", fontWeight: "800", fontSize: 16 }}>
                 {savingContact ? "Saving…" : editingContact ? "Save Changes" : "Add Contact"}
               </Text>
             </Pressable>
@@ -1047,8 +1047,8 @@ export default function DirectoryScreen() {
               onChangeText={(v) => setVendorForm((p) => ({ ...p, notes: v }))}
             />
             <Pressable onPress={saveVendor} disabled={savingVendor}
-              style={[styles.saveBtn, { backgroundColor: theme.tint, opacity: savingVendor ? 0.6 : 1 }]}>
-              <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>
+              style={[styles.saveBtn, { backgroundColor: theme.primary, opacity: savingVendor ? 0.6 : 1 }]}>
+              <Text style={{ color: "#fff", fontWeight: "800", fontSize: 16 }}>
                 {savingVendor ? "Saving…" : editingVendor ? "Save Changes" : "Add Vendor"}
               </Text>
             </Pressable>
@@ -1093,8 +1093,8 @@ export default function DirectoryScreen() {
               onChangeText={(v) => setLincolnForm((p) => ({ ...p, notes: v }))}
             />
             <Pressable onPress={saveLincoln} disabled={savingLincoln}
-              style={[styles.saveBtn, { backgroundColor: theme.tint, opacity: savingLincoln ? 0.6 : 1 }]}>
-              <Text style={{ color: "#000", fontWeight: "800", fontSize: 16 }}>
+              style={[styles.saveBtn, { backgroundColor: theme.primary, opacity: savingLincoln ? 0.6 : 1 }]}>
+              <Text style={{ color: "#fff", fontWeight: "800", fontSize: 16 }}>
                 {savingLincoln ? "Saving…" : editingLincoln ? "Save Changes" : `Add ${techTabLabel}`}
               </Text>
             </Pressable>

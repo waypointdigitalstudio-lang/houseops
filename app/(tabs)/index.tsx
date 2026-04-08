@@ -479,8 +479,8 @@ export default function IndexScreen() {
               {scanBusy ? "Looking up barcode…" : scanningEnabled ? "Point at a barcode" : "Paused"}
             </Text>
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <Pressable onPress={() => { setScanBusy(false); setScanningEnabled(true); }} style={{ flex: 1, backgroundColor: theme.tint, paddingVertical: 10, borderRadius: 999, alignItems: "center" }}>
-                <Text style={{ color: "#000", fontWeight: "800" }}>Scan again</Text>
+              <Pressable onPress={() => { setScanBusy(false); setScanningEnabled(true); }} style={{ flex: 1, backgroundColor: theme.primary, paddingVertical: 10, borderRadius: 999, alignItems: "center" }}>
+                <Text style={{ color: "#fff", fontWeight: "800" }}>Scan again</Text>
               </Pressable>
               <Pressable onPress={() => setShowScanModal(false)} style={{ flex: 1, backgroundColor: "#374151", paddingVertical: 10, borderRadius: 999, alignItems: "center" }}>
                 <Text style={{ color: "#fff", fontWeight: "800" }}>Close</Text>

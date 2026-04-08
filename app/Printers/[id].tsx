@@ -151,7 +151,7 @@ export default function PrinterDetail() {
                 <Text style={{ color: theme.mutedText, fontSize: 12 }}>Stock: {toner.quantity}</Text>
               </View>
               <Pressable 
-                style={[styles.deductBtn, { backgroundColor: theme.tint }]} 
+                style={[styles.deductBtn, { backgroundColor: theme.primary }]} 
                 onPress={() => deductToner(toner)}
               >
                 <Text style={styles.deductBtnText}>Deduct 1</Text>
@@ -182,5 +182,5 @@ const styles = StyleSheet.create({
   actionBtn: { backgroundColor: '#007AFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 6 },
   actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   deductBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
-  deductBtnText: { color: '#000', fontWeight: '900', fontSize: 13 },
+  deductBtnText: { color: '#fff', fontWeight: '900', fontSize: 13 },
 });

@@ -308,7 +308,7 @@ export default function TonerDetail() {
               />
 
               <Pressable
-                style={[styles.saveButton, { backgroundColor: theme.tint }, savingMeta && { opacity: 0.6 }]}
+                style={[styles.saveButton, { backgroundColor: theme.primary }, savingMeta && { opacity: 0.6 }]}
                 onPress={handleSave}
                 disabled={savingMeta}
               >
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 13, marginTop: 10, marginBottom: 4, fontWeight: "700" },
   input: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14 },
   saveButton: { marginTop: 14, paddingVertical: 10, borderRadius: 999, alignItems: "center" },
-  saveButtonText: { color: "#000", fontWeight: "900" },
+  saveButtonText: { color: "#fff", fontWeight: "900" },
   deleteButton: { marginTop: 10, paddingVertical: 10, borderRadius: 999, alignItems: "center", borderWidth: 1, backgroundColor: "transparent" },
   deleteButtonText: { color: "#ef4444", fontWeight: "900" },
 });
