@@ -12,6 +12,7 @@ import { useUserProfile } from "./useUserProfile";
 export const SITES = [
   { id: "ballys_tiverton", label: "Tiverton" },
   { id: "ballys_lincoln", label: "Lincoln" },
+  { id: "waypoint_demo", label: "Waypoint Demo" },
 ];
  
 export function useSiteContext() {
