@@ -357,9 +357,9 @@ console.log(`✓  ${contacts.length} contacts`);
 // 11. Vendors
 // ─────────────────────────────────────────────────────────────────────────
 const vendors = [
-  { company: "Office Depot Business", phone: "(800) 463-3768", email: "orders@officedepot.com", website: "www.officedepot.com", notes: "Office supplies, paper, pens — account #WPT-4421", siteId: SITE_ID },
-  { company: "Grainger Industrial Supply", phone: "(800) 472-4643", email: "service@grainger.com", website: "www.grainger.com", notes: "Maintenance, safety gear, batteries — account #GRA-8801", siteId: SITE_ID },
-  { company: "Staples Business Advantage", phone: "(800) 693-8080", email: "advantage@staples.com", website: "www.staplesadvantage.com", notes: "Backup office supply vendor", siteId: SITE_ID },
+  { name: "Office Depot Business", phone: "(800) 463-3768", email: "orders@officedepot.com", website: "www.officedepot.com", notes: "Office supplies, paper, pens — account #WPT-4421", siteId: SITE_ID },
+  { name: "Grainger Industrial Supply", phone: "(800) 472-4643", email: "service@grainger.com", website: "www.grainger.com", notes: "Maintenance, safety gear, batteries — account #GRA-8801", siteId: SITE_ID },
+  { name: "Staples Business Advantage", phone: "(800) 693-8080", email: "advantage@staples.com", website: "www.staplesadvantage.com", notes: "Backup office supply vendor", siteId: SITE_ID },
 ];
 
 for (const vendor of vendors) {

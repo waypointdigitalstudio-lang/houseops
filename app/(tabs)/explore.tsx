@@ -163,7 +163,7 @@ export default function DirectoryScreen() {
       query(collection(db, "vendors"), where("siteId", "==", siteId)),
       (snap) => {
         const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Vendor));
-        docs.sort((a, b) => a.company.localeCompare(b.company));
+        docs.sort((a, b) => (a.company ?? "").localeCompare(b.company ?? ""));
         setVendors(docs);
       },
       (err) => console.error("Vendors listener error:", err)
