@@ -72,12 +72,13 @@ export const deleteAuthUserOnRemoval = onDocumentDeleted("users/{uid}", async (e
     logger.info(`Auth account deleted for user ${uid}`);
   } catch (err) {
     // Auth user may already be gone — log and move on
-    logger.warn(`Could not delete Auth user ${uid}: ${err}`);
+    logger.warn(`Could not delete Auth user ${uid}`, { error: String(err) });
   }
 });
 
 // Shared logic for low-stock notification across collections
 async function handleLowStockUpdate({ event, itemId, itemType, getQty, getMin, getName }) {
+  if (!event.data?.before || !event.data?.after) return;
   const before = event.data.before.data();
   const after = event.data.after.data();
   if (!before || !after) return;
@@ -151,7 +152,7 @@ async function handleLowStockUpdate({ event, itemId, itemType, getQty, getMin, g
 
   try {
     const result = await sendExpoPush(messages);
-    await logRef.set({ status: "sent" }, { merge: true });
+    await logRef.set({ status: "sent" }, { merge: true }).catch((e) => logger.warn("Failed to update log status", { error: String(e) }));
     const tickets = result?.data ?? [];
     for (let i = 0; i < tickets.length; i++) {
       const t = tickets[i];
@@ -161,8 +162,8 @@ async function handleLowStockUpdate({ event, itemId, itemType, getQty, getMin, g
       }
     }
   } catch (err) {
-    await logRef.set({ status: "error", error: String(err) }, { merge: true });
-    throw err;
+    logger.error("sendExpoPush failed", { itemId, itemType, error: String(err) });
+    await logRef.set({ status: "error", error: String(err) }, { merge: true }).catch((e) => logger.warn("Failed to update log error status", { error: String(e) }));
   }
 }
 

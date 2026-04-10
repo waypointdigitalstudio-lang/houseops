@@ -216,12 +216,18 @@ service cloud.firestore {
     match /alertsLog/{logId} {
       allow read: if isAdmin() || (isSignedIn() && sameSite(resource.data));
 
-      // FIX: Allow client-side writes (index.tsx logActivity) scoped to own site.
+      // Client-side writes (logActivity in utils/activity.ts) are scoped to own
+      // site and may only write the specific fields that function produces.
       // Cloud Function writes use Admin SDK and bypass these rules regardless.
       allow create: if isAdmin() || (
         isSignedIn()
         && mySiteId() != null
         && request.resource.data.siteId == mySiteId()
+        && request.resource.data.keys().hasOnly([
+          'siteId', 'itemName', 'itemId', 'qty', 'min',
+          'prevState', 'nextState', 'status', 'action',
+          'itemType', 'createdAt'
+        ])
       );
 
       allow update, delete: if false;

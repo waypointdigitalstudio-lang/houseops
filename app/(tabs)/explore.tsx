@@ -637,6 +637,7 @@ export default function DirectoryScreen() {
     if (!dirPreviewKind) return;
     const valid = dirPreviewRows.filter((r) => r.primary !== "(empty)");
     if (valid.length === 0) { Alert.alert("Nothing to Import", "All rows are invalid."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
 
     const collectionName =
       dirPreviewKind === "contacts" ? "contacts" :
@@ -651,8 +652,8 @@ export default function DirectoryScreen() {
       for (const row of valid) {
         batch.set(doc(db, collectionName, row.stableId), {
           ...row.data,
-          siteId: siteId || "default",
-          importedAt: new Date().toISOString(),
+          siteId,
+          importedAt: serverTimestamp(),
         }, { merge: true });
         count++;
         batchCount++;

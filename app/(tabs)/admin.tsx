@@ -7,6 +7,7 @@ import {
   doc,
   getDocs,
   limit,
+  onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
@@ -119,7 +120,7 @@ function SelectModal<T>({
               alignItems: "center",
             })}
           >
-            <Text style={{ color: theme.tint, fontWeight: "900" }}>Close</Text>
+            <Text style={{ color: theme.primary, fontWeight: "900" }}>Close</Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -152,35 +153,37 @@ export default function AdminScreen() {
   useEffect(() => {
     let alive = true;
 
-    (async () => {
-      try {
-        setLoading(true);
-
-        const sitesSnap = await getDocs(collection(db, "sites"));
-        const siteList: SiteRow[] = sitesSnap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as any),
-        }));
-
-        const usersQ = query(collection(db, "users"), limit(200));
-        const usersSnap = await getDocs(usersQ);
-        const userList: UserRow[] = usersSnap.docs.map((d) => ({
-          uid: d.id,
-          ...(d.data() as any),
-        }));
-
+    // Sites: one-time fetch (relatively static)
+    getDocs(collection(db, "sites"))
+      .then((snap) => {
         if (!alive) return;
-        setSites(siteList);
-        setUsers(userList);
-      } catch (e) {
-        console.log("Admin load error:", e);
-        Alert.alert("Load failed", "Could not load admin data.");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
+        setSites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SiteRow, 'id'>) })));
+      })
+      .catch((e) => {
+        if (__DEV__) console.log("Admin sites load error:", e);
+      });
 
-    return () => { alive = false; };
+    // Users: real-time listener so new/deleted users appear without refresh
+    const usersQ = query(collection(db, "users"), limit(200));
+    const unsubUsers = onSnapshot(
+      usersQ,
+      (snap) => {
+        if (!alive) return;
+        setUsers(snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<UserRow, 'uid'>) })));
+        setLoading(false);
+      },
+      (e) => {
+        if (!alive) return;
+        if (__DEV__) console.log("Admin load error:", e);
+        Alert.alert("Load failed", "Could not load admin data.");
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      alive = false;
+      unsubUsers();
+    };
   }, []);
 
   const selectedSiteLabel = useMemo(() => {
@@ -232,7 +235,7 @@ export default function AdminScreen() {
       );
       setSelectedUser((prev) => (prev ? { ...prev, siteId: selectedSiteId } : prev));
     } catch (e) {
-      console.log("Admin save error:", e);
+      if (__DEV__) console.log("Admin save error:", e);
       Alert.alert("Save failed", "Could not update user siteId.");
     } finally {
       setSaving(false);
@@ -261,7 +264,7 @@ export default function AdminScreen() {
               setUsers((prev) => prev.filter((u) => u.uid !== user.uid));
               setManageUserModalOpen(false);
             } catch (e) {
-              console.log("Delete user error:", e);
+              if (__DEV__) console.log("Delete user error:", e);
               Alert.alert("Delete failed", "Could not delete user. Note: This does not delete the Firebase Auth account, only the user profile.");
             }
           },
@@ -282,7 +285,7 @@ export default function AdminScreen() {
       );
       setUserToManage((prev) => (prev ? { ...prev, role: newRole } : prev));
     } catch (e) {
-      console.log("Change role error:", e);
+      if (__DEV__) console.log("Change role error:", e);
       Alert.alert("Failed", "Could not change user role.");
     }
   };
@@ -296,7 +299,7 @@ export default function AdminScreen() {
       await sendPasswordResetEmail(auth, user.email);
       Alert.alert("Sent", `Password reset email sent to ${user.email}`);
     } catch (e: any) {
-      console.log("Password reset error:", e);
+      if (__DEV__) console.log("Password reset error:", e);
       Alert.alert("Failed", e.message || "Could not send password reset email.");
     }
   };
@@ -349,6 +352,11 @@ export default function AdminScreen() {
           <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}>
             Tap a user to manage their account
           </Text>
+          {users.length >= 200 && (
+            <Text style={{ color: "#f59e0b", fontSize: 12, marginTop: 6, fontWeight: "700" }}>
+              Showing first 200 users — contact support to manage larger orgs.
+            </Text>
+          )}
 
           <View style={{ marginTop: 12 }}>
             {users.map((user) => (
@@ -460,7 +468,7 @@ export default function AdminScreen() {
               marginTop: 12,
               borderRadius: 12,
               borderWidth: 1,
-              borderColor: alsoUpdateTokens ? theme.tint : theme.border,
+              borderColor: alsoUpdateTokens ? theme.primary : theme.border,
               paddingVertical: 12,
               paddingHorizontal: 12,
               opacity: pressed ? 0.8 : 1,
@@ -601,7 +609,7 @@ export default function AdminScreen() {
                           padding: 12,
                           borderRadius: 12,
                           borderWidth: 1,
-                          borderColor: userToManage.role === r ? theme.tint : theme.border,
+                          borderColor: userToManage.role === r ? theme.primary : theme.border,
                           opacity: userToManage.role === r ? 0.6 : pressed ? 0.7 : 1,
                           alignItems: "center",
                         })}
@@ -641,7 +649,7 @@ export default function AdminScreen() {
                     marginTop: 12,
                     padding: 12,
                     borderRadius: 12,
-                    backgroundColor: "#ff3b30",
+                    backgroundColor: theme.danger,
                     alignItems: "center",
                     opacity: pressed ? 0.7 : 1,
                   })}
@@ -659,7 +667,7 @@ export default function AdminScreen() {
                     opacity: pressed ? 0.7 : 1,
                   })}
                 >
-                  <Text style={{ color: theme.tint, fontWeight: "900" }}>Close</Text>
+                  <Text style={{ color: theme.primary, fontWeight: "900" }}>Close</Text>
                 </Pressable>
               </>
             )}

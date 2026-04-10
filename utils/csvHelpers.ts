@@ -8,12 +8,32 @@ export const normalizeCell = (val: string): string => {
   return trimmed;
 };
 
+function parseCSVLine(line: string, delimiter: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === delimiter && !inQuotes) {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
 export const parseCSV = (content: string): string[][] => {
   const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
   const firstLine = lines[0];
   const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
-  return lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
+  return lines.map((line) => parseCSVLine(line, delimiter));
 };
 
 // Exact-match first, then partial — prevents e.g. "printerip" from shadowing "printer" as a name column

@@ -20,6 +20,7 @@ import {
 import { useAppTheme } from "../../constants/theme";
 import { db } from "../../firebaseConfig";
 import { useUserProfile } from "../../hooks/useUserProfile";
+import { normalizeCell, parseCSV } from "../../utils/csvHelpers";
 
 type DisposalReason = "broken" | "obsolete" | "lost" | "damaged" | "other";
 
@@ -116,7 +117,7 @@ export default function DisposalScreen() {
         setLoading(false);
       },
       (err) => {
-        console.error("Disposal records error:", err);
+        if (__DEV__) console.error("Disposal records error:", err);
         setDisposals([]);
         setLoading(false);
       }
@@ -236,7 +237,7 @@ export default function DisposalScreen() {
       );
 
     } catch (error: any) {
-      console.error('Export error:', error);
+      if (__DEV__) console.error('Export error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       Alert.alert('Export Failed', `Error: ${errorMessage}`);
     } finally {
@@ -245,21 +246,6 @@ export default function DisposalScreen() {
   };
 
   // ── CSV Import helpers ──────────────────────────────────────────────────────
-
-  const normalizeCell = (val: string): string => {
-    if (!val) return "";
-    const trimmed = val.trim();
-    if (["nan", "none", "null", "-", "n/a"].includes(trimmed.toLowerCase())) return "";
-    return trimmed;
-  };
-
-  const parseCSV = (content: string): string[][] => {
-    const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
-    if (lines.length === 0) return [];
-    const firstLine = lines[0];
-    const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
-    return lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
-  };
 
   const importDisposalsFromCSV = async () => {
     try {
@@ -341,7 +327,7 @@ export default function DisposalScreen() {
       setPreviewRows(parsed);
       setShowPreviewModal(true);
     } catch (err: any) {
-      console.error("Import error:", err);
+      if (__DEV__) console.error("Import error:", err);
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
     } finally {
       setImporting(false);
@@ -354,10 +340,15 @@ export default function DisposalScreen() {
       Alert.alert("Nothing to Import", "All rows are invalid and will be skipped.");
       return;
     }
+    if (!siteId) {
+      Alert.alert("Error", "No site assigned to your account.");
+      return;
+    }
 
     setCommitting(true);
     try {
-      const batch = writeBatch(db);
+      let batch = writeBatch(db);
+      let opCount = 0;
 
       for (const row of valid) {
         const docRef = doc(db, "disposals", row.stableId);
@@ -370,16 +361,18 @@ export default function DisposalScreen() {
           totalValue:    row.totalValue,
           approxAge:     row.approxAge,
           notes:         row.notes,
-          siteId:        siteId || "default",
+          siteId,
           reason:        "obsolete" as DisposalReason,
           disposedBy:    profile?.role === "admin" ? "Admin" : "Staff",
           disposedByUid: uid || "",
-          importedAt:    new Date().toISOString(),
-          disposedAt:    new Date(),
+          importedAt:    serverTimestamp(),
+          disposedAt:    serverTimestamp(),
         }, { merge: true });
+        opCount++;
+        if (opCount === 499) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
       }
 
-      await batch.commit();
+      if (opCount > 0) await batch.commit();
       setShowPreviewModal(false);
       setPreviewRows([]);
       Alert.alert(
@@ -387,7 +380,7 @@ export default function DisposalScreen() {
         `${valid.length} disposal item${valid.length !== 1 ? "s" : ""} imported/updated successfully.`
       );
     } catch (err: any) {
-      console.error("Commit error:", err);
+      if (__DEV__) console.error("Commit error:", err);
       Alert.alert("Import Failed", err.message || "An unexpected error occurred.");
     } finally {
       setCommitting(false);
@@ -442,6 +435,10 @@ export default function DisposalScreen() {
       Alert.alert("Error", "Please enter who is disposing this item.");
       return;
     }
+    if (!siteId) {
+      Alert.alert("Error", "No site assigned to your account.");
+      return;
+    }
 
     setAddSaving(true);
 
@@ -458,7 +455,7 @@ export default function DisposalScreen() {
         notes: addForm.description.trim(),
         disposedBy: addForm.disposedBy.trim(),
         disposedByUid: uid || "",
-        siteId: siteId || "default",
+        siteId,
         reason: "other" as DisposalReason,
         disposedAt: serverTimestamp(),
       });
@@ -466,7 +463,7 @@ export default function DisposalScreen() {
       setShowAddModal(false);
       Alert.alert("Success", "Disposal record added successfully.");
     } catch (err: any) {
-      console.error("Error adding disposal record:", err);
+      if (__DEV__) console.error("Error adding disposal record:", err);
       Alert.alert("Error", "Failed to save disposal record. Please try again.");
     } finally {
       setAddSaving(false);
@@ -529,14 +526,14 @@ export default function DisposalScreen() {
 
         <View style={styles.headerButtons}>
           <Pressable
-            style={[styles.exportButton, { backgroundColor: '#f97316' }]}
+            style={[styles.exportButton, { backgroundColor: theme.warning }]}
             onPress={openAddModal}
           >
             <Text style={styles.exportButtonText}>Add Record</Text>
           </Pressable>
 
           <Pressable
-            style={[styles.exportButton, { backgroundColor: '#34C759' }, importing && styles.exportButtonDisabled]}
+            style={[styles.exportButton, { backgroundColor: theme.primary }, importing && styles.exportButtonDisabled]}
             onPress={importDisposalsFromCSV}
             disabled={importing}
           >
@@ -545,7 +542,7 @@ export default function DisposalScreen() {
 
           {disposals.length > 0 && (
             <Pressable
-              style={[styles.exportButton, { backgroundColor: '#007AFF' }, exporting && styles.exportButtonDisabled]}
+              style={[styles.exportButton, { backgroundColor: "#007AFF" }, exporting && styles.exportButtonDisabled]}
               onPress={exportToCSV}
               disabled={exporting}
             >
@@ -555,7 +552,7 @@ export default function DisposalScreen() {
 
           {disposals.length > 0 && (
             <Pressable
-              style={[styles.exportButton, { backgroundColor: '#ef4444' }]}
+              style={[styles.exportButton, { backgroundColor: theme.danger }]}
               onPress={deleteAllDisposals}
             >
               <Text style={styles.exportButtonText}>Delete All</Text>
@@ -649,7 +646,7 @@ export default function DisposalScreen() {
             <Pressable
               style={[
                 styles.saveBtn,
-                { backgroundColor: "#34C759", opacity: committing ? 0.6 : 1 },
+                { backgroundColor: theme.primary, opacity: committing ? 0.6 : 1 },
               ]}
               onPress={commitImport}
               disabled={committing}
@@ -672,7 +669,7 @@ export default function DisposalScreen() {
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Add Disposal Record</Text>
             <Pressable onPress={() => { if (!addSaving) setShowAddModal(false); }}>
-              <Text style={{ color: theme.tint, fontSize: 16, fontWeight: "700" }}>Cancel</Text>
+              <Text style={{ color: theme.primary, fontSize: 16, fontWeight: "700" }}>Cancel</Text>
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
@@ -780,7 +777,7 @@ export default function DisposalScreen() {
 
             {/* Save Button */}
             <Pressable
-              style={[styles.saveBtn, { backgroundColor: "#f97316", opacity: addSaving ? 0.6 : 1 }]}
+              style={[styles.saveBtn, { backgroundColor: theme.warning, opacity: addSaving ? 0.6 : 1 }]}
               onPress={saveManualDisposal}
               disabled={addSaving}
             >

@@ -118,15 +118,19 @@ export default function IndexScreen() {
     const unsub = onSnapshot(q, (snap) => {
       setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Item)));
       setLoading(false);
-    }, (err) => { console.error("items onSnapshot error:", err); setLoading(false); });
+    }, (err) => { if (__DEV__) console.error("items onSnapshot error:", err); setLoading(false); });
     return () => unsub();
   }, [siteId]);
 
   // Inventory undo
-  const dismissUndoBanner = useCallback(() => {
+  // itemId: only clear pendingDelete if this specific item is still pending,
+  // preventing a stale timeout from wiping a newer delete's undo state.
+  const dismissUndoBanner = useCallback((itemId?: string) => {
     if (undoTimeoutRef.current) { clearTimeout(undoTimeoutRef.current); undoTimeoutRef.current = null; }
     Animated.timing(undoAnim, { toValue: 0, duration: UNDO_ANIMATION_MS, useNativeDriver: true }).start(() => {
-      if (isMountedRef.current) setPendingDelete(null);
+      if (isMountedRef.current) {
+        setPendingDelete((prev) => (itemId && prev?.item.id !== itemId ? prev : null));
+      }
     });
   }, [undoAnim]);
 
@@ -135,9 +139,11 @@ export default function IndexScreen() {
       if (undoTimeoutRef.current) { clearTimeout(undoTimeoutRef.current); undoTimeoutRef.current = null; }
       try {
         await deleteDoc(doc(db, "items", pendingDelete.item.id));
-        const prevStatus = getStockStatus(pendingDelete.item.currentQuantity, pendingDelete.item.minQuantity);
-        await logActivity({ siteId: siteId || "default", itemName: pendingDelete.item.name, itemId: pendingDelete.item.id, qty: 0, min: pendingDelete.item.minQuantity, prevState: prevStatus, nextState: "OUT", action: "deleted", itemType: "inventory" });
-      } catch (e) { console.error("Error committing previous delete:", e); }
+        if (siteId) {
+          const prevStatus = getStockStatus(pendingDelete.item.currentQuantity, pendingDelete.item.minQuantity);
+          await logActivity({ siteId, itemName: pendingDelete.item.name, itemId: pendingDelete.item.id, qty: 0, min: pendingDelete.item.minQuantity, prevState: prevStatus, nextState: "OUT", action: "deleted", itemType: "inventory" });
+        }
+      } catch (e) { if (__DEV__) console.error("Error committing previous delete:", e); }
       setHiddenIds((prev) => { const next = new Set(prev); next.delete(pendingDelete.item.id); return next; });
       undoAnim.setValue(0);
       setPendingDelete(null);
@@ -151,13 +157,15 @@ export default function IndexScreen() {
       if (!isMountedRef.current) return;
       try {
         await deleteDoc(doc(db, "items", item.id));
-        const prevStatus = getStockStatus(item.currentQuantity, item.minQuantity);
-        await logActivity({ siteId: siteId || "default", itemName: item.name, itemId: item.id, qty: 0, min: item.minQuantity, prevState: prevStatus, nextState: "OUT", action: "deleted", itemType: "inventory" });
+        if (siteId) {
+          const prevStatus = getStockStatus(item.currentQuantity, item.minQuantity);
+          await logActivity({ siteId, itemName: item.name, itemId: item.id, qty: 0, min: item.minQuantity, prevState: prevStatus, nextState: "OUT", action: "deleted", itemType: "inventory" });
+        }
       } catch (e) {
-        console.error("Error during scheduled delete:", e);
+        if (__DEV__) console.error("Error during scheduled delete:", e);
         if (isMountedRef.current) setHiddenIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
       }
-      if (isMountedRef.current) dismissUndoBanner();
+      if (isMountedRef.current) dismissUndoBanner(item.id);
     }, UNDO_TIMEOUT_MS);
   }, [pendingDelete, undoAnim, dismissUndoBanner, siteId]);
 
@@ -166,8 +174,8 @@ export default function IndexScreen() {
     if (undoTimeoutRef.current) { clearTimeout(undoTimeoutRef.current); undoTimeoutRef.current = null; }
     const { item, backup } = pendingDelete;
     setHiddenIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
-    try { await setDoc(doc(db, "items", item.id), backup, { merge: true }); } catch (e) { console.error("Error restoring item:", e); }
-    dismissUndoBanner();
+    try { await setDoc(doc(db, "items", item.id), backup, { merge: true }); } catch (e) { if (__DEV__) console.error("Error restoring item:", e); }
+    dismissUndoBanner(item.id);
   }, [pendingDelete, dismissUndoBanner]);
 
   // Inventory CRUD
@@ -179,12 +187,13 @@ export default function IndexScreen() {
   const saveItem = useCallback(async () => {
     if (!itemForm.name.trim()) { Alert.alert("Error", "Item name is required."); return; }
     if (!itemForm.currentQuantity.trim()) { Alert.alert("Error", "Quantity is required."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     const newQty = parseInt(itemForm.currentQuantity) || 0;
     const newMin = parseInt(itemForm.minQuantity) || 0;
-    const data = { name: itemForm.name.trim(), currentQuantity: newQty, minQuantity: newMin, location: itemForm.location.trim(), barcode: itemForm.barcode.trim(), notes: itemForm.notes.trim(), siteId: siteId || "default" };
+    const data = { name: itemForm.name.trim(), currentQuantity: newQty, minQuantity: newMin, location: itemForm.location.trim(), barcode: itemForm.barcode.trim(), notes: itemForm.notes.trim(), siteId };
     try {
       const docRef = await addDoc(collection(db, "items"), data);
-      await logActivity({ siteId: siteId || "default", itemName: data.name, itemId: docRef.id, qty: newQty, min: newMin, prevState: "OK", nextState: getStockStatus(newQty, newMin), action: "added", itemType: "inventory" });
+      await logActivity({ siteId, itemName: data.name, itemId: docRef.id, qty: newQty, min: newMin, prevState: "OK", nextState: getStockStatus(newQty, newMin), action: "added", itemType: "inventory" });
       setShowInventoryModal(false);
     } catch { Alert.alert("Error", "Failed to save inventory item."); }
   }, [itemForm, siteId]);
@@ -199,6 +208,7 @@ export default function IndexScreen() {
     if (!disposingItem) return;
     if (!disposeForm.itemName.trim()) { Alert.alert("Error", "Item name is required."); return; }
     if (!disposeForm.disposedBy.trim()) { Alert.alert("Error", "Please enter who is disposing this item."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     setDisposeSaving(true);
     try {
       const disposedQty = parseInt(disposeForm.amount) || 1;
@@ -208,11 +218,11 @@ export default function IndexScreen() {
         quantity: disposedQty, vendor: disposeForm.vendor.trim(), approxValue: disposeForm.approxAmount.trim(),
         totalValue: disposeForm.multipleAmount.trim(), approxAge: disposeForm.approxAge.trim(),
         notes: disposeForm.description.trim(), disposedBy: disposeForm.disposedBy.trim(),
-        disposedByUid: uid || "", siteId: siteId || "default", reason: "other" as const,
+        disposedByUid: uid || "", siteId, reason: "other" as const,
         disposedAt: serverTimestamp(),
       });
       await updateDoc(doc(db, "items", disposingItem.id), { currentQuantity: newQty });
-      await logActivity({ siteId: siteId || "default", itemName: disposeForm.itemName.trim(), itemId: disposingItem.id, qty: newQty, min: disposingItem.minQuantity, prevState: getStockStatus(disposingItem.currentQuantity, disposingItem.minQuantity), nextState: getStockStatus(newQty, disposingItem.minQuantity), action: "disposed", itemType: "inventory" });
+      await logActivity({ siteId, itemName: disposeForm.itemName.trim(), itemId: disposingItem.id, qty: newQty, min: disposingItem.minQuantity, prevState: getStockStatus(disposingItem.currentQuantity, disposingItem.minQuantity), nextState: getStockStatus(newQty, disposingItem.minQuantity), action: "disposed", itemType: "inventory" });
       setShowDisposeModal(false);
       setDisposingItem(null);
       setDisposeSaving(false);
@@ -242,10 +252,12 @@ export default function IndexScreen() {
     try {
       const clean = String(data).trim();
 
-      const itemSnap = await getDocs(query(collection(db, "items"), where("barcode", "==", clean)));
+      if (!siteId) { Alert.alert("Error", "No site assigned to your account."); setScanBusy(false); setScanningEnabled(true); return; }
+
+      const itemSnap = await getDocs(query(collection(db, "items"), where("barcode", "==", clean), where("siteId", "==", siteId)));
       if (!itemSnap.empty) { setShowScanModal(false); router.push({ pathname: "/item/[id]", params: { id: itemSnap.docs[0].id } }); return; }
 
-      const tonerSnap = await getDocs(query(collection(db, "toners"), where("barcode", "==", clean)));
+      const tonerSnap = await getDocs(query(collection(db, "toners"), where("barcode", "==", clean), where("siteId", "==", siteId)));
       if (!tonerSnap.empty) { setShowScanModal(false); router.push({ pathname: "/toners/[id]" as any, params: { id: tonerSnap.docs[0].id } }); return; }
 
       const radioSnap = await getDocs(query(collection(db, "radios"), where("barcode", "==", clean), where("siteId", "==", siteId)));
@@ -276,6 +288,7 @@ export default function IndexScreen() {
 
   // CSV Import — Inventory
   const importInventoryFromCSV = async () => {
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
       if (result.canceled) return;
@@ -301,7 +314,7 @@ export default function IndexScreen() {
           const name = normalizeCell(row[iName] ?? "");
           if (!name) continue;
           const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-          batch.set(doc(db, "items", stableId), { name, currentQuantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0, minQuantity: parseInt(normalizeCell(row[iMinQty] ?? "")) || 0, location: normalizeCell(row[iLocation] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });
+          batch.set(doc(db, "items", stableId), { name, currentQuantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0, minQuantity: parseInt(normalizeCell(row[iMinQty] ?? "")) || 0, location: normalizeCell(row[iLocation] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: serverTimestamp() }, { merge: true });
           count++;
         }
         await batch.commit();
@@ -347,15 +360,15 @@ export default function IndexScreen() {
       </Pressable>
       <View style={inventoryStyles.rightControls}>
         <View style={{ alignItems: "flex-end" }}>
-          <Text style={{ color: item.currentQuantity <= item.minQuantity ? "#ef4444" : theme.text, fontWeight: "800", fontSize: 18 }}>{item.currentQuantity}</Text>
+          <Text style={{ color: item.currentQuantity <= item.minQuantity ? theme.danger : theme.text, fontWeight: "800", fontSize: 18 }}>{item.currentQuantity}</Text>
           <Text style={{ color: theme.mutedText, fontSize: 10 }}>STOCK</Text>
-          {item.currentQuantity <= item.minQuantity && <Text style={{ color: "#ef4444", fontSize: 10, fontWeight: "700" }}>LOW</Text>}
+          {item.currentQuantity <= item.minQuantity && <Text style={{ color: theme.danger, fontSize: 10, fontWeight: "700" }}>LOW</Text>}
         </View>
         <Pressable onPress={() => openDisposeModal(item)} hitSlop={8} style={{ padding: 6 }}>
-          <Ionicons name="archive-outline" size={20} color="#f97316" />
+          <Ionicons name="archive-outline" size={20} color={theme.warning} />
         </Pressable>
         <Pressable onPress={() => scheduleDelete(item)} hitSlop={8} style={{ padding: 6 }}>
-          <Ionicons name="trash-outline" size={20} color="#ef4444" />
+          <Ionicons name="trash-outline" size={20} color={theme.danger} />
         </Pressable>
       </View>
     </View>
@@ -406,12 +419,12 @@ export default function IndexScreen() {
                   <Text style={[inventoryStyles.statValue, { color: theme.text }]}>{summaryStats.totalItems}</Text>
                   <Text style={[inventoryStyles.statLabel, { color: theme.mutedText }]}>Items</Text>
                 </View>
-                <View style={[inventoryStyles.statCard, { backgroundColor: theme.card, borderColor: summaryStats.lowStock > 0 ? "#f9731640" : theme.border }]}>
-                  <Text style={[inventoryStyles.statValue, { color: summaryStats.lowStock > 0 ? "#f97316" : theme.text }]}>{summaryStats.lowStock}</Text>
+                <View style={[inventoryStyles.statCard, { backgroundColor: theme.card, borderColor: summaryStats.lowStock > 0 ? theme.warning + "40" : theme.border }]}>
+                  <Text style={[inventoryStyles.statValue, { color: summaryStats.lowStock > 0 ? theme.warning : theme.text }]}>{summaryStats.lowStock}</Text>
                   <Text style={[inventoryStyles.statLabel, { color: theme.mutedText }]}>Low</Text>
                 </View>
-                <View style={[inventoryStyles.statCard, { backgroundColor: theme.card, borderColor: summaryStats.outOfStock > 0 ? "#ef444440" : theme.border }]}>
-                  <Text style={[inventoryStyles.statValue, { color: summaryStats.outOfStock > 0 ? "#ef4444" : theme.text }]}>{summaryStats.outOfStock}</Text>
+                <View style={[inventoryStyles.statCard, { backgroundColor: theme.card, borderColor: summaryStats.outOfStock > 0 ? theme.danger + "40" : theme.border }]}>
+                  <Text style={[inventoryStyles.statValue, { color: summaryStats.outOfStock > 0 ? theme.danger : theme.text }]}>{summaryStats.outOfStock}</Text>
                   <Text style={[inventoryStyles.statLabel, { color: theme.mutedText }]}>Out</Text>
                 </View>
                 <View style={[inventoryStyles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -446,7 +459,7 @@ export default function IndexScreen() {
                     <Text style={[inventoryStyles.chipTextSmall, { color: sortMode === "stock" ? theme.background : theme.mutedText }]}>Stock</Text>
                   </Pressable>
                 </View>
-                <Pressable onPress={() => setShowLowOnly(!showLowOnly)} style={[inventoryStyles.chipSmall, { backgroundColor: showLowOnly ? "#ef4444" : "transparent", borderColor: showLowOnly ? "#ef4444" : theme.border }]}>
+                <Pressable onPress={() => setShowLowOnly(!showLowOnly)} style={[inventoryStyles.chipSmall, { backgroundColor: showLowOnly ? theme.danger : "transparent", borderColor: showLowOnly ? theme.danger : theme.border }]}>
                   <Text style={[inventoryStyles.chipTextSmall, { color: showLowOnly ? "#fff" : theme.mutedText }]}>Low Stock</Text>
                 </Pressable>
               </View>
@@ -569,7 +582,7 @@ export default function IndexScreen() {
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 80, textAlignVertical: "top" }]} placeholder="Reason for disposal, condition, etc." placeholderTextColor={theme.mutedText} multiline value={disposeForm.description} onChangeText={(v) => setDisposeForm((p) => ({ ...p, description: v }))} />
             <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Who is disposing it? *</Text>
             <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]} placeholder="Your name" placeholderTextColor={theme.mutedText} value={disposeForm.disposedBy} onChangeText={(v) => setDisposeForm((p) => ({ ...p, disposedBy: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "#ef4444", opacity: disposeSaving ? 0.6 : 1 }]} onPress={confirmDispose} disabled={disposeSaving}>
+            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.danger, opacity: disposeSaving ? 0.6 : 1 }]} onPress={confirmDispose} disabled={disposeSaving}>
               {disposeSaving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={[inventoryStyles.saveBtnText, { color: "#fff" }]}>Confirm Disposal</Text>}
             </Pressable>
             <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: theme.border, marginTop: 10 }]} onPress={() => { if (!disposeSaving) { setShowDisposeModal(false); setDisposingItem(null); } }} disabled={disposeSaving}>

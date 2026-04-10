@@ -35,6 +35,6 @@ export async function logActivity(params: {
       createdAt: serverTimestamp(),
     });
   } catch (err) {
-    console.error("Error logging activity:", err);
+    if (__DEV__) console.error("Error logging activity:", err);
   }
 }
