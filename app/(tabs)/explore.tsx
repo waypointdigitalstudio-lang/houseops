@@ -229,6 +229,7 @@ export default function DirectoryScreen() {
 
   const saveContact = useCallback(async () => {
     if (!contactForm.name.trim()) { Alert.alert("Error", "Name is required."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     setSavingContact(true);
     try {
       const data = {
@@ -239,7 +240,7 @@ export default function DirectoryScreen() {
         email: contactForm.email.trim(),
         category: contactForm.category,
         notes: contactForm.notes.trim(),
-        siteId: siteId || "default",
+        siteId,
       };
       if (editingContact) {
         await updateDoc(doc(db, "contacts", editingContact.id), data);
@@ -301,6 +302,7 @@ export default function DirectoryScreen() {
 
   const saveVendor = useCallback(async () => {
     if (!vendorForm.company.trim()) { Alert.alert("Error", "Company name is required."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     setSavingVendor(true);
     try {
       const data = {
@@ -312,7 +314,7 @@ export default function DirectoryScreen() {
         accountNumber: vendorForm.accountNumber.trim(),
         serviceType: vendorForm.serviceType.trim(),
         notes: vendorForm.notes.trim(),
-        siteId: siteId || "default",
+        siteId,
       };
       if (editingVendor) {
         await updateDoc(doc(db, "vendors", editingVendor.id), data);
@@ -370,6 +372,7 @@ export default function DirectoryScreen() {
 
   const saveLincoln = useCallback(async () => {
     if (!lincolnForm.name.trim()) { Alert.alert("Error", "Name is required."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     setSavingLincoln(true);
     try {
       const data = {
@@ -378,7 +381,7 @@ export default function DirectoryScreen() {
         phone: lincolnForm.phone.trim(),
         email: lincolnForm.email.trim(),
         notes: lincolnForm.notes.trim(),
-        siteId: siteId || "default",
+        siteId,
       };
       if (editingLincoln) {
         await updateDoc(doc(db, "lincolnTechs", editingLincoln.id), data);
@@ -1148,7 +1151,7 @@ export default function DirectoryScreen() {
               </Text>
             )}
             <Pressable
-              style={[styles.saveBtn, { backgroundColor: "#34C759", opacity: committingDir ? 0.6 : 1 }]}
+              style={[styles.saveBtn, { backgroundColor: theme.primary, opacity: committingDir ? 0.6 : 1 }]}
               onPress={commitDirectoryImport}
               disabled={committingDir}
             >
