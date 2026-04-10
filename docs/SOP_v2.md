@@ -1,6 +1,8 @@
 # Nexus — Standard Operating Procedures
 **Version 2.1.0 | Effective: March 2026 | Updated: April 2026**
 
+> **Demo Environment Available** — See [Section 2.4](#24-demo-environment) to try Nexus with pre-loaded sample data before going live.
+
 ---
 
 ## Table of Contents
@@ -57,6 +59,29 @@ After your site is created by an admin:
 2. Navigate to the **Admin** tab.
 3. Confirm your site name appears correctly in Site Management.
 4. Begin adding inventory, toners, printers, and contacts.
+
+### 2.4 Demo Environment
+
+The **Waypoint Demo** site is a fully pre-loaded sandbox environment for evaluating Nexus before going live. It contains realistic sample data across all modules — inventory, toners, printers, radios, contacts, vendors, and a 30-day activity log.
+
+**Demo credentials:**
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | `demo.admin@waypoint.app` | `Demo1234!` |
+| Staff | `demo.staff@waypoint.app` | `Demo1234!` |
+
+**What's included in the demo:**
+- 15 inventory items across multiple locations (some low/out of stock)
+- 8 toners for 4 printer models (including out-of-stock scenarios)
+- 4 printers with IP addresses and asset numbers
+- 6 radios (Motorola DP4400, Kenwood TK-3401)
+- 6 radio parts with low-stock alerts
+- 13 active stock alerts (inventory, toner, and radio part alerts)
+- ~30 activity log entries spread over 30 days (populated Analytics view)
+- 3 internal contacts + 3 vendors + 1 Tech Contact in the Directory
+
+> **Note:** The demo site is shared. Any changes made by demo users will be visible to anyone else using the demo credentials. The demo site is intended for exploration only — do not store real operational data under these accounts.
 
 ---
 

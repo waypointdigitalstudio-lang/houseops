@@ -1,123 +1,78 @@
 # Nexus
 
-**Version 2.1.0**
-A mobile operations management app built with React Native / Expo and Firebase.
-
-Nexus helps site teams track inventory, toners, printers, radios, asset disposals, and vendor contacts — all synced in real time across every device on a site.
-
----
-
-## Features
-
-- **Inventory** — Track items with quantity, minimum thresholds, location, and barcode. Low/out-of-stock items are flagged automatically with +/− quick-adjust buttons and a 5-second undo.
-- **Toners & Printers** — Manage toner stock by model and color. Link toners to printers for live stock badges on each printer card.
-- **Radios & Radio Parts** — Track radio units by serial number, channel, assigned user, and condition (Good / Fair / Poor / Out of Service). Manage spare parts with quantity and minimum threshold tracking. The Parts subtab is shown first.
-- **Barcode Scanner** — Built into the Inventory tab. Tap to scan any barcode; auto-navigates to the matching item or toner.
-- **Stock Alerts** — Real-time push notifications and an in-app alert feed when items go low, out, or are restocked. Badge on the tab icon shows a live count across inventory items, toners, and radio parts. Alerts can be dismissed per item; the badge re-appears if quantity changes after dismissal.
-- **Activity Log** — Full chronological history of every change across inventory items, toners, and radio parts at your site. Filterable by date range and action type, exportable as CSV.
-- **Asset Disposal** — Log disposals with quantity and reason; automatically subtracts from inventory stock. Partial disposals leave the remainder in inventory.
-- **Vendor Directory** — Store and search vendor, IT, maintenance, and facilities contacts. Tap the phone icon to dial or the mail icon to email directly from the app.
-- **CSV Import / Export** — Bulk import any section from a spreadsheet (flexible column name matching). Export to CSV via the native share sheet.
-- **Multi-site** — All data is scoped by `siteId`. Staff only see their own site; admins have full access.
-- **Admin Panel** — Manage users, elevate roles, and remove accounts. Removing a user deletes both their Firestore profile and their Firebase Auth credentials.
+A React Native / Expo mobile app for multi-site operations management. Built for organizations that need to track inventory, toners, printers, radios, asset disposals, and contacts — all in real time, across multiple locations.
 
 ---
 
 ## Tech Stack
 
-| | |
+| Layer | Technology |
 |---|---|
-| Framework | React Native + Expo SDK |
+| Framework | React Native via Expo SDK 54 |
 | Router | Expo Router (file-based) |
 | Language | TypeScript |
-| Database | Google Firestore (real-time `onSnapshot`) |
-| Auth | Firebase Authentication (email/password) |
+| Database | Google Firestore (real-time listeners) |
+| Auth | Firebase Auth (email/password) |
 | Cloud Functions | Firebase Functions v2 (Node.js ESM) |
 | Push Notifications | Expo Push Notification Service |
-| File I/O | expo-file-system + expo-sharing + expo-document-picker |
-| Camera | expo-camera (CameraView) |
 | Build / OTA | EAS Build + EAS Update |
 
 ---
 
-## Project Structure
+## Features
 
-```
-app/
-  (auth)/          # Login & sign-up screens
-  (tabs)/
-    _layout.tsx    # Tab bar config, low-stock badge, push token registration
-    index.tsx      # Inventory / Toners / Printers / Radios / Scanner
-    alerts.tsx     # Stock alerts + activity log
-    explore.tsx    # Vendor & contact directory
-    disposal.tsx   # Asset disposal records
-    settings.tsx   # User settings & sign-out
-    admin.tsx      # Admin: user & site management
-  item/[id].tsx    # Inventory item detail (stock adjust + edit)
-  toners/[id].tsx  # Toner detail (stock adjust + edit)
-  radiopart/[id].tsx  # Radio part detail (stock adjust + edit)
-constants/
-  branding.ts      # BRAND constant (app name, accent colors)
-  theme.ts         # useAppTheme hook (light/dark tokens)
-hooks/
-  useUserProfile.ts       # Auth state + Firestore user doc
-  useLowStockCount.ts     # Real-time low-stock badge count
-  usePushNotifications.ts # Expo push token registration
-functions/
-  index.js         # Cloud Functions: notifyLowStock, deleteAuthUserOnRemoval
-docs/
-  SOP_v2.md        # End-user Standard Operating Procedures
-  TECH_DOC_v2.md   # Technical reference
-firestore.rules    # Firestore security rules
-firestore.indexes.json
-```
+- **Inventory tracking** — items with quantity thresholds, barcode scan, CSV import/export
+- **Toners & Printers** — toner stock with printer linking and color-coded status
+- **Radios & Radio Parts** — radio unit roster + spare parts tracking with low-stock alerts
+- **Stock Alerts** — real-time alerts (Low / Out / Restock) with push notifications
+- **Activity Log** — chronological history of all stock changes, CSV export
+- **Analytics** — 7-day / 30-day / all-time breakdown with top consumed and most alerted charts
+- **Asset Disposal** — retirement records that auto-deduct from inventory
+- **Vendor Directory** — contacts, vendors, and tech contacts with tap-to-call/email
+- **Multi-site isolation** — all data scoped by `siteId`; staff only see their own site
+- **Admin panel** — user management, role elevation, site management
 
 ---
 
-## Tab Order
+## Demo Environment
 
-| Position | Tab | Description |
+A fully pre-loaded sandbox site is available for evaluating the app without affecting live data.
+
+| Role | Email | Password |
 |---|---|---|
-| 1 | Inventory | Items, toners, printers, radios, scanner |
-| 2 | Alerts | Stock alerts + activity log |
-| 3 | Directory | Vendor & contact directory |
-| 4 | Disposal | Asset disposal records |
-| 5 | Settings | User preferences & sign-out |
-| 6 | Admin | Admin only — user & site management |
+| Admin | `demo.admin@waypoint.app` | `Demo1234!` |
+| Staff | `demo.staff@waypoint.app` | `Demo1234!` |
+
+The demo site (**Waypoint Demo**) includes 15 inventory items, 8 toners, 4 printers, 6 radios, 6 radio parts, 13 active alerts, ~30 days of activity log history, and a populated directory.
 
 ---
 
-## Roles
+## Documentation
 
-| Action | Staff | Admin |
-|---|---|---|
-| View & edit own site's data | Yes | Yes |
-| Delete items | No | Yes |
-| Manage users | No | Yes |
-| Access other sites' data | No | Yes |
-
-New accounts are created as **Staff** by default. An admin must elevate the role via the Admin tab.
-
-> Use your **work email** when signing up. Contact an admin if you need elevated access.
+| Document | Description |
+|---|---|
+| [docs/SOP_v2.md](docs/SOP_v2.md) | User-facing standard operating procedures |
+| [docs/TECH_DOC_v2.md](docs/TECH_DOC_v2.md) | Technical architecture documentation |
 
 ---
 
-## Getting Started
+## Development
 
 ### Prerequisites
 
 - Node.js 18+
-- EAS CLI — `npm install -g eas-cli`
-- Firebase CLI — `npm install -g firebase-tools`
+- Expo CLI (`npm install -g expo-cli`)
+- EAS CLI (`npm install -g eas-cli`)
+- Firebase CLI (`npm install -g firebase-tools`)
 
-### Install
+### Install dependencies
 
 ```bash
 npm install
-cd functions && npm install && cd ..
+cd functions && npm install
 ```
 
-### Run locally
+### Start the dev server
 
 ```bash
 npx expo start
@@ -128,49 +83,46 @@ npx expo start
 ## Deployment
 
 ### OTA update (JS-only changes)
-```bash
-eas update --branch production --message "describe change"
-```
 
-> OTA updates only reach devices on the same `runtimeVersion`. Since the policy is `appVersion`, bumping the version in `app.json` requires a new native build before OTA updates reach users on that version.
+```bash
+eas update --branch production --message "describe what changed"
+```
 
 ### New native build
+
 ```bash
 eas build --platform all
-eas submit --platform ios
-eas submit --platform android
 ```
 
-### Firestore rules
+### Deploy Firestore rules / indexes / functions
+
 ```bash
 firebase deploy --only firestore:rules
-```
-
-### Cloud Functions
-```bash
+firebase deploy --only firestore:indexes
 firebase deploy --only functions
 ```
 
 ---
 
-## Firestore Indexes Required
+## Seed the Demo Site
 
-| Collection | Fields |
-|---|---|
-| `alertsLog` | `siteId` ASC + `createdAt` DESC |
+The demo site is seeded once using `scripts/seedDemo.js`. It requires a Firebase service account key:
 
-Firestore will throw an error with a direct creation link on first use if the index is missing.
+1. Go to **Firebase Console → Project Settings → Service Accounts**
+2. Click **Generate new private key** and save as `serviceAccount.json` in the project root (gitignored — never commit it)
+3. Run from the `functions/` folder:
+
+```bash
+cd functions
+node ../scripts/seedDemo.js
+```
+
+The script is idempotent — it exits early if `waypoint_demo` already exists.
 
 ---
 
-## Known Constraints
+## Bundle IDs
 
-- **CSV batch limit:** Firestore batches cap at 500 operations — CSV files with 500+ rows will fail without chunking.
-- **Runtime version:** Bumping `app.json` version creates a new OTA channel. Existing users need the new store build before receiving future OTA updates.
-
----
-
-## Documentation
-
-- [`docs/SOP_v2.md`](docs/SOP_v2.md) — End-user operating procedures
-- [`docs/TECH_DOC_v2.md`](docs/TECH_DOC_v2.md) — Technical reference (data models, security rules, Cloud Functions, deployment)
+- **iOS:** `com.houseops.nexus`
+- **Android:** `com.houseops.nexus`
+- **EAS Project:** `98f68256-6eef-4add-b46a-42f4564a8cb7`

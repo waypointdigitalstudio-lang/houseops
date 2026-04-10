@@ -88,6 +88,8 @@ houseops/
 ├── firebaseConfig.ts        # Firebase app init + db export
 ├── functions/
 │   └── index.js             # Cloud Functions (ESM)
+├── scripts/
+│   └── seedDemo.js          # One-time seed script: creates waypoint_demo site + demo accounts
 ├── docs/
 │   ├── SOP_v2.md
 │   └── TECH_DOC_v2.md
@@ -113,6 +115,44 @@ houseops/
 ### 4.2 Multi-Site Isolation
 
 Every document in every collection (except `users` and `sites`) carries a `siteId` field. All Firestore queries and security rules enforce `siteId` equality, so each site's data is fully isolated at the query and rules layer.
+
+The available sites are declared in `hooks/useSiteContext.ts` as the `SITES` array (used in the Admin panel site selector):
+
+```ts
+export const SITES = [
+  { id: "ballys_tiverton",  label: "Tiverton" },
+  { id: "ballys_lincoln",   label: "Lincoln" },
+  { id: "waypoint_demo",    label: "Waypoint Demo" },
+];
+```
+
+### 4.3 Demo Site (`waypoint_demo`)
+
+A pre-seeded sandbox site exists in the live Firebase project for demonstration and onboarding purposes.
+
+| Account | Email | Password | Role |
+|---|---|---|---|
+| Demo Admin | `demo.admin@waypoint.app` | `Demo1234!` | admin |
+| Demo Staff | `demo.staff@waypoint.app` | `Demo1234!` | staff |
+
+The site is seeded by `scripts/seedDemo.js` (run once from the `functions/` folder via `node ../scripts/seedDemo.js`). The script is idempotent — it checks for the existing `sites/waypoint_demo` document and exits early if already seeded.
+
+**Seeded data summary:**
+
+| Collection | Count |
+|---|---|
+| items | 15 |
+| toners | 8 |
+| printers | 4 |
+| radios | 6 |
+| radioParts | 6 |
+| alerts | 13 |
+| alertsLog | ~30 (spread over 30 days) |
+| contacts | 3 |
+| vendors | 3 |
+| lincolnTechs | 1 |
+
+> The demo site uses the same Firebase project and Firestore database as production sites. It is isolated only by `siteId`. Do not run the seed script more than once without first manually deleting the `waypoint_demo` site document.
 
 ---
 
@@ -336,6 +376,35 @@ Append-only. Written by Cloud Function and also by client-side `logActivity()` c
   createdAt: Timestamp;
   disabledAt?: Timestamp;
   disableReason?: string;
+}
+```
+
+### 5.14 `vendors/{vendorId}`
+
+```ts
+{
+  company: string;         // Primary display field — NOT `name`
+  phone?: string;
+  email?: string;
+  website?: string;
+  notes?: string;
+  siteId: string;
+  createdAt?: Timestamp;
+}
+```
+
+> **Important:** The vendor sort in `explore.tsx` uses `company` as the sort key. Always use `company` (not `name`) when writing vendor documents — a missing `company` field causes a TypeError in the sort and renders the Directory tab blank.
+
+### 5.15 `lincolnTechs/{techId}`
+
+```ts
+{
+  name: string;            // Company or tech name
+  phone?: string;
+  email?: string;
+  notes?: string;
+  siteId: string;
+  createdAt?: Timestamp;
 }
 ```
 
