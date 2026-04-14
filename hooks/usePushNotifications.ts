@@ -78,7 +78,7 @@ export function usePushNotifications(options?: PushOptions) {
           const siteId = siteIdRef.current ?? null;
 
           if (!user || !siteId) {
-            console.log("Push token NOT saved (missing user or siteId)");
+            if (__DEV__) console.log("Push token NOT saved (missing user or siteId)");
             return;
           }
 
@@ -97,7 +97,7 @@ export function usePushNotifications(options?: PushOptions) {
           );
         }
       } catch (e) {
-        console.log("usePushNotifications error:", e);
+        if (__DEV__) console.log("usePushNotifications error:", e);
       }
     }
 
@@ -106,14 +106,14 @@ export function usePushNotifications(options?: PushOptions) {
     // Handle notifications received while app is in foreground
     const notificationListener = Notifications.addNotificationReceivedListener(
       (notification) => {
-        console.log("📬 Notification received:", notification);
+        if (__DEV__) console.log("📬 Notification received:", notification);
       }
     );
 
     // Handle user tapping on notification
     const responseListener = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        console.log("👆 Notification tapped:", response);
+        if (__DEV__) console.log("👆 Notification tapped:", response);
         // You can add navigation logic here if needed
       }
     );

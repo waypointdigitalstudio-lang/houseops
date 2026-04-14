@@ -98,7 +98,7 @@ export function useLowStockCount(siteId?: string | null): number {
           }
         },
         (err) => {
-          console.error(`[useLowStockCount] Snapshot error (${name}):`, err);
+          if (__DEV__) console.error(`[useLowStockCount] Snapshot error (${name}):`, err);
           if (generationRef.current === thisGeneration) {
             counts[name] = 0;
             setCount(counts.items + counts.toners + counts.radioParts);

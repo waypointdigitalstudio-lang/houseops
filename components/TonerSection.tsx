@@ -131,7 +131,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
       const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Toner));
       setToners(list);
       setTonersLoading(false);
-    }, (err) => { console.error("toners onSnapshot error:", err); setTonersLoading(false); });
+    }, (err) => { if (__DEV__) console.error("toners onSnapshot error:", err); setTonersLoading(false); });
     return () => unsub();
   }, [siteId]);
 
@@ -141,7 +141,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     const unsub = onSnapshot(q, (snap) => {
       setPrinters(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Printer)));
       setPrintersLoading(false);
-    }, (err) => { console.error("printers onSnapshot error:", err); setPrintersLoading(false); });
+    }, (err) => { if (__DEV__) console.error("printers onSnapshot error:", err); setPrintersLoading(false); });
     return () => unsub();
   }, [siteId]);
 
@@ -151,7 +151,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as DataCardPrinter));
       setDatacardPrinters(list.sort((a, b) => a.name.localeCompare(b.name)));
-    }, (err) => console.error("datacardPrinters onSnapshot error:", err));
+    }, (err) => { if (__DEV__) console.error("datacardPrinters onSnapshot error:", err); });
     return () => unsub();
   }, [siteId]);
 
@@ -163,7 +163,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
         const data = d.data() as any;
         return { id: d.id, name: data.model || data.name || "Unknown", stock: data.quantity ?? data.stock ?? 0 } as TonerLink;
       }));
-    }, (err) => console.error("tonerLinkList onSnapshot error:", err));
+    }, (err) => { if (__DEV__) console.error("tonerLinkList onSnapshot error:", err); });
     return () => unsub();
   }, [showLinkModal, siteId]);
 
@@ -249,7 +249,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     if (undoTonerTimeoutRef.current) { clearTimeout(undoTonerTimeoutRef.current); undoTonerTimeoutRef.current = null; }
     const { toner, backup } = pendingTonerDelete;
     setHiddenTonerIds((prev) => { const next = new Set(prev); next.delete(toner.id); return next; });
-    try { await setDoc(doc(db, "toners", toner.id), backup, { merge: true }); } catch (e) { console.error("Error restoring toner:", e); }
+    try { await setDoc(doc(db, "toners", toner.id), backup, { merge: true }); } catch (e) { if (__DEV__) console.error("Error restoring toner:", e); }
     dismissTonerUndoBanner();
   }, [pendingTonerDelete, dismissTonerUndoBanner]);
 

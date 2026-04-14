@@ -84,7 +84,7 @@ export const DeviceRegistration = memo(function DeviceRegistration({
       onLabelSaved(cleanLabel);
       Alert.alert("Saved!", "This device is registered for alerts.");
     } catch (e) {
-      console.log("Register/update error:", e);
+      if (__DEV__) console.log("Register/update error:", e);
       Alert.alert("Save failed", "Could not save this device.");
     } finally {
       setSaving(false);
@@ -118,7 +118,7 @@ export const DeviceRegistration = memo(function DeviceRegistration({
                 "Device token cleared. Restart the app to get a new token."
               );
             } catch (e) {
-              console.log("Reset token error:", e);
+              if (__DEV__) console.log("Reset token error:", e);
               Alert.alert("Reset failed", "Could not reset device token.");
             } finally {
               setResetting(false);
@@ -159,7 +159,7 @@ export const DeviceRegistration = memo(function DeviceRegistration({
       <Pressable
         style={{
           marginTop: 12,
-          backgroundColor: theme.tint,
+          backgroundColor: theme.primary,
           paddingVertical: 10,
           borderRadius: 999,
           alignItems: "center",

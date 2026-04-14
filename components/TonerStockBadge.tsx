@@ -19,7 +19,7 @@ export default function TonerStockBadge({ tonerId, theme }: { tonerId: string; t
           setName(data.model || data.name || "Toner");
         }
       },
-      (err) => console.error("TonerStockBadge error:", err)
+      (err) => { if (__DEV__) console.error("TonerStockBadge error:", err); }
     );
     return () => unsub();
   }, [tonerId]);
