@@ -40,11 +40,14 @@
 ### 2.1 Creating an Account
 
 1. Open Nexus and tap **Sign Up**.
-2. Enter your **work email address** and choose a password.
-3. Tap **Create Account**.
-4. Your account will be created with the **Staff** role.
+2. Enter your **full name**.
+3. Enter the **username part** of your work email (e.g. `john.doe`) and select your **email domain** from the dropdown (`@ballystiverton.com` or `@ballyslincoln.com`).
+4. Choose a password (minimum 6 characters) and confirm it.
+5. Select your **site** (Tiverton or Lincoln).
+6. Tap **Create Account**.
+7. Your account will be created with the **Staff** role.
 
-> **Note:** Please use your work email when signing up. If you require Admin privileges, contact one of your site administrators to have your account elevated.
+> **Note:** Only approved company email domains are accepted at sign-up. If you require Admin privileges, contact one of your site administrators to have your account elevated.
 
 ### 2.2 Signing In
 

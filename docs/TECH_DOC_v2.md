@@ -498,6 +498,17 @@ Three separate functions share the same `handleLowStockUpdate` logic, each trigg
 - The root `_layout.tsx` gates navigation based on auth state from `useUserProfile`.
 - Admins can elevate users via the Admin tab, which updates `users/{uid}.role` to `"admin"`.
 
+**Email domain restriction:** The sign-up screen splits the email field into a free-text username input and a domain dropdown. Allowed domains are declared in `app/signup.tsx` as the `EMAIL_DOMAINS` constant:
+
+```ts
+const EMAIL_DOMAINS = [
+  "@ballystiverton.com",
+  "@ballyslincoln.com",
+];
+```
+
+To add a new domain, add it to this array. This is a client-side UI constraint only — it does not prevent API-level account creation with other domains.
+
 ### 8.2 useUserProfile Hook
 
 Returns:
