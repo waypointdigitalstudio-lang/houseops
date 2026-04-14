@@ -1,4 +1,5 @@
 // app/signup.tsx
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { createUserWithEmailAndPassword } from "firebase/auth";
@@ -12,13 +13,20 @@ import { auth, db } from "../firebaseConfig";
 import { useToast } from "../hooks/useToast";
 import { SITES } from "../hooks/useSiteContext";
 
+const EMAIL_DOMAINS = [
+  "@ballystiverton.com",
+  "@ballyslincoln.com",
+];
+
 export default function SignUpScreen() {
   const theme = useAppTheme();
   
   // Toast hook
   const { toast, fadeAnim, showToast, hideToast } = useToast();
   
-  const [email, setEmail] = useState("");
+  const [emailLocal, setEmailLocal] = useState("");
+  const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0]);
+  const [domainOpen, setDomainOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
@@ -26,12 +34,14 @@ export default function SignUpScreen() {
   const [busy, setBusy] = useState(false);
 
   const signUp = async () => {
+    const email = emailLocal.trim().toLowerCase() + emailDomain;
+
     // Validation
     if (!name.trim()) {
       showToast("Please enter your name", "error");
       return;
     }
-    if (!email.trim() || !password) {
+    if (!emailLocal.trim() || !password) {
       showToast("Please enter email and password", "error");
       return;
     }
@@ -138,22 +148,87 @@ export default function SignUpScreen() {
         onChangeText={setName}
       />
 
-      <TextInput
-        style={{
-          marginTop: 10,
-          borderWidth: 1,
-          borderColor: theme.border,
-          borderRadius: 12,
-          padding: 12,
-          color: theme.text,
-        }}
-        placeholder="Email"
-        placeholderTextColor={theme.mutedText}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
+      {/* Email split input */}
+      <View style={{ marginTop: 10 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput
+            style={{
+              flex: 1,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 12,
+              padding: 12,
+              color: theme.text,
+            }}
+            placeholder="username"
+            placeholderTextColor={theme.mutedText}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            value={emailLocal}
+            onChangeText={(v) => { setEmailLocal(v); setDomainOpen(false); }}
+          />
+          <Pressable
+            onPress={() => setDomainOpen((o) => !o)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              borderWidth: 1,
+              borderColor: domainOpen ? theme.primary : theme.border,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 12,
+              backgroundColor: theme.card,
+            }}
+          >
+            <Text style={{ color: theme.text, fontWeight: "700", fontSize: 13 }}>
+              {emailDomain}
+            </Text>
+            <Ionicons
+              name={domainOpen ? "chevron-up" : "chevron-down"}
+              size={14}
+              color={theme.mutedText}
+            />
+          </Pressable>
+        </View>
+
+        {/* Domain dropdown */}
+        {domainOpen && (
+          <View
+            style={{
+              marginTop: 4,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 12,
+              backgroundColor: theme.card,
+              overflow: "hidden",
+            }}
+          >
+            {EMAIL_DOMAINS.map((domain) => (
+              <Pressable
+                key={domain}
+                onPress={() => { setEmailDomain(domain); setDomainOpen(false); }}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  backgroundColor: domain === emailDomain ? theme.primary + "22" : "transparent",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text style={{ color: theme.text, fontWeight: domain === emailDomain ? "800" : "500" }}>
+                  {domain}
+                </Text>
+                {domain === emailDomain && (
+                  <Ionicons name="checkmark" size={16} color={theme.primary} />
+                )}
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
 
       <TextInput
         style={{
