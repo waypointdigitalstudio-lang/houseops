@@ -268,7 +268,7 @@ export default function SignUpScreen() {
           Select Your Site
         </Text>
         <View style={{ flexDirection: "row", gap: 10 }}>
-          {SITES.map((site) => (
+          {SITES.filter((s) => s.id !== "waypoint_demo").map((site) => (
             <Pressable
               key={site.id}
               onPress={() => setSelectedSite(site.id)}
