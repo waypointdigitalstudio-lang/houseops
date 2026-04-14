@@ -6,7 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { DeviceRegistration } from "@/components/DeviceRegistration";
 import { Toast } from "@/components/Toast";
@@ -63,6 +63,14 @@ export default function SettingsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Display name
+  const [displayName, setDisplayName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    if (profile?.name !== undefined) setDisplayName(profile.name);
+  }, [profile?.name]);
 
   // Load notification preferences
   useEffect(() => {
@@ -228,6 +236,23 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleSaveName = async () => {
+    if (!uid) return;
+    setSavingName(true);
+    try {
+      await updateDoc(doc(db, "users", uid), {
+        name: displayName.trim(),
+        updatedAt: serverTimestamp(),
+      });
+      showToast("✓ Name saved", "success");
+    } catch (e) {
+      if (__DEV__) console.log("Save name error:", e);
+      showToast("Failed to save name", "error");
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const Card = ({
     title,
     subtitle,
@@ -373,6 +398,42 @@ export default function SettingsScreen() {
           Settings
         </Text>
         <Text style={{ color: theme.mutedText, marginTop: 6 }}>{BRAND.appName}</Text>
+
+        {/* Profile */}
+        <Card title="Profile" subtitle="Your display name appears in the admin user list">
+          <TextInput
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder="Enter your name"
+            placeholderTextColor={theme.mutedText}
+            style={{
+              color: theme.text,
+              backgroundColor: theme.background,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              fontSize: 15,
+            }}
+          />
+          <Pressable
+            onPress={handleSaveName}
+            disabled={savingName || !uid}
+            style={{
+              marginTop: 10,
+              backgroundColor: theme.primary,
+              paddingVertical: 10,
+              borderRadius: 999,
+              alignItems: "center",
+              opacity: savingName || !uid ? 0.6 : 1,
+            }}
+          >
+            <Text style={{ color: "#000", fontWeight: "900" }}>
+              {savingName ? "Saving…" : "Save Name"}
+            </Text>
+          </Pressable>
+        </Card>
 
         {/* Appearance */}
         <Card title="Appearance" subtitle="Customize the look and feel">

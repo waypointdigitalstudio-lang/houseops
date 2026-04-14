@@ -376,14 +376,16 @@ export default function AdminScreen() {
                 })}
               >
                 <Text style={{ color: theme.text, fontWeight: "900" }}>
-                  {user.email || user.name || "No email"}
+                  {user.name || user.email || "No name"}
                 </Text>
+                {user.name ? (
+                  <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>
+                    {user.email}
+                  </Text>
+                ) : null}
                 <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}>
                   Site: {SITES.find((s) => s.id === user.siteId)?.label ?? user.siteId ?? "Unassigned"}{" "}
                   • Role: {user.role || "staff"}
-                </Text>
-                <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 2 }}>
-                  UID: {user.uid}
                 </Text>
               </Pressable>
             ))}
@@ -580,17 +582,19 @@ export default function AdminScreen() {
             {userToManage && (
               <>
                 <Text style={{ color: theme.text, fontWeight: "900", fontSize: 18 }}>
-                  {userToManage.email || userToManage.name || "User"}
+                  {userToManage.name || userToManage.email || "User"}
                 </Text>
+                {userToManage.name ? (
+                  <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>
+                    {userToManage.email}
+                  </Text>
+                ) : null}
                 <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 4 }}>
                   Site:{" "}
                   {SITES.find((s) => s.id === userToManage.siteId)?.label ??
                     userToManage.siteId ??
                     "Unassigned"}{" "}
                   • Role: {userToManage.role || "staff"}
-                </Text>
-                <Text style={{ color: theme.mutedText, fontSize: 10, marginTop: 2 }}>
-                  UID: {userToManage.uid}
                 </Text>
 
                 {/* Change Role */}

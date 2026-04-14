@@ -13,6 +13,7 @@ import { auth, db } from "../firebaseConfig";
 export type UserProfile = {
   siteId: string;
   role?: "admin" | "staff";
+  name?: string;
   createdAt?: any;
   updatedAt?: any;
 };
@@ -69,6 +70,7 @@ export function useUserProfile(): Result {
             const resolved: UserProfile = {
               siteId: (data.siteId as string) ?? "",
               role: (data.role as any) || "staff",
+              name: data.name as string | undefined,
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
             };
