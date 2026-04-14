@@ -68,8 +68,12 @@ export default function SettingsScreen() {
   const [displayName, setDisplayName] = useState("");
   const [savingName, setSavingName] = useState(false);
 
+  const nameInitialized = React.useRef(false);
   useEffect(() => {
-    if (profile?.name !== undefined) setDisplayName(profile.name);
+    if (!nameInitialized.current && profile?.name !== undefined) {
+      setDisplayName(profile.name);
+      nameInitialized.current = true;
+    }
   }, [profile?.name]);
 
   // Load notification preferences
