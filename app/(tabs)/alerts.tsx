@@ -499,7 +499,7 @@ export default function AlertsScreen() {
     }
 
     function onErr(source: string, err: any) {
-      console.error(`[alerts] ${source}:`, err);
+      if (__DEV__) console.error(`[alerts] ${source}:`, err);
       loaded.add(source);
       if (alertGenRef.current === thisGeneration && loaded.size >= 3) setLoadingAlerts(false);
     }
@@ -578,7 +578,7 @@ export default function AlertsScreen() {
         setLoadingActivities(false);
       },
       (err) => {
-        console.error("[AlertsScreen] Error fetching activities:", err);
+        if (__DEV__) console.error("[AlertsScreen] Error fetching activities:", err);
         setLoadingActivities(false);
       }
     );
@@ -634,7 +634,7 @@ export default function AlertsScreen() {
         setLoadingAnalytics(false);
       },
       (err) => {
-        console.error("[AlertsScreen] Error fetching analytics:", err);
+        if (__DEV__) console.error("[AlertsScreen] Error fetching analytics:", err);
         setLoadingAnalytics(false);
       }
     );
@@ -661,7 +661,7 @@ export default function AlertsScreen() {
         userDismissedAlertQuantity: item.currentQuantity,
       });
     } catch (err: any) {
-      console.error(`[AlertsScreen] Error dismissing "${item.itemName}":`, err);
+      if (__DEV__) console.error(`[AlertsScreen] Error dismissing "${item.itemName}":`, err);
       Alert.alert(
         "Dismiss Failed",
         `Could not dismiss "${item.itemName}". ${err?.message ?? "Unknown error"}. Please try again.`
@@ -794,7 +794,7 @@ export default function AlertsScreen() {
         });
       }
     } catch (err) {
-      console.error("Reorder list export error:", err);
+      if (__DEV__) console.error("Reorder list export error:", err);
     }
   }, [visibleAlerts, siteId]);
 
@@ -827,7 +827,7 @@ export default function AlertsScreen() {
         });
       }
     } catch (err) {
-      console.error("CSV export error:", err);
+      if (__DEV__) console.error("CSV export error:", err);
     }
   }, [filteredActivities]);
 

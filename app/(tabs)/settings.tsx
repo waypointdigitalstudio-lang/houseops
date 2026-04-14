@@ -174,7 +174,7 @@ export default function SettingsScreen() {
           }
         }
       } catch (e) {
-        console.log("Settings boot error:", e);
+        if (__DEV__) console.log("Settings boot error:", e);
       } finally {
         if (alive) setLoading(false);
       }
@@ -197,7 +197,7 @@ export default function SettingsScreen() {
         });
         showToast("✓ Preferences saved", "success");
       } catch (e) {
-        console.log("Prefs save error:", e);
+        if (__DEV__) console.log("Prefs save error:", e);
         showToast("Failed to save preferences", "error");
       }
     }
@@ -223,7 +223,7 @@ export default function SettingsScreen() {
       );
       showToast(`✓ Site changed to ${nextSiteId}`, "success");
     } catch (e) {
-      console.log("Switch site failed:", e);
+      if (__DEV__) console.log("Switch site failed:", e);
       showToast("Failed to change site", "error");
     } finally {
       setSaving(false);
@@ -241,7 +241,7 @@ export default function SettingsScreen() {
             await signOut(auth);
             router.replace("/login");
           } catch (e) {
-            console.log("Logout error:", e);
+            if (__DEV__) console.log("Logout error:", e);
             showToast("Logout failed", "error");
           }
         },
@@ -272,7 +272,7 @@ export default function SettingsScreen() {
       await exportInventoryToCSV(siteId);
       showToast("✓ Inventory exported", "success");
     } catch (error) {
-      console.error("Export error:", error);
+      if (__DEV__) console.error("Export error:", error);
       showToast("Failed to export inventory", "error");
     } finally {
       setExporting(false);

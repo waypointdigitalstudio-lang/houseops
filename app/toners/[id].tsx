@@ -88,7 +88,7 @@ export default function TonerDetail() {
         setLoading(false);
       },
       (err) => {
-        console.error("Error loading toner:", err);
+        if (__DEV__) console.error("Error loading toner:", err);
         setLoading(false);
       }
     );

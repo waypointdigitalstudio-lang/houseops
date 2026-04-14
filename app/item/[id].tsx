@@ -118,7 +118,7 @@ export default function ItemDetail() {
             location: d.location || "",
             barcode: d.barcode || "",
             notes: d.notes || "",
-            siteId: d.siteId || mySiteId,
+            siteId: d.siteId || mySiteId || "",
             isLowStock: d.isLowStock ?? undefined,
             lowStockAt: d.lowStockAt ?? null,
           };
@@ -127,14 +127,14 @@ export default function ItemDetail() {
           setEditLocation(loaded.location || "");
           setEditBarcode(loaded.barcode || "");
           setEditNotes(loaded.notes || "");
-          setEditSiteId(loaded.siteId || mySiteId || "");
+          setEditSiteId(loaded.siteId || "");
         } else {
           setItem(null);
         }
         setLoading(false);
       },
       (err) => {
-        console.error("Error loading item detail:", err);
+        if (__DEV__) console.error("Error loading item detail:", err);
         setError("Failed to load item.");
         setLoading(false);
       }
@@ -171,7 +171,7 @@ export default function ItemDetail() {
         setLoadingMovements(false);
       },
       (err) => {
-        console.error("Error loading movements:", err);
+        if (__DEV__) console.error("Error loading movements:", err);
         setLoadingMovements(false);
       }
     );
@@ -196,7 +196,7 @@ export default function ItemDetail() {
         setLoadingAlertHistory(false);
       },
       (err) => {
-        console.error("Error loading alert history:", err);
+        if (__DEV__) console.error("Error loading alert history:", err);
         setLoadingAlertHistory(false);
       }
     );
@@ -224,7 +224,7 @@ export default function ItemDetail() {
         setSavingMeta(false);
       }, 400);
     } catch (err) {
-      console.error("Error saving item metadata:", err);
+      if (__DEV__) console.error("Error saving item metadata:", err);
       showToast("Failed to save changes", "error");
       setSavingMeta(false);
     }
@@ -233,7 +233,7 @@ export default function ItemDetail() {
   const handleMoveSite = () => {
     if (!item) return;
 
-    const current = item.siteId || mySiteId;
+    const current = item.siteId || "";
 
     Alert.alert(
       "Move item to another site?",
@@ -258,7 +258,7 @@ export default function ItemDetail() {
                 router.replace("/(tabs)");
               }, 1500);
             } catch (e) {
-              console.log("Move site failed:", e);
+              if (__DEV__) console.log("Move site failed:", e);
               showToast("Failed to move item", "error");
             }
           },
@@ -290,7 +290,7 @@ export default function ItemDetail() {
                 router.replace("/(tabs)");
               }, 1000);
             } catch (err) {
-              console.error("Delete item failed:", err);
+              if (__DEV__) console.error("Delete item failed:", err);
               showToast("Failed to delete item", "error");
               setDeletingItem(false);
             }
@@ -332,7 +332,7 @@ export default function ItemDetail() {
       await addDoc(collection(db, "disposals"), {
         itemId: item.id,
         itemName: item.name,
-        siteId: item.siteId || mySiteId,
+        siteId: item.siteId || "",
         reason: disposalReason,
         notes: disposalNotes.trim() || null,
         disposedBy: userName,
@@ -355,14 +355,14 @@ export default function ItemDetail() {
         newQuantity: newQuantity,
         by: userName,
         note: `Disposed: ${disposalReason}${disposalNotes ? ` - ${disposalNotes}` : ""}`,
-        siteId: item.siteId || mySiteId,
+        siteId: item.siteId || "",
         createdAt: serverTimestamp(),
       });
 
       setShowDisposalDialog(false);
       showToast(`✓ ${qty} item(s) disposed`, "success");
     } catch (err) {
-      console.error("Disposal failed:", err);
+      if (__DEV__) console.error("Disposal failed:", err);
       showToast("Failed to dispose item", "error");
     } finally {
       setDisposingItem(false);
@@ -414,7 +414,7 @@ export default function ItemDetail() {
         by,
         note: note || null,
         isLowStock,
-        siteId: item.siteId || mySiteId,
+        siteId: item.siteId || "",
         createdAt: serverTimestamp(),
       });
 
@@ -429,7 +429,7 @@ export default function ItemDetail() {
       setMovementBy("");
       setMovementNote("");
     } catch (err) {
-      console.error("Error applying quantity change:", err);
+      if (__DEV__) console.error("Error applying quantity change:", err);
       showToast("Failed to update stock", "error");
     } finally {
       setSavingMovement(false);

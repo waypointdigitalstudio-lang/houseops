@@ -134,12 +134,13 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
 
   const saveRadio = useCallback(async () => {
     if (!radioForm.model.trim()) { Alert.alert("Error", "Model is required."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     const data = {
       model: radioForm.model.trim(), serialNumber: radioForm.serialNumber.trim(),
       channel: radioForm.channel.trim(), assignedTo: radioForm.assignedTo.trim(),
       location: radioForm.location.trim(), condition: radioForm.condition,
       barcode: radioForm.barcode.trim(), notes: radioForm.notes.trim(),
-      siteId: siteId || "default",
+      siteId,
     };
     try {
       if (editingRadio) { await updateDoc(doc(db, "radios", editingRadio.id), data); }
@@ -167,12 +168,13 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
 
   const saveRadioPart = useCallback(async () => {
     if (!radioPartForm.name.trim()) { Alert.alert("Error", "Part name is required."); return; }
+    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
     const data = {
       name: radioPartForm.name.trim(), compatibleModel: radioPartForm.compatibleModel.trim(),
       quantity: parseInt(radioPartForm.quantity) || 0,
       minQuantity: parseInt(radioPartForm.minQuantity) || 0,
       location: radioPartForm.location.trim(), barcode: radioPartForm.barcode.trim(),
-      notes: radioPartForm.notes.trim(), siteId: siteId || "default",
+      notes: radioPartForm.notes.trim(), siteId,
     };
     try {
       if (editingRadioPart) { await updateDoc(doc(db, "radioParts", editingRadioPart.id), data); }
@@ -192,6 +194,7 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
       if (result.canceled) return;
+      if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
       setImportingRadios(true);
       const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
       const rows = parseCSV(content);
@@ -219,7 +222,7 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
           const condition = VALID_CONDITIONS.find((c) => c.toLowerCase() === rawCondition.toLowerCase()) || "Good";
           const docRef = doc(db, "radios", `${siteId}_${model}_${normalizeCell(row[iSerial] ?? count.toString())}`
             .toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
-          batch.set(docRef, { model, serialNumber: normalizeCell(row[iSerial] ?? ""), channel: normalizeCell(row[iChannel] ?? ""), assignedTo: normalizeCell(row[iAssigned] ?? ""), location: normalizeCell(row[iLocation] ?? ""), condition, notes: normalizeCell(row[iNotes] ?? ""), siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });
+          batch.set(docRef, { model, serialNumber: normalizeCell(row[iSerial] ?? ""), channel: normalizeCell(row[iChannel] ?? ""), assignedTo: normalizeCell(row[iAssigned] ?? ""), location: normalizeCell(row[iLocation] ?? ""), condition, notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
           count++;
         }
         await batch.commit();
@@ -236,6 +239,7 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
       if (result.canceled) return;
+      if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
       setImportingRadioParts(true);
       const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
       const rows = parseCSV(content);
@@ -258,7 +262,7 @@ const RadioSection = forwardRef<RadioSectionRef, RadioSectionProps>(({ siteId },
           const name = normalizeCell(row[iName] ?? "");
           if (!name) continue;
           const docRef = doc(db, "radioParts", `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100));
-          batch.set(docRef, { name, compatibleModel: normalizeCell(row[iCompat] ?? ""), quantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0, minQuantity: parseInt(normalizeCell(row[iMin] ?? "")) || 0, location: normalizeCell(row[iLocation] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId: siteId || "default", importedAt: new Date().toISOString() }, { merge: true });
+          batch.set(docRef, { name, compatibleModel: normalizeCell(row[iCompat] ?? ""), quantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0, minQuantity: parseInt(normalizeCell(row[iMin] ?? "")) || 0, location: normalizeCell(row[iLocation] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
           count++;
         }
         await batch.commit();

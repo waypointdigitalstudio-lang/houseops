@@ -152,7 +152,7 @@ export default function DirectoryScreen() {
         docs.sort((a, b) => a.name.localeCompare(b.name));
         setContacts(docs);
       },
-      (err) => console.error("Contacts listener error:", err)
+      (err) => { if (__DEV__) console.error("Contacts listener error:", err); }
     );
     return unsub;
   }, [siteId]);
@@ -166,7 +166,7 @@ export default function DirectoryScreen() {
         docs.sort((a, b) => (a.company ?? "").localeCompare(b.company ?? ""));
         setVendors(docs);
       },
-      (err) => console.error("Vendors listener error:", err)
+      (err) => { if (__DEV__) console.error("Vendors listener error:", err); }
     );
     return unsub;
   }, [siteId]);
@@ -180,7 +180,7 @@ export default function DirectoryScreen() {
         docs.sort((a, b) => a.name.localeCompare(b.name));
         setLincolnTechs(docs);
       },
-      (err) => console.error("LincolnTechs listener error:", err)
+      (err) => { if (__DEV__) console.error("LincolnTechs listener error:", err); }
     );
     return unsub;
   }, [siteId]);

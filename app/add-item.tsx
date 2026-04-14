@@ -102,7 +102,7 @@ export default function AddItemScreen() {
       Alert.alert("Added!", "Item created in inventory.");
       router.replace(`/item/${docRef.id}`);
     } catch (e) {
-      console.error("Add item failed:", e);
+      if (__DEV__) console.error("Add item failed:", e);
       Alert.alert("Save failed", "Could not create the item. Try again.");
     } finally {
       setSaving(false);

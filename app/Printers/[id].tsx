@@ -101,7 +101,7 @@ export default function PrinterDetail() {
             });
 
             // 2. Log the movement (Optional: you can add a movements subcollection to toners too)
-            console.log(`Toner ${toner.model} deducted by ${userName}`);
+            if (__DEV__) console.log(`Toner ${toner.model} deducted by ${userName}`);
             
             Alert.alert("Success", "Toner deducted from inventory.");
           } catch (e) {

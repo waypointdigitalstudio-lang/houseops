@@ -74,7 +74,7 @@ export default function NewItemScreen() {
       // go to the item page you already have
       router.replace(`/item/${docRef.id}`);
     } catch (e) {
-      console.error("Create item failed:", e);
+      if (__DEV__) console.error("Create item failed:", e);
       Alert.alert("Save failed", "Could not create the item.");
     } finally {
       setSaving(false);

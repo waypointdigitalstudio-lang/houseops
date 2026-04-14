@@ -86,7 +86,7 @@ export default function RadioPartDetail() {
         setLoading(false);
       },
       (err) => {
-        console.error("Error loading radio part:", err);
+        if (__DEV__) console.error("Error loading radio part:", err);
         setLoading(false);
       }
     );
