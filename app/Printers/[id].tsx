@@ -62,14 +62,18 @@ export default function PrinterDetail() {
 
   // Automatically find toners linked to this printer name
   useEffect(() => {
-    if (!printer?.name) return;
-    const q = query(collection(db, "toners"), where("printer", "==", printer.name));
+    if (!printer?.name || !printer?.siteId) return;
+    const q = query(
+      collection(db, "toners"),
+      where("siteId", "==", printer.siteId),
+      where("printer", "==", printer.name),
+    );
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Toner));
       setLinkedToners(list);
     });
     return () => unsub();
-  }, [printer?.name]);
+  }, [printer?.name, printer?.siteId]);
 
   const openWebUI = () => {
     if (printer?.ipAddress) {

@@ -180,10 +180,11 @@ export default function ItemDetail() {
   }, [id]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !mySiteId) return;
 
     const q = query(
       collection(db, "alertsLog"),
+      where("siteId", "==", mySiteId),
       where("itemId", "==", String(id)),
       orderBy("createdAt", "desc"),
       limit(50)
@@ -202,7 +203,7 @@ export default function ItemDetail() {
     );
 
     return () => unsub();
-  }, [id]);
+  }, [id, mySiteId]);
 
   const handleSaveMeta = async () => {
     if (!item) return;

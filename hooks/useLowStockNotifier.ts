@@ -33,7 +33,7 @@ export function useLowStockItems() {
         setLoading(false);
       },
       (err) => {
-        console.error("Low stock listener error:", err);
+        if (__DEV__) console.error("Low stock listener error:", err);
         setLoading(false);
       }
     );
