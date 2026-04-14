@@ -11,7 +11,7 @@ import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from "rea
 import { DeviceRegistration } from "@/components/DeviceRegistration";
 import { Toast } from "@/components/Toast";
 import { BRAND } from "../../constants/branding";
-import { useAppTheme } from "../../constants/theme";
+import { AppColors, useAppTheme } from "../../constants/theme";
 import { auth, db } from "../../firebaseConfig";
 import { usePushNotifications } from "../../hooks/usePushNotifications";
 import { useToast } from "../../hooks/useToast";
@@ -37,6 +37,45 @@ const STORAGE_NOTIF_VIBRATE_KEY = "nexus_notif_vibrate_v1";
 
 type Prefs = { low: boolean; out: boolean; restock: boolean };
 const DEFAULT_PREFS: Prefs = { low: true, out: true, restock: true };
+
+function Card({ title, subtitle, children, theme }: { title: string; subtitle?: string; children?: React.ReactNode; theme: AppColors }) {
+  return (
+    <View style={{ marginTop: 14, backgroundColor: theme.card, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: theme.border }}>
+      <Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>{title}</Text>
+      {!!subtitle && <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 6 }}>{subtitle}</Text>}
+      {!!children && <View style={{ marginTop: 12 }}>{children}</View>}
+    </View>
+  );
+}
+
+function Pill({ label, selected, onPress, theme, saving }: { label: string; selected: boolean; onPress: () => void; theme: AppColors; saving: boolean }) {
+  return (
+    <Pressable onPress={onPress} disabled={saving} style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: selected ? theme.tint : theme.border, backgroundColor: selected ? theme.card : "transparent", alignItems: "center", opacity: saving ? 0.6 : 1 }}>
+      <Text style={{ color: theme.text, fontWeight: selected ? "800" : "700" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function PrefRow({ title, subtitle, value, onChange, theme, isDark }: { title: string; subtitle: string; value: boolean; onChange: (v: boolean) => void; theme: AppColors; isDark: boolean }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.border }}>
+      <View style={{ flex: 1, paddingRight: 10 }}>
+        <Text style={{ color: theme.text, fontSize: 14, fontWeight: "800" }}>{title}</Text>
+        <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>{subtitle}</Text>
+      </View>
+      <Switch value={value} onValueChange={onChange} trackColor={{ false: theme.border, true: theme.tint }} thumbColor={isDark ? "#f9fafb" : "#ffffff"} />
+    </View>
+  );
+}
+
+function InfoRow({ label, value, theme }: { label: string; value: string; theme: AppColors }) {
+  return (
+    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+      <Text style={{ color: theme.mutedText, fontSize: 13 }}>{label}</Text>
+      <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>{value}</Text>
+    </View>
+  );
+}
 
 export default function SettingsScreen() {
   const theme = useAppTheme();
@@ -257,122 +296,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const Card = ({
-    title,
-    subtitle,
-    children,
-  }: {
-    title: string;
-    subtitle?: string;
-    children?: React.ReactNode;
-  }) => (
-    <View
-      style={{
-        marginTop: 14,
-        backgroundColor: theme.card,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: theme.border,
-      }}
-    >
-      <Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>
-        {title}
-      </Text>
-      {!!subtitle && (
-        <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 6 }}>
-          {subtitle}
-        </Text>
-      )}
-      {!!children && <View style={{ marginTop: 12 }}>{children}</View>}
-    </View>
-  );
-
-  const Pill = ({
-    label: pillLabel,
-    selected,
-    onPress,
-  }: {
-    label: string;
-    selected: boolean;
-    onPress: () => void;
-  }) => (
-    <Pressable
-      onPress={onPress}
-      style={{
-        flex: 1,
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: selected ? theme.tint : theme.border,
-        backgroundColor: selected ? theme.card : "transparent",
-        alignItems: "center",
-        opacity: saving ? 0.6 : 1,
-      }}
-      disabled={saving}
-    >
-      <Text style={{ color: theme.text, fontWeight: selected ? "800" : "700" }}>
-        {pillLabel}
-      </Text>
-    </Pressable>
-  );
-
-  const PrefRow = ({
-    title,
-    subtitle,
-    value,
-    onChange,
-  }: {
-    title: string;
-    subtitle: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
-  }) => (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingVertical: 12,
-        borderTopWidth: 1,
-        borderTopColor: theme.border,
-      }}
-    >
-      <View style={{ flex: 1, paddingRight: 10 }}>
-        <Text style={{ color: theme.text, fontSize: 14, fontWeight: "800" }}>
-          {title}
-        </Text>
-        <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>
-          {subtitle}
-        </Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ false: theme.border, true: theme.tint }}
-        thumbColor={isDark ? "#f9fafb" : "#ffffff"}
-      />
-    </View>
-  );
-
-  const InfoRow = ({ label, value }: { label: string; value: string }) => (
-    <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        paddingVertical: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.border,
-      }}
-    >
-      <Text style={{ color: theme.mutedText, fontSize: 13 }}>{label}</Text>
-      <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
-        {value}
-      </Text>
-    </View>
-  );
-
   if (loading || profileLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.background, padding: 16 }}>
@@ -404,7 +327,7 @@ export default function SettingsScreen() {
         <Text style={{ color: theme.mutedText, marginTop: 6 }}>{BRAND.appName}</Text>
 
         {/* Profile */}
-        <Card title="Profile" subtitle="Your display name appears in the admin user list">
+        <Card title="Profile" subtitle="Your display name appears in the admin user list" theme={theme}>
           <TextInput
             value={displayName}
             onChangeText={setDisplayName}
@@ -440,41 +363,21 @@ export default function SettingsScreen() {
         </Card>
 
         {/* Appearance */}
-        <Card title="Appearance" subtitle="Customize the look and feel">
+        <Card title="Appearance" subtitle="Customize the look and feel" theme={theme}>
           <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700", marginBottom: 8 }}>
             Theme
           </Text>
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pill
-              label="Light"
-              selected={preference === "light"}
-              onPress={() => {
-                setPreference("light");
-                showToast("✓ Light mode enabled", "success");
-              }}
-            />
-            <Pill
-              label="Dark"
-              selected={preference === "dark"}
-              onPress={() => {
-                setPreference("dark");
-                showToast("✓ Dark mode enabled", "success");
-              }}
-            />
-            <Pill
-              label="System"
-              selected={preference === "system"}
-              onPress={() => {
-                setPreference("system");
-                showToast("✓ System theme enabled", "success");
-              }}
-            />
+            <Pill label="Light" selected={preference === "light"} onPress={() => { setPreference("light"); showToast("✓ Light mode enabled", "success"); }} theme={theme} saving={saving} />
+            <Pill label="Dark" selected={preference === "dark"} onPress={() => { setPreference("dark"); showToast("✓ Dark mode enabled", "success"); }} theme={theme} saving={saving} />
+            <Pill label="System" selected={preference === "system"} onPress={() => { setPreference("system"); showToast("✓ System theme enabled", "success"); }} theme={theme} saving={saving} />
           </View>
         </Card>
 
         <Card
           title="Site & access"
           subtitle={`Role: ${profile?.role ?? "staff"} • Site: ${siteId ?? "unassigned"}`}
+          theme={theme}
         >
           {!siteId ? (
             <Text style={{ color: "#f87171", fontWeight: "800" }}>
@@ -490,6 +393,8 @@ export default function SettingsScreen() {
                   label={s.label}
                   selected={siteId === s.id}
                   onPress={() => handleSwitchSite(s.id)}
+                  theme={theme}
+                  saving={saving}
                 />
               ))}
             </View>
@@ -502,9 +407,8 @@ export default function SettingsScreen() {
 
         <Card
           title="Device registration"
-          subtitle={
-            storedLabel && token ? "Registered for alerts." : "Register this device for alerts."
-          }
+          subtitle={storedLabel && token ? "Registered for alerts." : "Register this device for alerts."}
+          theme={theme}
         >
           <DeviceRegistration
             theme={theme}
@@ -525,43 +429,18 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        <Card title="Alert preferences" subtitle="Choose which alerts this device should receive">
-          <PrefRow
-            title="Low stock"
-            subtitle="Notify when quantity drops to or below minimum."
-            value={prefs.low}
-            onChange={(v) => updatePrefs({ ...prefs, low: v })}
-          />
-          <PrefRow
-            title="Out of stock"
-            subtitle="Notify when quantity hits 0."
-            value={prefs.out}
-            onChange={(v) => updatePrefs({ ...prefs, out: v })}
-          />
-          <PrefRow
-            title="Restocked"
-            subtitle="Notify when stock returns to OK."
-            value={prefs.restock}
-            onChange={(v) => updatePrefs({ ...prefs, restock: v })}
-          />
+        <Card title="Alert preferences" subtitle="Choose which alerts this device should receive" theme={theme}>
+          <PrefRow title="Low stock" subtitle="Notify when quantity drops to or below minimum." value={prefs.low} onChange={(v) => updatePrefs({ ...prefs, low: v })} theme={theme} isDark={isDark} />
+          <PrefRow title="Out of stock" subtitle="Notify when quantity hits 0." value={prefs.out} onChange={(v) => updatePrefs({ ...prefs, out: v })} theme={theme} isDark={isDark} />
+          <PrefRow title="Restocked" subtitle="Notify when stock returns to OK." value={prefs.restock} onChange={(v) => updatePrefs({ ...prefs, restock: v })} theme={theme} isDark={isDark} />
         </Card>
 
-        <Card title="Notification settings" subtitle="Control sound and vibration">
-          <PrefRow
-            title="Sound"
-            subtitle="Play sound when receiving alerts"
-            value={notifSound}
-            onChange={toggleNotifSound}
-          />
-          <PrefRow
-            title="Vibration"
-            subtitle="Vibrate when receiving alerts"
-            value={notifVibrate}
-            onChange={toggleNotifVibrate}
-          />
+        <Card title="Notification settings" subtitle="Control sound and vibration" theme={theme}>
+          <PrefRow title="Sound" subtitle="Play sound when receiving alerts" value={notifSound} onChange={toggleNotifSound} theme={theme} isDark={isDark} />
+          <PrefRow title="Vibration" subtitle="Vibrate when receiving alerts" value={notifVibrate} onChange={toggleNotifVibrate} theme={theme} isDark={isDark} />
         </Card>
 
-        <Card title="Data management" subtitle="Export and backup your data">
+        <Card title="Data management" subtitle="Export and backup your data" theme={theme}>
           <Pressable
             onPress={handleExport}
             disabled={exporting || !siteId}
@@ -583,15 +462,15 @@ export default function SettingsScreen() {
           </Text>
         </Card>
 
-        <Card title="App information" subtitle="Version and details">
-          <InfoRow label="Version" value={`${appVersion} (${buildNumber})`} />
-          <InfoRow label="Environment" value={__DEV__ ? "Development" : "Production"} />
-          <InfoRow label="Platform" value={Constants.platform?.ios ? "iOS" : "Android"} />
-          <InfoRow label="Site" value={siteId || "Not assigned"} />
-          <InfoRow label="User ID" value={uid?.slice(0, 8) || "Not signed in"} />
+        <Card title="App information" subtitle="Version and details" theme={theme}>
+          <InfoRow label="Version" value={`${appVersion} (${buildNumber})`} theme={theme} />
+          <InfoRow label="Environment" value={__DEV__ ? "Development" : "Production"} theme={theme} />
+          <InfoRow label="Platform" value={Constants.platform?.ios ? "iOS" : "Android"} theme={theme} />
+          <InfoRow label="Site" value={siteId || "Not assigned"} theme={theme} />
+          <InfoRow label="User ID" value={uid?.slice(0, 8) || "Not signed in"} theme={theme} />
         </Card>
 
-        <Card title="Account" subtitle="Signed in">
+        <Card title="Account" subtitle="Signed in" theme={theme}>
           <Pressable
             onPress={handleLogout}
             style={{
