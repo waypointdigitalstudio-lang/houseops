@@ -313,6 +313,8 @@ export default function IndexScreen() {
         for (const row of chunk) {
           const name = normalizeCell(row[iName] ?? "");
           if (!name) continue;
+          // ID derived from site + name keeps re-imports idempotent.
+          // If an item is renamed in the CSV a new doc is created — delete the old one manually.
           const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
           batch.set(doc(db, "items", stableId), { name, currentQuantity: parseInt(normalizeCell(row[iQty] ?? "")) || 0, minQuantity: parseInt(normalizeCell(row[iMinQty] ?? "")) || 0, location: normalizeCell(row[iLocation] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: serverTimestamp() }, { merge: true });
           count++;

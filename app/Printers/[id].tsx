@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams } from "expo-router";
 import {
+    addDoc,
     collection,
     doc,
     increment,
@@ -23,6 +24,8 @@ import {
 } from "react-native";
 import { useAppTheme } from "../../constants/theme";
 import { auth, db } from "../../firebaseConfig";
+import { useUserProfile } from "../../hooks/useUserProfile";
+import { getStockStatus } from "../../utils/activity";
 
 interface Printer {
   id: string;
@@ -44,6 +47,7 @@ interface Toner {
 
 export default function PrinterDetail() {
   const theme = useAppTheme();
+  const { profile } = useUserProfile();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [printer, setPrinter] = useState<Printer | null>(null);
   const [linkedToners, setLinkedToners] = useState<Toner[]>([]);
@@ -89,24 +93,45 @@ export default function PrinterDetail() {
       return;
     }
 
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("Error", "You must be signed in to deduct stock.");
+      return;
+    }
+
     Alert.alert("Confirm", `Deduct 1 ${toner.model} for this printer?`, [
       { text: "Cancel", style: "cancel" },
-      { 
-        text: "Confirm", 
+      {
+        text: "Confirm",
         onPress: async () => {
           try {
-            const user = auth.currentUser;
-            const userName = user?.displayName || user?.email || "Unknown Tech";
-            
-            // 1. Update Toner Quantity
+            const userName = user.displayName || user.email || "Unknown Tech";
+            const newQuantity = toner.quantity - 1;
+            const prevState = getStockStatus(toner.quantity, toner.minQuantity);
+            const nextState = getStockStatus(newQuantity, toner.minQuantity);
+
             await updateDoc(doc(db, "toners", toner.id), {
               quantity: increment(-1),
               updatedAt: serverTimestamp()
             });
 
-            // 2. Log the movement (Optional: you can add a movements subcollection to toners too)
-            if (__DEV__) console.log(`Toner ${toner.model} deducted by ${userName}`);
-            
+            await addDoc(collection(db, "alertsLog"), {
+              createdAt: serverTimestamp(),
+              siteId: printer?.siteId || "",
+              itemId: toner.id,
+              itemName: toner.model,
+              action: "deducted",
+              qty: newQuantity,
+              min: toner.minQuantity,
+              prevState,
+              nextState,
+              status: nextState,
+              itemType: "toner",
+              by: userName,
+              note: printer ? `Via printer: ${printer.name}` : null,
+              source: "movement",
+            });
+
             Alert.alert("Success", "Toner deducted from inventory.");
           } catch (e) {
             Alert.alert("Error", "Failed to update stock.");
@@ -118,6 +143,7 @@ export default function PrinterDetail() {
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
   if (!printer) return <View style={styles.center}><Text style={{color: theme.text}}>Printer not found.</Text></View>;
+  if (profile?.siteId && printer.siteId !== profile.siteId) return <View style={styles.center}><Text style={{color: theme.text}}>Access denied.</Text></View>;
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>

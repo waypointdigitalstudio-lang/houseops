@@ -85,6 +85,7 @@ export default function ItemDetail() {
   const [movementBy, setMovementBy] = useState("");
   const [movementNote, setMovementNote] = useState("");
   const [savingMovement, setSavingMovement] = useState(false);
+  const [customAmount, setCustomAmount] = useState("");
 
   // disposal dialog state
   const [showDisposalDialog, setShowDisposalDialog] = useState(false);
@@ -357,6 +358,7 @@ export default function ItemDetail() {
         by: userName,
         note: `Disposed: ${disposalReason}${disposalNotes ? ` - ${disposalNotes}` : ""}`,
         siteId: item.siteId || "",
+        isLowStock: newQuantity <= item.minQuantity,
         createdAt: serverTimestamp(),
       });
 
@@ -377,6 +379,13 @@ export default function ItemDetail() {
     setError(null);
   };
 
+  const getStockState = (qty: number, min: number): string => {
+    if (qty <= 0) return "OUT";
+    if (min > 0 && qty <= min * 0.5) return "CRITICAL";
+    if (min > 0 && qty <= min) return "LOW";
+    return "OK";
+  };
+
   const applyQuantityChange = async () => {
     if (!item || pendingDelta === null) return;
 
@@ -392,6 +401,8 @@ export default function ItemDetail() {
     const previousQuantity = item.currentQuantity;
     const newQuantity = Math.max(0, previousQuantity + delta);
     const isLowStock = newQuantity <= item.minQuantity;
+    const prevState = getStockState(previousQuantity, item.minQuantity);
+    const nextState = getStockState(newQuantity, item.minQuantity);
 
     setSavingMovement(true);
     setError(null);
@@ -417,6 +428,23 @@ export default function ItemDetail() {
         isLowStock,
         siteId: item.siteId || "",
         createdAt: serverTimestamp(),
+      });
+
+      await addDoc(collection(db, "alertsLog"), {
+        createdAt: serverTimestamp(),
+        siteId: item.siteId || "",
+        itemId: item.id,
+        itemName: item.name,
+        action: delta < 0 ? "deducted" : "added",
+        qty: newQuantity,
+        min: item.minQuantity,
+        prevState,
+        nextState,
+        status: nextState,
+        itemType: "inventory",
+        by,
+        note: note || null,
+        source: "movement",
       });
 
       showToast(
@@ -573,6 +601,47 @@ export default function ItemDetail() {
                     <Text style={[styles.stockButtonText, { color: theme.text }]}>+{n}</Text>
                   </Pressable>
                 ))}
+              </View>
+
+              {/* Custom amount row */}
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, gap: 8 }}>
+                <TextInput
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                    fontSize: 15,
+                    textAlign: "center",
+                  }}
+                  placeholder="Custom amount"
+                  placeholderTextColor={theme.mutedText}
+                  keyboardType="number-pad"
+                  value={customAmount}
+                  onChangeText={(v) => setCustomAmount(v.replace(/[^0-9]/g, ""))}
+                />
+                <Pressable
+                  style={[styles.stockButton, styles.stockButtonMinus, { flex: 0, paddingHorizontal: 16 }]}
+                  onPress={() => {
+                    const n = parseInt(customAmount);
+                    if (n > 0) { openMovementDialog(-n); setCustomAmount(""); }
+                  }}
+                >
+                  <Text style={[styles.stockButtonText, { color: theme.text }]}>Take</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.stockButton, styles.stockButtonPlus, { flex: 0, paddingHorizontal: 16 }]}
+                  onPress={() => {
+                    const n = parseInt(customAmount);
+                    if (n > 0) { openMovementDialog(n); setCustomAmount(""); }
+                  }}
+                >
+                  <Text style={[styles.stockButtonText, { color: theme.text }]}>Add</Text>
+                </Pressable>
               </View>
             </View>
 

@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "alertsLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "siteId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

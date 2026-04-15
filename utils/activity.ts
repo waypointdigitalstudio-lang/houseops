@@ -17,7 +17,7 @@ export async function logActivity(params: {
   prevState: StockStatus;
   nextState: StockStatus;
   action: string;
-  itemType: "inventory" | "toner" | "printer";
+  itemType: "inventory" | "toner" | "radioPart" | "printer";
 }): Promise<void> {
   const { siteId, itemName, itemId, qty, min, prevState, nextState, action, itemType } = params;
   try {

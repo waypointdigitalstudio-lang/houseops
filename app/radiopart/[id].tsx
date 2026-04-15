@@ -53,7 +53,12 @@ export default function RadioPartDetail() {
   const [editNotes, setEditNotes] = useState("");
   const [editMinQty, setEditMinQty] = useState("");
   const [savingMeta, setSavingMeta] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
+  const [savingMovement, setSavingMovement] = useState(false);
+  const [customAmount, setCustomAmount] = useState("");
+  const [pendingDelta, setPendingDelta] = useState<number | null>(null);
+  const [movementBy, setMovementBy] = useState("");
+  const [movementNote, setMovementNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -93,17 +98,40 @@ export default function RadioPartDetail() {
     return () => unsub();
   }, [id]);
 
-  const handleAdjust = async (delta: number) => {
-    if (!part || adjusting) return;
+  const openMovementDialog = (delta: number) => {
+    setPendingDelta(delta);
+    setMovementBy("");
+    setMovementNote("");
+    setError(null);
+  };
+
+  const closeMovementDialog = () => {
+    if (savingMovement) return;
+    setPendingDelta(null);
+    setMovementBy("");
+    setMovementNote("");
+    setError(null);
+  };
+
+  const applyQuantityChange = async () => {
+    if (!part || pendingDelta === null) return;
+    const by = movementBy.trim();
+    if (!by) {
+      setError("Please enter who is taking / adding the item.");
+      return;
+    }
+    const note = movementNote.trim();
+    const delta = pendingDelta;
     const newQty = Math.max(0, part.quantity + delta);
-    setAdjusting(true);
+    const prevStatus = part.quantity <= 0 ? "OUT" : part.quantity <= part.minQuantity ? "LOW" : "OK";
+    const nextStatus = newQty <= 0 ? "OUT" : newQty <= part.minQuantity ? "LOW" : "OK";
+    setSavingMovement(true);
+    setError(null);
     try {
       await updateDoc(doc(db, "radioParts", part.id), {
         quantity: newQty,
         updatedAt: serverTimestamp(),
       });
-      const prevStatus = part.quantity <= 0 ? "OUT" : part.quantity <= part.minQuantity ? "LOW" : "OK";
-      const nextStatus = newQty <= 0 ? "OUT" : newQty <= part.minQuantity ? "LOW" : "OK";
       await addDoc(collection(db, "alertsLog"), {
         siteId: part.siteId,
         itemName: part.name,
@@ -115,13 +143,19 @@ export default function RadioPartDetail() {
         status: nextStatus,
         action: delta < 0 ? "deducted" : "added",
         itemType: "radioPart",
+        by,
+        note: note || null,
+        source: "movement",
         createdAt: serverTimestamp(),
       });
       showToast(delta < 0 ? `✓ Removed ${Math.abs(delta)}` : `✓ Added ${delta}`, "success");
+      setPendingDelta(null);
+      setMovementBy("");
+      setMovementNote("");
     } catch {
       showToast("Failed to update quantity", "error");
     } finally {
-      setAdjusting(false);
+      setSavingMovement(false);
     }
   };
 
@@ -219,9 +253,9 @@ export default function RadioPartDetail() {
                 {[-1, -5, -10, -25].map((n) => (
                   <Pressable
                     key={n}
-                    style={[styles.stockButton, styles.stockButtonMinus, adjusting && { opacity: 0.5 }]}
-                    onPress={() => handleAdjust(n)}
-                    disabled={adjusting}
+                    style={[styles.stockButton, styles.stockButtonMinus, savingMovement && { opacity: 0.5 }]}
+                    onPress={() => openMovementDialog(n)}
+                    disabled={savingMovement}
                   >
                     <Text style={[styles.stockButtonText, { color: theme.text }]}>{n}</Text>
                   </Pressable>
@@ -231,13 +265,57 @@ export default function RadioPartDetail() {
                 {[1, 5, 10, 25].map((n) => (
                   <Pressable
                     key={n}
-                    style={[styles.stockButton, styles.stockButtonPlus, adjusting && { opacity: 0.5 }]}
-                    onPress={() => handleAdjust(n)}
-                    disabled={adjusting}
+                    style={[styles.stockButton, styles.stockButtonPlus, savingMovement && { opacity: 0.5 }]}
+                    onPress={() => openMovementDialog(n)}
+                    disabled={savingMovement}
                   >
                     <Text style={[styles.stockButtonText, { color: theme.text }]}>+{n}</Text>
                   </Pressable>
                 ))}
+              </View>
+
+              {/* Custom amount row */}
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, gap: 8 }}>
+                <TextInput
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                    fontSize: 15,
+                    textAlign: "center",
+                  }}
+                  placeholder="Custom amount"
+                  placeholderTextColor={theme.mutedText}
+                  keyboardType="number-pad"
+                  value={customAmount}
+                  onChangeText={(v) => setCustomAmount(v.replace(/[^0-9]/g, ""))}
+                  editable={!savingMovement}
+                />
+                <Pressable
+                  style={[styles.stockButton, styles.stockButtonMinus, { flex: 0, paddingHorizontal: 16 }, savingMovement && { opacity: 0.5 }]}
+                  onPress={() => {
+                    const n = parseInt(customAmount);
+                    if (n > 0) { openMovementDialog(-n); setCustomAmount(""); }
+                  }}
+                  disabled={savingMovement}
+                >
+                  <Text style={[styles.stockButtonText, { color: theme.text }]}>Take</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.stockButton, styles.stockButtonPlus, { flex: 0, paddingHorizontal: 16 }, savingMovement && { opacity: 0.5 }]}
+                  onPress={() => {
+                    const n = parseInt(customAmount);
+                    if (n > 0) { openMovementDialog(n); setCustomAmount(""); }
+                  }}
+                  disabled={savingMovement}
+                >
+                  <Text style={[styles.stockButtonText, { color: theme.text }]}>Add</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -315,6 +393,64 @@ export default function RadioPartDetail() {
         )}
       </ScrollView>
 
+      {/* Movement dialog overlay */}
+      {part && pendingDelta !== null && (
+        <View style={styles.overlayBackdrop}>
+          <View style={[styles.overlayCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.overlayTitle, { color: theme.text }]}>
+              {pendingDelta < 0 ? "Remove from stock" : "Add to stock"}
+            </Text>
+            <Text style={[styles.overlaySub, { color: theme.mutedText }]}>
+              Current: {part.quantity} • Change: {pendingDelta > 0 ? `+${pendingDelta}` : pendingDelta}
+            </Text>
+
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Who is taking / adding it?</Text>
+            <TextInput
+              style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+              placeholder="Name or initials"
+              placeholderTextColor={theme.mutedText}
+              value={movementBy}
+              onChangeText={setMovementBy}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Note (optional)</Text>
+            <TextInput
+              style={[styles.input, { height: 70, textAlignVertical: "top", borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+              placeholder="e.g. Radio 7, Dispatch desk, etc."
+              placeholderTextColor={theme.mutedText}
+              value={movementNote}
+              onChangeText={setMovementNote}
+              multiline
+            />
+
+            {error && (
+              <Text style={{ color: "#f87171", marginTop: 6, fontSize: 13 }}>{error}</Text>
+            )}
+
+            <View style={styles.overlayButtonsRow}>
+              <Pressable
+                onPress={closeMovementDialog}
+                style={[styles.overlayButton, styles.overlayCancel, { borderColor: theme.border }]}
+                disabled={savingMovement}
+              >
+                <Text style={[styles.overlayCancelText, { color: theme.text }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={applyQuantityChange}
+                style={[styles.overlayButton, styles.overlayConfirm, savingMovement && { opacity: 0.7 }]}
+                disabled={savingMovement}
+              >
+                {savingMovement ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.overlayConfirmText}>Confirm</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
       <Toast toast={toast} fadeAnim={fadeAnim} onDismiss={hideToast} />
     </>
   );
@@ -346,4 +482,14 @@ const styles = StyleSheet.create({
   saveButtonText: { color: "#fff", fontWeight: "900" },
   deleteButton: { marginTop: 10, paddingVertical: 10, borderRadius: 999, alignItems: "center", borderWidth: 1, backgroundColor: "transparent" },
   deleteButtonText: { color: "#ef4444", fontWeight: "900" },
+  overlayBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  overlayCard: { width: "90%", borderRadius: 16, padding: 16, borderWidth: 1 },
+  overlayTitle: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
+  overlaySub: { fontSize: 13, marginBottom: 10 },
+  overlayButtonsRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 14 },
+  overlayButton: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, marginLeft: 8 },
+  overlayCancel: { backgroundColor: "transparent", borderWidth: 1 },
+  overlayCancelText: { fontWeight: "700" },
+  overlayConfirm: { backgroundColor: "#22c55e" },
+  overlayConfirmText: { color: "#000", fontWeight: "900" },
 });

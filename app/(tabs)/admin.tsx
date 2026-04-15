@@ -214,19 +214,27 @@ export default function AdminScreen() {
       });
 
       if (alsoUpdateTokens) {
-        const tokQ = query(
-          collection(db, "devicePushTokens"),
-          where("uid", "==", selectedUser.uid)
-        );
-        const tokSnap = await getDocs(tokQ);
-        await Promise.all(
-          tokSnap.docs.map((d) =>
-            updateDoc(doc(db, "devicePushTokens", d.id), {
-              siteId: selectedSiteId,
-              updatedAt: serverTimestamp(),
-            })
-          )
-        );
+        try {
+          const tokQ = query(
+            collection(db, "devicePushTokens"),
+            where("uid", "==", selectedUser.uid)
+          );
+          const tokSnap = await getDocs(tokQ);
+          await Promise.all(
+            tokSnap.docs.map((d) =>
+              updateDoc(doc(db, "devicePushTokens", d.id), {
+                siteId: selectedSiteId,
+                updatedAt: serverTimestamp(),
+              })
+            )
+          );
+        } catch (tokenErr) {
+          if (__DEV__) console.warn("Token siteId update failed (non-critical):", tokenErr);
+          Alert.alert(
+            "Partial Update",
+            "User site was updated, but push notification tokens could not be fully updated. Notifications may route to the old site until the user logs out and back in."
+          );
+        }
       }
 
       Alert.alert("Saved", `Updated ${selectedUser.email || selectedUser.uid} → ${selectedSiteId}`);
