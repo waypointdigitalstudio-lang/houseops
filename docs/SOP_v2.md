@@ -127,9 +127,17 @@ The **Inventory** tab is the home screen of Nexus. It shows all tracked items at
 
 ### 3.4 Adjusting Quantity
 
-Use the **+ / −** buttons directly on the inventory card to increment or decrement quantity without opening the edit modal.
+**From the inventory card (quick adjust):**
+Use the **+ / −** buttons directly on the card to increment or decrement by 1. A **5-second undo banner** appears at the bottom — tap **Undo** to reverse it.
 
-- A **5-second undo banner** appears at the bottom after any adjustment — tap **Undo** to reverse it.
+**From the item detail screen (full adjust):**
+Tap any inventory card to open the detail screen. Use the preset buttons (−25 / −10 / −5 / −1 / +1 / +5 / +10 / +25) or type a custom amount in the text field and tap **Take** or **Add**.
+
+A confirmation dialog will appear asking:
+- **Who is making this change?** (required — enter your name)
+- **Note** (optional — e.g. location, reason)
+
+This information is recorded in the Activity Log against every adjustment.
 
 ### 3.5 Deleting an Item
 
@@ -154,6 +162,7 @@ Access the **Toners** subtab from inside the Inventory tab by tapping the **Tone
 
 #### Editing a Toner
 - Tap any toner card to open the toner detail page, where you can adjust stock and edit all fields.
+- Stock adjustments on the detail page use the same preset / custom amount buttons as inventory, and require your name before confirming. The change is recorded in the Activity Log.
 
 #### Deleting a Toner
 - Tap the **trash icon** on the toner card. A 5-second undo banner appears.
@@ -189,6 +198,7 @@ The **Parts** subtab opens by default. Tracks spare parts and accessories (batte
 
 #### Editing a Radio Part
 - Tap any radio part card to open the part detail page, where you can adjust stock and edit all fields.
+- Stock adjustments on the detail page use preset / custom amount buttons and require your name before confirming. The change is recorded in the Activity Log.
 
 > Radio parts trigger low-stock alerts and appear in the Alerts tab badge when quantity falls at or below the minimum.
 

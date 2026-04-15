@@ -205,11 +205,15 @@ The site is seeded by `scripts/seedDemo.js` (run once from the `functions/` fold
 
 ```ts
 {
-  type: "add" | "remove";
-  qty: number;
+  type: "disposal" | "adjustment";
+  delta: number;                  // negative = stock removed, positive = stock added
+  previousQuantity: number;
+  newQuantity: number;
+  by: string;                     // display name or email of the person making the change
+  note: string;                   // free-text note (required for disposals, optional for adjustments)
   siteId: string;
+  isLowStock: boolean;            // true if newQuantity <= minQuantity at time of write
   createdAt: Timestamp;
-  uid: string;
 }
 ```
 
@@ -355,15 +359,20 @@ Append-only. Written by Cloud Function and also by client-side `logActivity()` c
   nextState: "OK" | "LOW" | "OUT";
   status: string;
   action: "added" | "deducted" | "edited" | "deleted" | "linked" | "unlinked" | "disposed";
-  itemType: "inventory" | "toner" | "radioPart";
+  itemType: "inventory" | "toner" | "radioPart" | "printer";
   createdAt: Timestamp;
+  // Fields present on client-written movement entries (source: "movement"):
+  by?: string;                    // display name or email of the person who made the change
+  note?: string | null;           // optional note entered at time of adjustment
+  source?: "movement";            // distinguishes client writes from Cloud Function writes
+  // Fields present on Cloud Function entries only:
   dismissed?: boolean;
   userDismissed?: boolean;
   tokenCount?: number;
 }
 ```
 
-> **Required Firestore composite index:** `alertsLog` on `siteId ASC` + `createdAt DESC`. Firestore will throw an error with a direct link to create the index on first run.
+> **Required Firestore composite index:** `alertsLog` on `siteId ASC` + `createdAt DESC`. Defined in `firestore.indexes.json` and deployed via `firebase deploy --only firestore:indexes`.
 
 ### 5.13 `devicePushTokens/{tokenId}`
 
