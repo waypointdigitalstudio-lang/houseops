@@ -132,7 +132,7 @@ export default function TabLayout() {
         name="pm"
         options={{
           title: "PM",
-          headerShown: false,
+          headerTitle: "PM Checklist",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="construct-outline" color={color} size={size} />
           ),

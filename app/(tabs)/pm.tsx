@@ -149,6 +149,7 @@ export default function PMScreen() {
   // Import modal
   const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
   const [importSaving, setImportSaving] = useState(false);
 
   const [exporting, setExporting] = useState(false);
@@ -297,34 +298,99 @@ export default function PMScreen() {
       });
       const rows = parseCSV(content);
       if (rows.length < 2) { Alert.alert("Error", "CSV has no data rows."); return; }
-      const headers = rows[0].map((h) => h.toLowerCase().trim());
-      const col = (names: string[]) =>
-        names.map((n) => headers.findIndex((h) => h.includes(n))).find((i) => i !== -1) ?? -1;
 
-      const nameIdx   = col(["name"]);
-      const fqdnIdx   = col(["fqdn", "hostname", "host"]);
-      const ipIdx     = col(["ip"]);
-      const osIdx     = col(["os"]);
-      const osVerIdx  = col(["os ver", "osver", "version", "ver"]);
-      const typeIdx   = col(["type"]);
-      const statusIdx = col(["status"]);
-      const userIdx   = col(["user"]);
+      // BeyondTrust exports start with a single-cell "Jump Client" label row — skip it
+      const headerRowIdx = rows[0].length === 1 ? 1 : 0;
+      const headers = rows[headerRowIdx].map((h) => h.toLowerCase().trim());
+      const dataRows = rows.slice(headerRowIdx + 1);
 
-      if (nameIdx === -1) { Alert.alert("Error", "CSV must have a 'Name' column."); return; }
+      // Detect BeyondTrust Jump Client format by unique column names
+      const isBeyondTrust = headers.some(
+        (h) => h === "operating system" || h === "console user" || h === "hostname / ip"
+      );
 
-      const preview: ImportPreviewRow[] = rows
-        .slice(1)
-        .map((row) => ({
-          name:   normalizeCell(row[nameIdx]   ?? ""),
-          fqdn:   fqdnIdx   !== -1 ? normalizeCell(row[fqdnIdx]   ?? "") : "",
-          ip:     ipIdx     !== -1 ? normalizeCell(row[ipIdx]     ?? "") : "",
-          os:     osIdx     !== -1 ? normalizeCell(row[osIdx]     ?? "") : "",
-          osVer:  osVerIdx  !== -1 ? normalizeCell(row[osVerIdx]  ?? "") : "",
-          type:   typeIdx   !== -1 ? normalizeCell(row[typeIdx]   ?? "") : "Desktop",
-          status: statusIdx !== -1 ? normalizeCell(row[statusIdx] ?? "") : "Active [ON]",
-          user:   userIdx   !== -1 ? normalizeCell(row[userIdx]   ?? "") : "",
-        }))
-        .filter((d) => d.name);
+      let preview: ImportPreviewRow[];
+
+      if (isBeyondTrust) {
+        const nameIdx      = headers.indexOf("name");
+        const fqdnIdx      = headers.indexOf("fqdn");
+        const ipIdx        = headers.indexOf("private ip");
+        const osIdx        = headers.indexOf("operating system");
+        const statusIdx    = headers.indexOf("status");
+        const userIdx      = headers.indexOf("console user");
+
+        const strip = (s: string) => (s.startsWith("'") ? s.slice(1) : s);
+
+        const parseOS = (raw: string): { os: string; osVer: string } => {
+          const m = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+          return m ? { os: m[1].trim(), osVer: m[2].trim() } : { os: raw, osVer: "" };
+        };
+
+        const mapStatus = (s: string): string => {
+          const l = s.toLowerCase();
+          if (l.includes("lost")) return "Lost";
+          if (l.includes("offline") || l === "uninstalled") return "Offline";
+          return "Active [ON]";
+        };
+
+        const inferType = (os: string, name: string): DeviceType => {
+          if (os.toLowerCase().includes("server")) return "Server";
+          if (name.toLowerCase().includes("laptop")) return "Laptop";
+          return "Desktop";
+        };
+
+        const seen = new Set<string>();
+        preview = dataRows
+          .map((row) => {
+            const name = strip(normalizeCell(row[nameIdx] ?? ""));
+            const rawOs = osIdx !== -1 ? normalizeCell(row[osIdx] ?? "") : "";
+            const { os, osVer } = parseOS(rawOs);
+            return {
+              name,
+              fqdn:   fqdnIdx   !== -1 ? strip(normalizeCell(row[fqdnIdx]   ?? "")) : "",
+              ip:     ipIdx     !== -1 ? normalizeCell(row[ipIdx]            ?? "") : "",
+              os,
+              osVer,
+              type:   inferType(os, name),
+              status: statusIdx !== -1 ? mapStatus(normalizeCell(row[statusIdx] ?? "")) : "Active [ON]",
+              user:   userIdx   !== -1 ? normalizeCell(row[userIdx]          ?? "") : "",
+            };
+          })
+          .filter((d) => {
+            if (!d.name || d.name.toLowerCase().startsWith("tv48 jump")) return false;
+            const key = d.name.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+      } else {
+        // Original Nexus device template format
+        const col = (names: string[]) =>
+          names.map((n) => headers.findIndex((h) => h.includes(n))).find((i) => i !== -1) ?? -1;
+        const nameIdx   = col(["name"]);
+        const fqdnIdx   = col(["fqdn", "hostname", "host"]);
+        const ipIdx     = col(["ip"]);
+        const osIdx     = col(["os"]);
+        const osVerIdx  = col(["os ver", "osver", "version", "ver"]);
+        const typeIdx   = col(["type"]);
+        const statusIdx = col(["status"]);
+        const userIdx   = col(["user"]);
+
+        if (nameIdx === -1) { Alert.alert("Error", "CSV must have a 'Name' column."); return; }
+
+        preview = dataRows
+          .map((row) => ({
+            name:   normalizeCell(row[nameIdx]   ?? ""),
+            fqdn:   fqdnIdx   !== -1 ? normalizeCell(row[fqdnIdx]   ?? "") : "",
+            ip:     ipIdx     !== -1 ? normalizeCell(row[ipIdx]     ?? "") : "",
+            os:     osIdx     !== -1 ? normalizeCell(row[osIdx]     ?? "") : "",
+            osVer:  osVerIdx  !== -1 ? normalizeCell(row[osVerIdx]  ?? "") : "",
+            type:   typeIdx   !== -1 ? normalizeCell(row[typeIdx]   ?? "") : "Desktop",
+            status: statusIdx !== -1 ? normalizeCell(row[statusIdx] ?? "") : "Active [ON]",
+            user:   userIdx   !== -1 ? normalizeCell(row[userIdx]   ?? "") : "",
+          }))
+          .filter((d) => d.name);
+      }
 
       if (preview.length === 0) { Alert.alert("Error", "No valid rows found."); return; }
       setImportPreview(preview);
@@ -511,39 +577,7 @@ export default function PMScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* ── Top bar ── */}
-      <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <View>
-          <Text style={[styles.topTitle, { color: theme.text }]}>PM Checklist</Text>
-          <Text style={[styles.topSub, { color: theme.mutedText }]}>
-            {loading ? "Loading…" : `${totalDone} / ${devices.length} done`}
-          </Text>
-        </View>
-        <View style={styles.topActions}>
-          {isAdmin && (
-            <Pressable style={styles.iconBtn} onPress={pickImportCSV}>
-              <Ionicons name="cloud-upload-outline" size={20} color={theme.primary} />
-            </Pressable>
-          )}
-          <Pressable style={styles.iconBtn} onPress={exportCSV} disabled={exporting}>
-            {exporting ? (
-              <ActivityIndicator size="small" color={theme.primary} />
-            ) : (
-              <Ionicons name="download-outline" size={20} color={theme.primary} />
-            )}
-          </Pressable>
-          {isAdmin && (
-            <Pressable
-              style={[styles.addBtn, { backgroundColor: theme.primary }]}
-              onPress={openAddModal}
-            >
-              <Ionicons name="add" size={20} color="#fff" />
-            </Pressable>
-          )}
-        </View>
-      </View>
-
-      {/* ── Search ── */}
+      {/* ── Search + filters ── */}
       <View style={[styles.searchWrap, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View style={[styles.searchBar, { backgroundColor: theme.background, borderColor: theme.border }]}>
           <Ionicons name="search-outline" size={16} color={theme.mutedText} style={{ marginRight: 6 }} />
@@ -558,24 +592,36 @@ export default function PMScreen() {
           />
         </View>
 
-        {/* Filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-          {(["all", "pending", "done", "repair"] as FilterMode[]).map((f) => (
-            <Pressable
-              key={f}
-              style={[
-                styles.chip,
-                { borderColor: theme.border, backgroundColor: theme.background },
-                filter === f && { backgroundColor: theme.primary, borderColor: theme.primary },
-              ]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.chipText, { color: theme.mutedText }, filter === f && { color: "#fff" }]}>
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {/* Filter chips + count + overflow */}
+        <View style={styles.filterRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+            {(["all", "pending", "done", "repair"] as FilterMode[]).map((f) => (
+              <Pressable
+                key={f}
+                style={[
+                  styles.chip,
+                  { borderColor: theme.border, backgroundColor: theme.background },
+                  filter === f && { backgroundColor: theme.primary, borderColor: theme.primary },
+                ]}
+                onPress={() => setFilter(f)}
+              >
+                <Text style={[styles.chipText, { color: theme.mutedText }, filter === f && { color: "#fff" }]}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          <Text style={[styles.countText, { color: theme.mutedText }]}>
+            {loading ? "…" : `${totalDone}/${devices.length}`}
+          </Text>
+          <Pressable style={styles.iconBtn} onPress={() => setShowOverflowMenu(true)}>
+            {exporting ? (
+              <ActivityIndicator size="small" color={theme.mutedText} />
+            ) : (
+              <Ionicons name="ellipsis-horizontal" size={22} color={theme.mutedText} />
+            )}
+          </Pressable>
+        </View>
       </View>
 
       {/* ── Device list ── */}
@@ -608,21 +654,17 @@ export default function PMScreen() {
       {/* ── Add / Edit device modal ── */}
       <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
         <View style={[styles.modal, { backgroundColor: theme.background }]}>
+          {/* Title row — no action buttons */}
           <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
-            <Pressable onPress={() => setShowAddModal(false)}>
-              <Text style={[styles.modalCancel, { color: theme.mutedText }]}>Cancel</Text>
+            <Pressable onPress={() => setShowAddModal(false)} style={styles.modalClose}>
+              <Ionicons name="close" size={22} color={theme.mutedText} />
             </Pressable>
             <Text style={[styles.modalTitle, { color: theme.text }]}>
               {editingDevice ? "Edit Device" : "Add Device"}
             </Text>
-            <Pressable onPress={saveDevice} disabled={addSaving}>
-              {addSaving ? (
-                <ActivityIndicator size="small" color={theme.primary} />
-              ) : (
-                <Text style={[styles.modalSave, { color: theme.primary }]}>Save</Text>
-              )}
-            </Pressable>
+            <View style={styles.modalClose} />
           </View>
+
           <ScrollView contentContainerStyle={styles.modalBody}>
             {field("Name *", "name", "e.g. TRTPIT1")}
             {field("FQDN", "fqdn", "e.g. TRTPIT1.domain.com")}
@@ -675,8 +717,68 @@ export default function PMScreen() {
               </View>
             </View>
           </ScrollView>
+
+          {/* Bottom action buttons */}
+          <View style={[styles.modalFooter, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
+            <Pressable
+              style={[styles.footerBtn, styles.footerCancel, { borderColor: theme.border }]}
+              onPress={() => setShowAddModal(false)}
+            >
+              <Text style={[styles.footerCancelText, { color: theme.mutedText }]}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.footerBtn, styles.footerSave, { backgroundColor: theme.primary }]}
+              onPress={saveDevice}
+              disabled={addSaving}
+            >
+              {addSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.footerSaveText}>Save</Text>
+              )}
+            </Pressable>
+          </View>
         </View>
       </Modal>
+
+      {/* ── Overflow action sheet ── */}
+      <Modal
+        visible={showOverflowMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOverflowMenu(false)}
+      >
+        <Pressable style={styles.overlayCover} onPress={() => setShowOverflowMenu(false)}>
+          <View style={[styles.actionSheet, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {isAdmin && (
+              <Pressable
+                style={styles.actionItem}
+                onPress={() => { setShowOverflowMenu(false); pickImportCSV(); }}
+              >
+                <Ionicons name="cloud-upload-outline" size={20} color={theme.primary} style={{ marginRight: 14 }} />
+                <Text style={[styles.actionText, { color: theme.text }]}>Import CSV</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={styles.actionItem}
+              onPress={() => { setShowOverflowMenu(false); exportCSV(); }}
+            >
+              <Ionicons name="download-outline" size={20} color={theme.primary} style={{ marginRight: 14 }} />
+              <Text style={[styles.actionText, { color: theme.text }]}>Export CSV</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ── FAB (admin only) ── */}
+      {isAdmin && (
+        <Pressable
+          style={[styles.fab, { backgroundColor: theme.primary }]}
+          onPress={openAddModal}
+        >
+          <Ionicons name="add" size={28} color="#fff" />
+        </Pressable>
+      )}
 
       {/* ── Import preview modal ── */}
       <Modal visible={showImportModal} animationType="slide" presentationStyle="pageSheet">
@@ -722,24 +824,30 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
 
-  topBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  topTitle: { fontSize: 17, fontWeight: "700" },
-  topSub: { fontSize: 12, marginTop: 1 },
-  topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   iconBtn: { padding: 6 },
-  addBtn: {
-    width: 32, height: 32, borderRadius: 16,
+
+  fab: {
+    position: "absolute", bottom: 24, right: 20,
+    width: 56, height: 56, borderRadius: 28,
     alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25, shadowRadius: 6, elevation: 6,
   },
+
+  overlayCover: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
+  actionSheet: {
+    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderWidth: 1, paddingTop: 8, paddingBottom: 36,
+  },
+  actionItem: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 16 },
+  actionText: { fontSize: 16 },
 
   searchWrap: {
     paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10,
     borderBottomWidth: 1,
   },
+  filterRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
+  countText: { fontSize: 12, fontWeight: "600", marginHorizontal: 6 },
   searchBar: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 12, paddingVertical: 8,
@@ -786,12 +894,26 @@ const styles = StyleSheet.create({
   modal: { flex: 1 },
   modalHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 14, borderBottomWidth: 1,
   },
-  modalTitle: { fontSize: 17, fontWeight: "700" },
+  modalClose: { width: 36, alignItems: "center" },
+  modalTitle: { fontSize: 17, fontWeight: "700", flex: 1, textAlign: "center" },
   modalCancel: { fontSize: 16 },
   modalSave: { fontSize: 16, fontWeight: "600" },
-  modalBody: { padding: 16, gap: 12, paddingBottom: 40 },
+  modalBody: { padding: 16, gap: 12, paddingBottom: 16 },
+  modalFooter: {
+    flexDirection: "row", gap: 12,
+    paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 32,
+    borderTopWidth: 1,
+  },
+  footerBtn: {
+    flex: 1, height: 50, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
+  },
+  footerCancel: { borderWidth: 1.5 },
+  footerCancelText: { fontSize: 16, fontWeight: "600" },
+  footerSave: {},
+  footerSaveText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 
   formField: { gap: 4 },
   formLabel: { fontSize: 12, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.4 },
