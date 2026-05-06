@@ -356,7 +356,7 @@ export default function SettingsScreen() {
               opacity: savingName || !uid ? 0.6 : 1,
             }}
           >
-            <Text style={{ color: "#000", fontWeight: "900" }}>
+            <Text style={{ color: "#fff", fontWeight: "900" }}>
               {savingName ? "Saving…" : "Save Name"}
             </Text>
           </Pressable>
@@ -452,7 +452,7 @@ export default function SettingsScreen() {
               opacity: exporting || !siteId ? 0.6 : 1,
             }}
           >
-            <Text style={{ color: "#000", fontWeight: "900" }}>
+            <Text style={{ color: "#fff", fontWeight: "900" }}>
               {exporting ? "Exporting…" : "Export Inventory to CSV"}
             </Text>
           </Pressable>

@@ -771,7 +771,7 @@ export default function ItemDetail() {
               >
                 {savingMeta ? (
                   <View style={styles.savingContainer}>
-                    <ActivityIndicator size="small" color="#000" />
+                    <ActivityIndicator size="small" color="#fff" />
                     <Text style={styles.saveButtonText}>Saving…</Text>
                   </View>
                 ) : (

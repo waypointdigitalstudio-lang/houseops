@@ -377,7 +377,7 @@ export default function RadioPartDetail() {
               >
                 {savingMeta ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <ActivityIndicator size="small" color="#000" />
+                    <ActivityIndicator size="small" color="#fff" />
                     <Text style={styles.saveButtonText}>Saving…</Text>
                   </View>
                 ) : (

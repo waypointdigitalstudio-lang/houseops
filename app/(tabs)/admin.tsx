@@ -505,7 +505,7 @@ export default function AdminScreen() {
             opacity: saving || !selectedUser || !selectedSiteId ? 0.6 : pressed ? 0.85 : 1,
           })}
         >
-          <Text style={{ color: "#000", fontWeight: "900" }}>
+          <Text style={{ color: "#fff", fontWeight: "900" }}>
             {saving ? "Saving…" : "Save site assignment"}
           </Text>
         </Pressable>
