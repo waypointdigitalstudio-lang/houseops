@@ -120,6 +120,18 @@ export const downloadDisposalTemplate = async () => {
   await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Asset Disposal CSV Template" });
 };
 
+export const downloadDeviceTemplate = async () => {
+  const content = [
+    "Name,FQDN,IP,OS,OS Version,Type,Status,User",
+    '"TRTPIT1","TRTPIT1.domain.com","10.48.64.65","Windows 11 Pro","25H2","Desktop","Active [ON]",""',
+    '"LAPTOP1","Laptop1.domain.com","10.48.64.113","Windows 11 Pro","24H2","Laptop","Offline","adupuis"',
+    '"TRTNET1","TRTNET1.domain.com","10.48.1.10","Windows Server 2022","","Server","Active [ON]",""',
+  ].join("\n");
+  const uri = FileSystem.cacheDirectory + "pm_devices_template.csv";
+  await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+  await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "PM Devices CSV Template" });
+};
+
 export const downloadLincolnTechTemplate = async () => {
   const content = [
     "Name,Title,Phone,Email,Notes",

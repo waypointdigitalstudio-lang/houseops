@@ -129,6 +129,17 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="pm"
+        options={{
+          title: "PM",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="construct-outline" color={color} size={size} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
