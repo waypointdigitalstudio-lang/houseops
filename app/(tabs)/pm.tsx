@@ -9,7 +9,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -160,13 +159,22 @@ export default function PMScreen() {
     if (!siteId) { setLoading(false); return; }
     const q = query(
       collection(db, "pmDevices"),
-      where("siteId", "==", siteId),
-      orderBy("name")
+      where("siteId", "==", siteId)
     );
-    return onSnapshot(q, (snap) => {
-      setDevices(snap.docs.map((d) => ({ id: d.id, ...d.data() } as PmDevice)));
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as PmDevice))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        setDevices(list);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("pmDevices snapshot error:", err);
+        setLoading(false);
+      }
+    );
   }, [siteId]);
 
   useEffect(() => {
@@ -784,19 +792,13 @@ export default function PMScreen() {
       <Modal visible={showImportModal} animationType="slide" presentationStyle="pageSheet">
         <View style={[styles.modal, { backgroundColor: theme.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
-            <Pressable onPress={() => { setShowImportModal(false); setImportPreview([]); }}>
-              <Text style={[styles.modalCancel, { color: theme.mutedText }]}>Cancel</Text>
+            <Pressable onPress={() => { setShowImportModal(false); setImportPreview([]); }} style={styles.modalClose}>
+              <Ionicons name="close" size={22} color={theme.mutedText} />
             </Pressable>
             <Text style={[styles.modalTitle, { color: theme.text }]}>
               Import Preview ({importPreview.length})
             </Text>
-            <Pressable onPress={commitImport} disabled={importSaving}>
-              {importSaving ? (
-                <ActivityIndicator size="small" color={theme.primary} />
-              ) : (
-                <Text style={[styles.modalSave, { color: theme.primary }]}>Import</Text>
-              )}
-            </Pressable>
+            <View style={styles.modalClose} />
           </View>
           <FlatList
             data={importPreview}
@@ -812,6 +814,25 @@ export default function PMScreen() {
               </View>
             )}
           />
+          <View style={[styles.modalFooter, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
+            <Pressable
+              style={[styles.footerBtn, styles.footerCancel, { borderColor: theme.border }]}
+              onPress={() => { setShowImportModal(false); setImportPreview([]); }}
+            >
+              <Text style={[styles.footerCancelText, { color: theme.mutedText }]}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.footerBtn, styles.footerSave, { backgroundColor: theme.primary }]}
+              onPress={commitImport}
+              disabled={importSaving}
+            >
+              {importSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.footerSaveText}>Import {importPreview.length}</Text>
+              )}
+            </Pressable>
+          </View>
         </View>
       </Modal>
     </View>

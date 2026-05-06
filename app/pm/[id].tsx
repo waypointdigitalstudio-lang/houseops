@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -173,7 +174,13 @@ export default function PMDetail() {
   const setCheck = useCallback(
     async (checkName: string, val: CheckValue) => {
       if (!recordId || !siteId) return;
-      const newChecks = { ...latestChecks.current, [checkName]: val };
+      const toggling = latestChecks.current[checkName] === val;
+      const newChecks = { ...latestChecks.current };
+      if (toggling) {
+        delete newChecks[checkName];
+      } else {
+        newChecks[checkName] = val;
+      }
       latestChecks.current = newChecks;
       setLocalChecks(newChecks);
 
@@ -182,7 +189,7 @@ export default function PMDetail() {
           await ensureRecord(newChecks);
         } else {
           await updateDoc(doc(db, "pmRecords", recordId), {
-            [`checks.${checkName}`]: val,
+            [`checks.${checkName}`]: toggling ? deleteField() : val,
             updatedAt: serverTimestamp(),
           });
         }

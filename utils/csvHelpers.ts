@@ -29,11 +29,44 @@ function parseCSVLine(line: string, delimiter: string): string[] {
 }
 
 export const parseCSV = (content: string): string[][] => {
-  const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (lines.length === 0) return [];
-  const firstLine = lines[0];
+  const firstLine = content.split(/\r?\n/).find((l) => l.trim() !== "") ?? "";
   const delimiter = firstLine.includes("|") ? "|" : firstLine.includes(";") ? ";" : ",";
-  return lines.map((line) => parseCSVLine(line, delimiter));
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < content.length) {
+    const ch = content[i];
+    const next = content[i + 1];
+
+    if (ch === '"') {
+      if (inQuotes && next === '"') { cell += '"'; i += 2; continue; }
+      inQuotes = !inQuotes; i++; continue;
+    }
+
+    if (ch === delimiter && !inQuotes) {
+      row.push(cell.trim()); cell = ""; i++; continue;
+    }
+
+    if (!inQuotes && (ch === '\r' || ch === '\n')) {
+      if (ch === '\r' && next === '\n') i++;
+      row.push(cell.trim());
+      if (row.some((c) => c !== "")) rows.push(row);
+      row = []; cell = ""; i++; continue;
+    }
+
+    cell += ch; i++;
+  }
+
+  if (cell || row.length > 0) {
+    row.push(cell.trim());
+    if (row.some((c) => c !== "")) rows.push(row);
+  }
+
+  return rows;
 };
 
 // Exact-match first, then partial — prevents e.g. "printerip" from shadowing "printer" as a name column
