@@ -6,6 +6,7 @@ import * as Sharing from "expo-sharing";
 import {
   deleteField,
   doc,
+  FieldPath,
   getDoc,
   onSnapshot,
   serverTimestamp,
@@ -185,17 +186,23 @@ export default function PMDetail() {
       setLocalChecks(newChecks);
 
       try {
+        // If no record yet, create it first (includes all current checks)
         if (!recordExists.current) {
           await ensureRecord(newChecks);
-        } else {
-          await updateDoc(doc(db, "pmRecords", recordId), {
-            [`checks.${checkName}`]: toggling ? deleteField() : val,
-            updatedAt: serverTimestamp(),
-          });
+        }
+        // Always write this specific field — handles concurrent-create races
+        // and the toggle/uncheck path uniformly
+        if (recordExists.current) {
+          await updateDoc(
+            doc(db, "pmRecords", recordId),
+            new FieldPath("checks", checkName), toggling ? deleteField() : val,
+            "updatedAt", serverTimestamp(),
+          );
         }
         flashSaved();
-      } catch {
-        Alert.alert("Error", "Failed to save check. Try again.");
+      } catch (err: any) {
+        const code = err?.code ?? err?.message ?? "unknown";
+        Alert.alert("Save Error", `Code: ${code}`);
       }
     },
     [recordId, siteId, ensureRecord]
@@ -230,7 +237,8 @@ export default function PMDetail() {
         await updateDoc(doc(db, "pmRecords", recordId), payload);
       }
       flashSaved();
-    } catch {
+    } catch (err) {
+      if (__DEV__) console.error("[PM saveAdminInfo] Firestore error:", err);
       Alert.alert("Error", "Failed to save.");
     }
     setSaving(false);
@@ -245,7 +253,9 @@ export default function PMDetail() {
         updatedAt: serverTimestamp(),
       });
       flashSaved();
-    } catch {}
+    } catch (err) {
+      if (__DEV__) console.error("[PM saveNotes] Firestore error:", err);
+    }
   }, [recordId, siteId, localBootErrors, localNotes]);
 
   // ─── CSV export (single device) ───────────────────────────────────────────
