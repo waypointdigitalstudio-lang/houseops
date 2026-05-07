@@ -37,7 +37,7 @@ import { normalizeCell, parseCSV } from "../../utils/csvHelpers";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type CheckValue = "OK" | "Repair Needed" | "N/A";
-type FilterMode = "all" | "pending" | "done" | "repair";
+type FilterMode = "all" | "due" | "pending" | "done" | "repair";
 type DeviceType = "Desktop" | "Laptop" | "Server";
 
 interface PmDevice {
@@ -111,6 +111,15 @@ function checkedCount(record: PmRecord | undefined): number {
 function hasRepair(record: PmRecord | undefined): boolean {
   if (!record) return false;
   return ALL_CHECKS.some((c) => record.checks?.[c] === "Repair Needed");
+}
+
+function pmDueStatus(record: PmRecord | undefined): "due" | "overdue" | "current" {
+  if (!record?.pmDate) return "due";
+  const lastPm = new Date(record.pmDate);
+  if (isNaN(lastPm.getTime())) return "due";
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 3);
+  return lastPm <= cutoff ? "overdue" : "current";
 }
 
 function statusDotColor(status: string): string {
@@ -204,6 +213,7 @@ export default function PMScreen() {
           d.os.toLowerCase().includes(q)
       );
     }
+    if (filter === "due")     result = result.filter((d) => pmDueStatus(records[d.id]) !== "current");
     if (filter === "done")    result = result.filter((d) => isDone(records[d.id]));
     if (filter === "pending") result = result.filter((d) => !isDone(records[d.id]));
     if (filter === "repair")  result = result.filter((d) => hasRepair(records[d.id]));
@@ -490,13 +500,18 @@ export default function PMScreen() {
       const done = isDone(rec);
       const count = checkedCount(rec);
       const repair = hasRepair(rec);
+      const dueStatus = pmDueStatus(rec);
+
+      const borderColor =
+        dueStatus === "overdue" ? "#f97316" :
+        dueStatus === "due"     ? "#f97316" :
+        repair                  ? "#ef4444" :
+        done                    ? "#22c55e" :
+        theme.border;
 
       return (
         <Pressable
-          style={[
-            styles.card,
-            { backgroundColor: theme.card, borderColor: done ? "#22c55e" : repair ? "#ef4444" : theme.border },
-          ]}
+          style={[styles.card, { backgroundColor: theme.card, borderColor }]}
           onPress={() => router.push(`/pm/${device.id}`)}
           onLongPress={() => isAdmin && openEditModal(device)}
         >
@@ -512,12 +527,23 @@ export default function PMScreen() {
               {[device.os, device.osVer].filter(Boolean).join(" · ")}
               {device.user ? ` · ${device.user}` : ""}
             </Text>
-            <Text style={[styles.cardMeta, { color: theme.mutedText }]}>{device.ip}</Text>
+            <Text style={[styles.cardMeta, { color: theme.mutedText }]}>
+              {device.ip}
+              {dueStatus === "current" && rec?.pmDate ? `  ·  PM: ${rec.pmDate}` : ""}
+            </Text>
           </View>
 
           <View style={styles.cardRight}>
             <View style={[styles.statusDot, { backgroundColor: statusDotColor(device.status) }]} />
-            {done ? (
+            {dueStatus === "overdue" ? (
+              <View style={[styles.badge, styles.badgeOverdue]}>
+                <Text style={styles.badgeOverdueText}>Overdue</Text>
+              </View>
+            ) : dueStatus === "due" ? (
+              <View style={[styles.badge, styles.badgeDue]}>
+                <Text style={styles.badgeDueText}>PM Due</Text>
+              </View>
+            ) : done ? (
               <View style={[styles.badge, styles.badgeDone]}>
                 <Text style={styles.badgeDoneText}>✓ Done</Text>
               </View>
@@ -529,11 +555,7 @@ export default function PMScreen() {
               <View style={[styles.badge, styles.badgePending]}>
                 <Text style={styles.badgePendingText}>{count}/{ALL_CHECKS.length}</Text>
               </View>
-            ) : (
-              <View style={[styles.badge, styles.badgeNew]}>
-                <Text style={styles.badgeNewText}>New</Text>
-              </View>
-            )}
+            ) : null}
             {isAdmin && (
               <Pressable
                 hitSlop={8}
@@ -603,7 +625,7 @@ export default function PMScreen() {
         {/* Filter chips + count + overflow */}
         <View style={styles.filterRow}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-            {(["all", "pending", "done", "repair"] as FilterMode[]).map((f) => (
+            {(["all", "due", "pending", "done", "repair"] as FilterMode[]).map((f) => (
               <Pressable
                 key={f}
                 style={[
@@ -908,6 +930,10 @@ const styles = StyleSheet.create({
   badgePendingText: { fontSize: 11, fontWeight: "600", color: "#ea580c" },
   badgeNew: { backgroundColor: "#f1f5f9" },
   badgeNewText: { fontSize: 11, fontWeight: "600", color: "#475569" },
+  badgeDue: { backgroundColor: "#fef3c7" },
+  badgeDueText: { fontSize: 11, fontWeight: "700", color: "#d97706" },
+  badgeOverdue: { backgroundColor: "#ffedd5" },
+  badgeOverdueText: { fontSize: 11, fontWeight: "700", color: "#ea580c" },
 
   emptyText: { fontSize: 16, marginTop: 12, textAlign: "center" },
   emptyHint: { fontSize: 13, marginTop: 6, textAlign: "center" },

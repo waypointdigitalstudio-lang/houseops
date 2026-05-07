@@ -1,4 +1,5 @@
 import { onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import admin from "firebase-admin";
 
@@ -188,6 +189,63 @@ export const notifyLowToner = onDocumentUpdated("toners/{tonerId}", async (event
     getName: (d) => `${d.model ?? "Unknown toner"} (${d.color ?? ""})`.trim(),
   });
 });
+
+// ─── PM Due — monthly scheduled notification ──────────────────────────────
+
+export const pmDueNotification = onSchedule(
+  { schedule: "0 13 1 * *", timeZone: "America/New_York" },
+  async () => {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 3);
+
+    // Load all devices and records in parallel
+    const [devicesSnap, recordsSnap] = await Promise.all([
+      db.collection("pmDevices").get(),
+      db.collection("pmRecords").get(),
+    ]);
+
+    // Map deviceId → pmDate (empty string = never done)
+    const pmDateByDeviceId = {};
+    recordsSnap.docs.forEach((d) => {
+      const { deviceId, pmDate } = d.data();
+      if (deviceId) pmDateByDeviceId[deviceId] = pmDate || "";
+    });
+
+    // Count overdue devices per site
+    const overdueCount = {};
+    devicesSnap.docs.forEach((d) => {
+      const { siteId } = d.data();
+      if (!siteId) return;
+      const pmDate = pmDateByDeviceId[d.id] ?? "";
+      const isOverdue = !pmDate || new Date(pmDate) <= cutoff;
+      if (isOverdue) overdueCount[siteId] = (overdueCount[siteId] ?? 0) + 1;
+    });
+
+    // Send one notification per site that has overdue devices
+    for (const [siteId, count] of Object.entries(overdueCount)) {
+      const tokens = await getEnabledTokens(siteId);
+      if (!tokens.length) continue;
+
+      const title = "PM Checks Due";
+      const body =
+        count === 1
+          ? "1 device is due for a preventative maintenance check."
+          : `${count} devices are due for preventative maintenance checks.`;
+
+      const messages = tokens.map((to) => ({
+        to, sound: "default", title, body, priority: "high", channelId: "default",
+        data: { type: "pm_due", siteId, count },
+      }));
+
+      try {
+        await sendExpoPush(messages);
+        logger.info(`PM due notification sent — site ${siteId}, ${count} device(s) overdue`);
+      } catch (err) {
+        logger.error(`PM due notification failed — site ${siteId}`, { error: String(err) });
+      }
+    }
+  }
+);
 
 export const notifyLowRadioPart = onDocumentUpdated("radioParts/{partId}", async (event) => {
   await handleLowStockUpdate({

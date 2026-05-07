@@ -258,6 +258,40 @@ export default function PMDetail() {
     }
   }, [recordId, siteId, localBootErrors, localNotes]);
 
+  // ─── Reset / Start New PM ────────────────────────────────────────────────
+
+  const startNewPM = useCallback(() => {
+    if (!recordId || !siteId) return;
+    Alert.alert(
+      "Start New PM?",
+      "This will clear all checks and reset the date so you can run a fresh PM cycle. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start New PM",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              latestChecks.current = {};
+              setLocalChecks({});
+              setLocalDate(today());
+              if (recordExists.current) {
+                await updateDoc(doc(db, "pmRecords", recordId), {
+                  checks: {},
+                  pmDate: "",
+                  updatedAt: serverTimestamp(),
+                });
+              }
+              flashSaved();
+            } catch {
+              Alert.alert("Error", "Failed to reset PM.");
+            }
+          },
+        },
+      ]
+    );
+  }, [recordId, siteId]);
+
   // ─── CSV export (single device) ───────────────────────────────────────────
 
   const exportCSV = async () => {
@@ -318,11 +352,14 @@ export default function PMDetail() {
           headerStyle: { backgroundColor: theme.background },
           headerTitleStyle: { color: theme.text, fontWeight: "700" },
           headerRight: () => (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
               {saveFlash && (
                 <Ionicons name="checkmark-circle" size={18} color={theme.primary} />
               )}
-              <Pressable onPress={exportCSV}>
+              <Pressable onPress={startNewPM} hitSlop={8}>
+                <Ionicons name="refresh-outline" size={20} color={theme.mutedText} />
+              </Pressable>
+              <Pressable onPress={exportCSV} hitSlop={8}>
                 <Ionicons name="download-outline" size={20} color={theme.primary} />
               </Pressable>
             </View>
