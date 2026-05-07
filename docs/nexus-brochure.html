@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus — Operations Management Platform</title>
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Page Setup ── */
+    @page {
+      size: Letter;
+      margin: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #fff;
+      color: #111;
+      width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #0d0d0d;
+      color: #fff;
+      padding: 0.45in 0.5in 0.38in;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .logo-ring {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2px solid rgba(0,184,148,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-inner {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #00b894;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+    }
+
+    .header-text h1 {
+      font-size: 36px;
+      font-weight: 900;
+      letter-spacing: -1px;
+      color: #fff;
+      line-height: 1;
+    }
+
+    .header-text p {
+      font-size: 14px;
+      color: rgba(255,255,255,0.65);
+      margin-top: 5px;
+      font-weight: 500;
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    .header-right .built-by {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .header-right .studio {
+      font-size: 14px;
+      font-weight: 800;
+      color: #00b894;
+      margin-top: 3px;
+    }
+
+    .pills {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .pill {
+      background: rgba(0,184,148,0.15);
+      border: 1px solid rgba(0,184,148,0.4);
+      color: #00b894;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Body ── */
+    main {
+      flex: 1;
+      padding: 0.32in 0.5in 0.28in;
+      display: flex;
+      flex-direction: column;
+      gap: 0.22in;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+
+    /* ── Intro blurb ── */
+    .intro {
+      background: #f7faf9;
+      border-left: 4px solid #00b894;
+      padding: 14px 18px;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .intro p {
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: #333;
+    }
+
+    .intro strong { color: #00b894; }
+
+    /* ── Feature grid ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .feature-card {
+      border: 1px solid #e8e8e8;
+      border-radius: 12px;
+      padding: 13px 13px 12px;
+      background: #fff;
+    }
+
+    .feature-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      margin-bottom: 8px;
+    }
+
+    .feature-name {
+      font-size: 12px;
+      font-weight: 800;
+      color: #111;
+      margin-bottom: 3px;
+      line-height: 1.2;
+    }
+
+    .feature-desc {
+      font-size: 10.5px;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    /* ── Two-column row: stats + tech ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    /* ── Stat bar ── */
+    .stat-bar {
+      background: #0d0d0d;
+      border-radius: 12px;
+      padding: 16px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+    }
+
+    .stat-item {
+      text-align: center;
+      flex: 1;
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: 900;
+      color: #00b894;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      color: rgba(255,255,255,0.55);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-divider {
+      width: 1px;
+      height: 30px;
+      background: rgba(255,255,255,0.12);
+    }
+
+    /* ── Tech stack ── */
+    .tech-list {
+      border: 1px solid #e8e8e8;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .tech-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 13px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .tech-row:last-child { border-bottom: none; }
+
+    .tech-check {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #00b894;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 9px;
+      color: #fff;
+    }
+
+    .tech-name {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #111;
+    }
+
+    .tech-detail {
+      font-size: 10px;
+      color: #888;
+      margin-left: auto;
+    }
+
+    /* ── Footer ── */
+    footer {
+      background: #0d0d0d;
+      color: rgba(255,255,255,0.5);
+      padding: 14px 0.5in;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10.5px;
+    }
+
+    footer .footer-left { line-height: 1.5; }
+    footer .footer-left strong { color: #fff; }
+    footer .footer-right { text-align: right; line-height: 1.5; }
+    footer .footer-right strong { color: #00b894; }
+
+    /* ── Print tweaks ── */
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .feature-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══ HEADER ══ -->
+  <header>
+    <div class="logo-area">
+      <div class="logo-ring">
+        <div class="logo-inner">🌐</div>
+      </div>
+      <div class="header-text">
+        <h1>Nexus</h1>
+        <p>Multi-site operations, unified.</p>
+        <div class="pills">
+          <span class="pill">Operations</span>
+          <span class="pill">Maintenance</span>
+          <span class="pill">Inventory</span>
+          <span class="pill">Analytics</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="built-by">Designed &amp; built by</div>
+      <div class="studio">Waypoint Digital Studio</div>
+      <div class="built-by" style="margin-top:8px;">Mobile Platform · 2026</div>
+    </div>
+  </header>
+
+  <!-- ══ MAIN ══ -->
+  <main>
+
+    <!-- Intro -->
+    <div>
+      <div class="section-label">Platform overview</div>
+      <div class="intro">
+        <p>
+          <strong>Nexus</strong> is a real-time mobile operations platform built for multi-site teams.
+          From inventory levels and toner stock to preventative maintenance schedules and radio part tracking,
+          Nexus brings every operational workflow into a single, role-secured app —
+          with <strong>live push notifications</strong>, <strong>CSV reporting</strong>, and
+          <strong>cloud-synced data</strong> across every device on your network.
+        </p>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div>
+      <div class="section-label">Core modules</div>
+      <div class="features-grid">
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#00b89422;">📦</div>
+          <div class="feature-name">Inventory</div>
+          <div class="feature-desc">Real-time stock tracking with low-stock &amp; out-of-stock alerts and CSV export.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#f9731622;">🔧</div>
+          <div class="feature-name">Preventative Maintenance</div>
+          <div class="feature-desc">Quarterly PM checklists with overdue tracking, badges, and reset workflow.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#6366f122;">🖨️</div>
+          <div class="feature-name">Printers &amp; Toners</div>
+          <div class="feature-desc">Full printer fleet registry with toner level management and model tracking.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#ec489922;">📻</div>
+          <div class="feature-name">Radio Parts</div>
+          <div class="feature-desc">Two-way radio parts inventory with per-site stock levels and alerts.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#eab30822;">🔔</div>
+          <div class="feature-name">Alerts &amp; Analytics</div>
+          <div class="feature-desc">Push notifications, activity log, date-range filters, and visual analytics charts.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#ef444422;">🗑️</div>
+          <div class="feature-name">Asset Disposal</div>
+          <div class="feature-desc">Auditable records for retired hardware — track what was removed and when.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#0ea5e922;">📖</div>
+          <div class="feature-name">Vendor Directory</div>
+          <div class="feature-desc">Contacts, vendors, and Lincoln Tech partners organized by site.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#8b5cf622;">🔐</div>
+          <div class="feature-name">Role-Based Access</div>
+          <div class="feature-desc">Admin and staff tiers — each site sees only its own data, enforced server-side.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Stats + Tech -->
+    <div class="two-col">
+
+      <div>
+        <div class="section-label">By the numbers</div>
+        <div class="stat-bar">
+          <div class="stat-item">
+            <div class="stat-value">8</div>
+            <div class="stat-label">Modules</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-value">∞</div>
+            <div class="stat-label">Sites</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-value">Live</div>
+            <div class="stat-label">Sync</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-value">OTA</div>
+            <div class="stat-label">Updates</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label">Technology</div>
+        <div class="tech-list">
+          <div class="tech-row">
+            <div class="tech-check">✓</div>
+            <div class="tech-name">React Native + Expo SDK 54</div>
+            <div class="tech-detail">Cross-platform iOS &amp; Android</div>
+          </div>
+          <div class="tech-row">
+            <div class="tech-check">✓</div>
+            <div class="tech-name">Firebase Firestore</div>
+            <div class="tech-detail">Real-time, multi-site database</div>
+          </div>
+          <div class="tech-row">
+            <div class="tech-check">✓</div>
+            <div class="tech-name">Firebase Auth</div>
+            <div class="tech-detail">Secure role-enforced login</div>
+          </div>
+          <div class="tech-row">
+            <div class="tech-check">✓</div>
+            <div class="tech-name">Firebase Functions v2</div>
+            <div class="tech-detail">Cloud automation &amp; push alerts</div>
+          </div>
+          <div class="tech-row">
+            <div class="tech-check">✓</div>
+            <div class="tech-name">EAS Build + EAS Update</div>
+            <div class="tech-detail">Native builds &amp; OTA deploys</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ══ FOOTER ══ -->
+  <footer>
+    <div class="footer-left">
+      <strong>Nexus</strong> — Multi-site Operations Platform<br>
+      Confidential — For demonstration purposes
+    </div>
+    <div class="footer-right">
+      <strong>Waypoint Digital Studio</strong><br>
+      © 2026 — All rights reserved
+    </div>
+  </footer>
+
+</body>
+</html>
