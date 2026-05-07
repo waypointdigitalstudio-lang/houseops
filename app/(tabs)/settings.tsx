@@ -468,6 +468,19 @@ export default function SettingsScreen() {
           <InfoRow label="Platform" value={Constants.platform?.ios ? "iOS" : "Android"} theme={theme} />
           <InfoRow label="Site" value={siteId || "Not assigned"} theme={theme} />
           <InfoRow label="User ID" value={uid?.slice(0, 8) || "Not signed in"} theme={theme} />
+          <Pressable
+            onPress={() => router.push("/about")}
+            style={{
+              marginTop: 12,
+              borderWidth: 1,
+              borderColor: theme.primary,
+              paddingVertical: 11,
+              borderRadius: 999,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: theme.primary, fontWeight: "800", fontSize: 14 }}>About Nexus</Text>
+          </Pressable>
         </Card>
 
         <Card title="Account" subtitle="Signed in" theme={theme}>
