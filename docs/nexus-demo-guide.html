@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus — Demo Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @page { size: Letter; margin: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #fff;
+      color: #111;
+      width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      font-size: 12px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #0d0d0d;
+      padding: 0.3in 0.5in;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left h1 {
+      font-size: 28px;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+
+    .header-left p {
+      color: rgba(255,255,255,0.5);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .header-badge {
+      background: #00b894;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 6px 16px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      padding: 0.28in 0.5in 0.2in;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2in;
+    }
+
+    /* ── Opener tip ── */
+    .opener {
+      background: #f0faf6;
+      border: 1.5px solid #00b894;
+      border-radius: 10px;
+      padding: 13px 16px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .opener-icon {
+      font-size: 20px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .opener p {
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: #1a5c48;
+    }
+
+    .opener strong { color: #00b894; font-weight: 800; }
+
+    /* ── Section heading ── */
+    .section-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #aaa;
+      margin-bottom: 8px;
+    }
+
+    /* ── Step cards ── */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 12px;
+      align-items: start;
+      background: #fafafa;
+      border: 1px solid #e8e8e8;
+      border-radius: 10px;
+      padding: 11px 13px;
+    }
+
+    .step-number {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #0d0d0d;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-number.green { background: #00b894; }
+
+    .step-body {}
+
+    .step-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #111;
+      margin-bottom: 3px;
+    }
+
+    .step-action {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 5px;
+      font-style: italic;
+    }
+
+    .step-say {
+      font-size: 11.5px;
+      color: #333;
+      line-height: 1.55;
+      background: #fff;
+      border-left: 3px solid #00b894;
+      padding: 6px 10px;
+      border-radius: 0 6px 6px 0;
+    }
+
+    /* ── Two column layout ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    /* ── Talking points ── */
+    .points-card {
+      border: 1px solid #e8e8e8;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .points-header {
+      background: #0d0d0d;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 8px 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .points-body { padding: 0 13px; }
+
+    .point-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: #333;
+    }
+
+    .point-row:last-child { border-bottom: none; }
+
+    .point-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #00b894;
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+
+    /* ── Q&A ── */
+    .qa-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .qa-item {
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .qa-q {
+      background: #f5f5f5;
+      padding: 7px 12px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #111;
+    }
+
+    .qa-a {
+      padding: 7px 12px;
+      font-size: 11px;
+      color: #444;
+      line-height: 1.5;
+    }
+
+    /* ── Close bar ── */
+    .close-bar {
+      background: #0d0d0d;
+      border-radius: 10px;
+      padding: 13px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .close-bar-icon { font-size: 22px; flex-shrink: 0; }
+
+    .close-bar p {
+      color: rgba(255,255,255,0.75);
+      font-size: 11.5px;
+      line-height: 1.55;
+    }
+
+    .close-bar strong { color: #00b894; }
+
+    /* ── Footer ── */
+    footer {
+      background: #0d0d0d;
+      color: rgba(255,255,255,0.4);
+      padding: 10px 0.5in;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+    }
+
+    footer strong { color: rgba(255,255,255,0.7); }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .step, .qa-item { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══ HEADER ══ -->
+  <header>
+    <div class="header-left">
+      <h1>Nexus — Demo Guide</h1>
+      <p>A step-by-step walkthrough script for live demonstrations</p>
+    </div>
+    <div class="header-badge">Confidential</div>
+  </header>
+
+  <!-- ══ MAIN ══ -->
+  <main>
+
+    <!-- Opener tip -->
+    <div class="opener">
+      <div class="opener-icon">💡</div>
+      <p>
+        <strong>Before you start:</strong> Have the app open to the home screen (Inventory tab), signed in on your site.
+        Make sure you have a live internet connection — real-time sync is one of the best things to show.
+        The whole demo should take <strong>5–8 minutes</strong>. Don't rush. Let them read the screen.
+      </p>
+    </div>
+
+    <!-- Demo flow -->
+    <div>
+      <div class="section-label">Demo flow — walk through in this order</div>
+      <div class="steps">
+
+        <div class="step">
+          <div class="step-number green">1</div>
+          <div class="step-body">
+            <div class="step-title">Open the About page first</div>
+            <div class="step-action">Settings tab → "About Nexus" button</div>
+            <div class="step-say">
+              "Before I show you what it does, here's a quick overview of what we built."
+              Let them read the screen for 10–15 seconds. Point out the 8 modules and the stat bar.
+              "Everything you see here is live in production on real devices."
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-body">
+            <div class="step-title">Inventory — the core</div>
+            <div class="step-action">Tap the Inventory tab → open any item</div>
+            <div class="step-say">
+              "Every item has a current stock level, a minimum threshold, and a status —
+              OK, Low, or Out. When stock drops below the minimum, the system automatically
+              pushes a notification to every device on that site. No manual checking required."
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-body">
+            <div class="step-title">Alerts — show the notification system</div>
+            <div class="step-action">Tap the Alerts tab → show the Alerts view, then switch to Activity</div>
+            <div class="step-say">
+              "This is every stock event that's happened across the site — restocks, low stock, out of stock.
+              There's a full activity log with date filters and you can export it to CSV.
+              The Analytics view breaks down what's moving most and what gets alerted most often."
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">4</div>
+          <div class="step-body">
+            <div class="step-title">PM Checklist — the maintenance module</div>
+            <div class="step-action">Tap the PM tab → open any device</div>
+            <div class="step-say">
+              "Every device has a full 30-point maintenance checklist — boot, login, network, hardware,
+              security, cleaning, peripherals. Checks save instantly. If a device is overdue for its
+              quarterly PM, it shows an orange badge right on the list. On the first of every month
+              the system sends a push notification to remind the team how many devices are due."
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">5</div>
+          <div class="step-body">
+            <div class="step-title">Show real-time sync (if two devices available)</div>
+            <div class="step-action">Adjust a stock quantity on one device, watch the other update</div>
+            <div class="step-say">
+              "Watch this — I'm going to change a quantity here."
+              Change a number. Point to the second device.
+              "It updated instantly. No refresh, no polling. Both devices are always looking at the same data."
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number green">6</div>
+          <div class="step-body">
+            <div class="step-title">Close with the security model</div>
+            <div class="step-action">Mention it — no need to navigate anywhere</div>
+            <div class="step-say">
+              "One thing that's easy to overlook — every piece of data is locked to its site server-side.
+              A staff member at Site A cannot see Site B's inventory even if they tried to query it directly.
+              Admins manage users and sites. Staff can only see and edit their own site's data."
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Talking points + Q&A side by side -->
+    <div class="two-col">
+
+      <!-- Key talking points -->
+      <div>
+        <div class="section-label">Key talking points</div>
+        <div class="points-card">
+          <div class="points-header">Say these with confidence</div>
+          <div class="points-body">
+            <div class="point-row"><div class="point-dot"></div>Built on the same stack as large consumer apps — React Native, Firebase, cloud functions</div>
+            <div class="point-row"><div class="point-dot"></div>Deployed to real devices via EAS — updates ship without going through the App Store</div>
+            <div class="point-row"><div class="point-dot"></div>Push notifications are end-to-end: database change → cloud function → device</div>
+            <div class="point-row"><div class="point-dot"></div>Everything is multi-site — add a new location and it's fully isolated automatically</div>
+            <div class="point-row"><div class="point-dot"></div>Dark and light mode, works on iOS and Android from one codebase</div>
+            <div class="point-row"><div class="point-dot"></div>All security rules are enforced server-side — not just hidden in the UI</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q&A -->
+      <div>
+        <div class="section-label">Likely questions &amp; answers</div>
+        <div class="qa-list">
+          <div class="qa-item">
+            <div class="qa-q">How long did this take to build?</div>
+            <div class="qa-a">Built iteratively — started with inventory, added modules as needs came up. It's been running in production for months.</div>
+          </div>
+          <div class="qa-item">
+            <div class="qa-q">Can it support more sites?</div>
+            <div class="qa-a">Yes — the architecture is multi-site by design. Adding a new location is just adding a new site record. No code changes needed.</div>
+          </div>
+          <div class="qa-item">
+            <div class="qa-q">What happens if there's no internet?</div>
+            <div class="qa-a">Firestore caches recent reads locally, so you can still view data. Writes queue and sync when you reconnect.</div>
+          </div>
+          <div class="qa-item">
+            <div class="qa-q">Who can access it?</div>
+            <div class="qa-a">Only users with an account. Admins control who gets access and what site they belong to. Staff can't see other sites' data.</div>
+          </div>
+          <div class="qa-item">
+            <div class="qa-q">Can we add new features?</div>
+            <div class="qa-a">Yes — the codebase is modular and well-structured. New screens and features can be added without touching existing ones.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Close -->
+    <div class="close-bar">
+      <div class="close-bar-icon">🎯</div>
+      <p>
+        <strong>How to close the demo:</strong>
+        "What you're looking at is a fully deployed, production application.
+        Real data, real notifications, real users. This isn't a prototype —
+        it's running right now." Then stop talking and let them ask questions.
+        <strong>Silence after a strong close is good.</strong>
+      </p>
+    </div>
+
+  </main>
+
+  <!-- ══ FOOTER ══ -->
+  <footer>
+    <span><strong>Nexus Demo Guide</strong> — Waypoint Digital Studio © 2026</span>
+    <span>Keep this page face-down until the demo begins.</span>
+  </footer>
+
+</body>
+</html>

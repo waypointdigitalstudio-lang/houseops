@@ -439,15 +439,16 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
       if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
       const col = makeColFinder(headers);
-      const iName = col(["name", "printer"]);
-      const iLocation = col(["location", "loc"]);
+      const iName = col(["name", "printer", "description", "desc"]);
+      const iLocation = col(["location", "loc", "dept", "department", "room"]);
       const iIp = col(["ip", "ipaddress", "ip_address"]);
-      const iAsset = col(["asset", "assetnumber"]);
-      const iSerial = col(["serial", "sn"]);
+      const iAsset = col(["asset", "assetnumber", "assetnumber", "toshiba"]);
+      const iSerial = col(["serial", "sn", "serialnumber"]);
+      const iModel = col(["model", "make"]);
       const iTonerSeries = col(["toner", "tonerseries"]);
       const iBarcode = col(["barcode", "sku", "upc"]);
       const iNotes = col(["notes", "note"]);
-      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name' column."); return; }
+      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name', 'Description', or 'Printer' column."); return; }
       const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
       let count = 0;
       for (let i = 0; i < dataRows.length; i += 499) {
@@ -457,7 +458,8 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
           const name = normalizeCell(row[iName] ?? "");
           if (!name) continue;
           const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-          batch.set(doc(db, "printers", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), serial: normalizeCell(row[iSerial] ?? ""), tonerSeries: normalizeCell(row[iTonerSeries] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
+          const model = iModel !== -1 ? normalizeCell(row[iModel] ?? "") : "";
+          batch.set(doc(db, "printers", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), serial: normalizeCell(row[iSerial] ?? ""), model, tonerSeries: normalizeCell(row[iTonerSeries] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
           count++;
         }
         await batch.commit();
