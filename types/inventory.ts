@@ -25,8 +25,11 @@ export type Printer = {
   id: string;
   name: string;
   location?: string;
+  roomNumber?: string;
   ipAddress?: string;
   assetNumber?: string;
+  toshibaId?: string;
+  model?: string;
   serial?: string;
   tonerSeries?: string;
   barcode?: string;
