@@ -226,7 +226,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'siteId', 'itemName', 'itemId', 'qty', 'min',
           'prevState', 'nextState', 'status', 'action',
-          'itemType', 'createdAt'
+          'itemType', 'createdAt', 'by', 'note', 'source'
         ])
       );
 
