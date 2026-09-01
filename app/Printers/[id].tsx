@@ -31,9 +31,12 @@ interface Printer {
   id: string;
   name: string;
   location?: string;
+  roomNumber?: string;
   ipAddress?: string;
   serial?: string;
+  model?: string;
   assetNumber?: string;
+  toshibaId?: string;
   siteId: string;
 }
 
@@ -151,11 +154,54 @@ export default function PrinterDetail() {
 
       {/* Printer Info Card */}
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.label, { color: theme.mutedText }]}>Location</Text>
-        <Text style={[styles.value, { color: theme.text }]}>{printer.location || "Not set"}</Text>
-        
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: theme.mutedText }]}>Location / Dept</Text>
+            <Text style={[styles.value, { color: theme.text, fontSize: 16 }]}>{printer.location || "Not set"}</Text>
+          </View>
+          {printer.roomNumber ? (
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={[styles.label, { color: theme.mutedText }]}>Room</Text>
+              <Text style={[styles.value, { color: theme.text, fontSize: 16 }]}>{printer.roomNumber}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {printer.model ? (
+          <>
+            <View style={styles.divider} />
+            <Text style={[styles.label, { color: theme.mutedText }]}>Model</Text>
+            <Text style={[styles.value, { color: theme.text, fontSize: 15 }]}>{printer.model}</Text>
+          </>
+        ) : null}
+
         <View style={styles.divider} />
-        
+
+        <View style={styles.row}>
+          {printer.toshibaId ? (
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.label, { color: theme.mutedText }]}>Toshiba / BAL #</Text>
+              <Text style={[styles.value, { color: theme.text, fontSize: 15 }]}>{printer.toshibaId}</Text>
+            </View>
+          ) : null}
+          {printer.assetNumber ? (
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.label, { color: theme.mutedText }]}>Asset #</Text>
+              <Text style={[styles.value, { color: theme.text, fontSize: 15 }]}>{printer.assetNumber}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {printer.serial ? (
+          <>
+            <View style={styles.divider} />
+            <Text style={[styles.label, { color: theme.mutedText }]}>Serial</Text>
+            <Text style={[styles.value, { color: theme.text, fontSize: 14 }]}>{printer.serial}</Text>
+          </>
+        ) : null}
+
+        <View style={styles.divider} />
+
         <Text style={[styles.label, { color: theme.mutedText }]}>IP Address</Text>
         <View style={styles.row}>
           <Text style={[styles.value, { color: theme.tint, flex: 1 }]}>{printer.ipAddress || "No IP"}</Text>

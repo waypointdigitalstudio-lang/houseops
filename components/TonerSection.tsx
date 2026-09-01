@@ -95,7 +95,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
   const [printerSearch, setPrinterSearch] = useState("");
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
-  const [printerForm, setPrinterForm] = useState({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "", tonerSeries: "", barcode: "", notes: "" });
+  const [printerForm, setPrinterForm] = useState({ name: "", location: "", roomNumber: "", ipAddress: "", assetNumber: "", toshibaId: "", serial: "", tonerSeries: "", barcode: "", notes: "" });
 
   // Data Card Printer state
   const [datacardPrinters, setDatacardPrinters] = useState<DataCardPrinter[]>([]);
@@ -188,7 +188,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     if (!printerSearch) return printers.sort((a, b) => a.name.localeCompare(b.name));
     const q = printerSearch.toLowerCase();
     return printers
-      .filter((p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q))
+      .filter((p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q) || p.toshibaId?.toLowerCase().includes(q) || p.assetNumber?.toLowerCase().includes(q) || p.roomNumber?.includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [printers, printerSearch]);
 
@@ -440,9 +440,11 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
       const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
       const col = makeColFinder(headers);
       const iName = col(["name", "printer", "description", "desc"]);
-      const iLocation = col(["location", "loc", "dept", "department", "room"]);
+      const iLocation = col(["location", "loc", "dept", "department"]);
+      const iRoomNumber = col(["room#", "room", "roomnumber", "roomnum"]);
       const iIp = col(["ip", "ipaddress", "ip_address"]);
-      const iAsset = col(["asset", "assetnumber", "assetnumber", "toshiba"]);
+      const iAsset = col(["assetnumber", "asset"]);
+      const iToshibaId = col(["toshibaid", "toshiba", "ballysnumber", "ballys"]);
       const iSerial = col(["serial", "sn", "serialnumber"]);
       const iModel = col(["model", "make"]);
       const iTonerSeries = col(["toner", "tonerseries"]);
@@ -459,7 +461,9 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
           if (!name) continue;
           const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
           const model = iModel !== -1 ? normalizeCell(row[iModel] ?? "") : "";
-          batch.set(doc(db, "printers", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), serial: normalizeCell(row[iSerial] ?? ""), model, tonerSeries: normalizeCell(row[iTonerSeries] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
+          const toshibaId = iToshibaId !== -1 ? normalizeCell(row[iToshibaId] ?? "") : "";
+          const roomNumber = iRoomNumber !== -1 ? normalizeCell(row[iRoomNumber] ?? "") : "";
+          batch.set(doc(db, "printers", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), roomNumber, ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), toshibaId, serial: normalizeCell(row[iSerial] ?? ""), model, tonerSeries: normalizeCell(row[iTonerSeries] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
           count++;
         }
         await batch.commit();
@@ -550,18 +554,37 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
 
   const renderPrinter = ({ item }: { item: Printer }) => (
     <View style={[inventoryStyles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Pressable style={{ flex: 1 }} onPress={() => { setEditingPrinter(item); setPrinterForm({ name: item.name || "", location: item.location || "", ipAddress: item.ipAddress || "", assetNumber: item.assetNumber || "", serial: item.serial || "", tonerSeries: item.tonerSeries || "", barcode: item.barcode || "", notes: item.notes || "" }); setShowPrinterModal(true); }}>
+      <Pressable style={{ flex: 1 }} onPress={() => { setEditingPrinter(item); setPrinterForm({ name: item.name || "", location: item.location || "", roomNumber: item.roomNumber || "", ipAddress: item.ipAddress || "", assetNumber: item.assetNumber || "", toshibaId: item.toshibaId || "", serial: item.serial || "", tonerSeries: item.tonerSeries || "", barcode: item.barcode || "", notes: item.notes || "" }); setShowPrinterModal(true); }}>
         <Text style={[inventoryStyles.itemName, { color: theme.text }]}>{item.name}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
           <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
           <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
-          {item.tonerSeries && (
-            <>
-              <Ionicons name="pricetag-outline" size={12} color={theme.mutedText} style={{ marginLeft: 8, marginRight: 4 }} />
-              <Text style={{ color: theme.mutedText, fontSize: 12 }}>#{item.tonerSeries}</Text>
-            </>
-          )}
+          {item.roomNumber ? (
+            <Text style={{ color: theme.mutedText, fontSize: 12, marginLeft: 6 }}>· Rm {item.roomNumber}</Text>
+          ) : null}
         </View>
+        {(item.toshibaId || item.assetNumber) ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 3, gap: 10 }}>
+            {item.toshibaId ? (
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="barcode-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
+                <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.toshibaId}</Text>
+              </View>
+            ) : null}
+            {item.assetNumber ? (
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="pricetag-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
+                <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.assetNumber}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {item.tonerSeries ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <Ionicons name="print-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
+            <Text style={{ color: theme.mutedText, fontSize: 11 }}>#{item.tonerSeries}</Text>
+          </View>
+        ) : null}
         {item.tonerId && <View style={{ marginTop: 6 }}><TonerStockBadge tonerId={item.tonerId} theme={theme} /></View>}
       </Pressable>
       <View style={{ alignItems: "flex-end", gap: 8 }}>
@@ -673,7 +696,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
                 <Pressable onPress={() => downloadPrinterTemplate().catch((e) => Alert.alert("Error", e.message))} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
                   <Ionicons name="document-outline" size={18} color={theme.text} />
                 </Pressable>
-                <Pressable onPress={() => { setEditingPrinter(null); setPrinterForm({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "", tonerSeries: "", barcode: "", notes: "" }); setShowPrinterModal(true); }} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
+                <Pressable onPress={() => { setEditingPrinter(null); setPrinterForm({ name: "", location: "", roomNumber: "", ipAddress: "", assetNumber: "", toshibaId: "", serial: "", tonerSeries: "", barcode: "", notes: "" }); setShowPrinterModal(true); }} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
                   <Ionicons name="add" size={18} color={theme.text} />
                 </Pressable>
               </View>
@@ -774,8 +797,10 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
           <ScrollView showsVerticalScrollIndicator={false}>
             {[
               { label: "Name *", key: "name", placeholder: "Printer name" },
-              { label: "Location", key: "location", placeholder: "Location" },
+              { label: "Location / Dept", key: "location", placeholder: "e.g. CAGE, FINANCE" },
+              { label: "Room #", key: "roomNumber", placeholder: "e.g. 1327" },
               { label: "IP Address", key: "ipAddress", placeholder: "192.168.x.x" },
+              { label: "Toshiba / BAL #", key: "toshibaId", placeholder: "e.g. BAL0810" },
               { label: "Asset Number", key: "assetNumber", placeholder: "Asset #" },
               { label: "Serial", key: "serial", placeholder: "Serial #" },
               { label: "Toner Series", key: "tonerSeries", placeholder: "e.g. 1234-series" },
