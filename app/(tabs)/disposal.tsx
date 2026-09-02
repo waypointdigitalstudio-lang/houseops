@@ -3,7 +3,8 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -78,7 +79,7 @@ export default function DisposalScreen() {
     disposedBy: "",
   });
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (profileLoading) return;
 
     if (!siteId) {
@@ -124,7 +125,7 @@ export default function DisposalScreen() {
     );
 
     return () => unsub();
-  }, [siteId, profileLoading]);
+  }, [siteId, profileLoading]));
 
   const formatDate = (timestamp: any) => {
     if (!timestamp || !timestamp.toDate) return "";

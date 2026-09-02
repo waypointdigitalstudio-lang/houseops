@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   addDoc,
@@ -111,16 +111,18 @@ export default function IndexScreen() {
     return () => clearTimeout(t);
   }, [addTonerBarcode]);
 
-  // Inventory Firestore listener
-  useEffect(() => {
-    if (!siteId) return;
-    const q = query(collection(db, "items"), where("siteId", "==", siteId));
-    const unsub = onSnapshot(q, (snap) => {
-      setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Item)));
-      setLoading(false);
-    }, (err) => { if (__DEV__) console.error("items onSnapshot error:", err); setLoading(false); });
-    return () => unsub();
-  }, [siteId]);
+  // Inventory Firestore listener — paused when tab is not focused
+  useFocusEffect(
+    useCallback(() => {
+      if (!siteId) return;
+      const q = query(collection(db, "items"), where("siteId", "==", siteId));
+      const unsub = onSnapshot(q, (snap) => {
+        setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Item)));
+        setLoading(false);
+      }, (err) => { if (__DEV__) console.error("items onSnapshot error:", err); setLoading(false); });
+      return () => unsub();
+    }, [siteId])
+  );
 
   // Inventory undo
   // itemId: only clear pendingDelete if this specific item is still pending,

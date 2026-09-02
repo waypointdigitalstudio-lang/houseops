@@ -1,21 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { useRouter } from "expo-router";
 import {
   addDoc,
   collection,
   deleteDoc,
-  deleteField,
   doc,
-  getDocs,
-  increment,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
-  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -44,17 +38,16 @@ import inventoryStyles from "../constants/inventoryStyles";
 import { useAppTheme } from "../constants/theme";
 import { db } from "../firebaseConfig";
 import {
-  DataCardPrinter,
-  Printer,
   Toner,
-  TonerLink,
   TonerSubTab,
   TONER_COLORS,
   UNDO_ANIMATION_MS,
   UNDO_TIMEOUT_MS,
 } from "../types/inventory";
 import { getStockStatus, logActivity } from "../utils/activity";
-import { normalizeCell, parseCSV, makeColFinder, downloadTonerTemplate, downloadPrinterTemplate, downloadDatacardTemplate } from "../utils/csvHelpers";
+import { downloadTonerTemplate, makeColFinder, normalizeCell, parseCSV } from "../utils/csvHelpers";
+import DataCardList from "./DataCardList";
+import PrinterList from "./PrinterList";
 import TonerStockBadge from "./TonerStockBadge";
 
 export interface TonerSectionRef {
@@ -68,7 +61,6 @@ interface TonerSectionProps {
 
 const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function TonerSection({ siteId, onTonerCountChange }, ref) {
   const theme = useAppTheme();
-  const router = useRouter();
 
   const [tonerSubTab, setTonerSubTab] = useState<TonerSubTab>("toners");
 
@@ -80,6 +72,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
   const [showTonerModal, setShowTonerModal] = useState(false);
   const [editingToner, setEditingToner] = useState<Toner | null>(null);
   const [tonerForm, setTonerForm] = useState({ model: "", color: "Black", quantity: "", minQuantity: "", printer: "", notes: "", barcode: "" });
+  const [importingToners, setImportingToners] = useState(false);
 
   // Toner undo state
   const [pendingTonerDelete, setPendingTonerDelete] = useState<{ toner: Toner; backup: any } | null>(null);
@@ -87,32 +80,6 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
   const undoTonerAnim = useRef(new Animated.Value(0)).current;
   const undoTonerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
-
-  // Printer state
-  const [printers, setPrinters] = useState<Printer[]>([]);
-  const [printersLoading, setPrintersLoading] = useState(true);
-  const [importingPrinters, setImportingPrinters] = useState(false);
-  const [printerSearch, setPrinterSearch] = useState("");
-  const [showPrinterModal, setShowPrinterModal] = useState(false);
-  const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
-  const [printerForm, setPrinterForm] = useState({ name: "", location: "", roomNumber: "", ipAddress: "", assetNumber: "", toshibaId: "", serial: "", tonerSeries: "", barcode: "", notes: "" });
-
-  // Data Card Printer state
-  const [datacardPrinters, setDatacardPrinters] = useState<DataCardPrinter[]>([]);
-  const [datacardSearch, setDatacardSearch] = useState("");
-  const [showDatacardModal, setShowDatacardModal] = useState(false);
-  const [editingDatacard, setEditingDatacard] = useState<DataCardPrinter | null>(null);
-  const [datacardForm, setDatacardForm] = useState({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "", ribbonType: "", notes: "" });
-
-  // Import state
-  const [importingToners, setImportingToners] = useState(false);
-  const [importingDatacardPrinters, setImportingDatacardPrinters] = useState(false);
-
-  // Link Toner Modal state
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [selectedPrinter, setSelectedPrinter] = useState<Printer | null>(null);
-  const [tonerLinkSearch, setTonerLinkSearch] = useState("");
-  const [tonerLinkList, setTonerLinkList] = useState<TonerLink[]>([]);
 
   // Mounted tracking + cleanup
   useEffect(() => {
@@ -123,7 +90,7 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     };
   }, []);
 
-  // Firestore listeners
+  // Toners Firestore listener
   useEffect(() => {
     if (!siteId) return;
     const q = query(collection(db, "toners"), where("siteId", "==", siteId));
@@ -135,45 +102,12 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     return () => unsub();
   }, [siteId]);
 
-  useEffect(() => {
-    if (!siteId) return;
-    const q = query(collection(db, "printers"), where("siteId", "==", siteId));
-    const unsub = onSnapshot(q, (snap) => {
-      setPrinters(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Printer)));
-      setPrintersLoading(false);
-    }, (err) => { if (__DEV__) console.error("printers onSnapshot error:", err); setPrintersLoading(false); });
-    return () => unsub();
-  }, [siteId]);
-
-  useEffect(() => {
-    if (!siteId) return;
-    const q = query(collection(db, "datacardPrinters"), where("siteId", "==", siteId));
-    const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as DataCardPrinter));
-      setDatacardPrinters(list.sort((a, b) => a.name.localeCompare(b.name)));
-    }, (err) => { if (__DEV__) console.error("datacardPrinters onSnapshot error:", err); });
-    return () => unsub();
-  }, [siteId]);
-
-  useEffect(() => {
-    if (!showLinkModal || !siteId) return;
-    const q = query(collection(db, "toners"), where("siteId", "==", siteId), orderBy("model", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setTonerLinkList(snap.docs.map((d) => {
-        const data = d.data() as any;
-        return { id: d.id, name: data.model || data.name || "Unknown", stock: data.quantity ?? data.stock ?? 0 } as TonerLink;
-      }));
-    }, (err) => { if (__DEV__) console.error("tonerLinkList onSnapshot error:", err); });
-    return () => unsub();
-  }, [showLinkModal, siteId]);
-
   // Notify parent of visible toner count for summary stats
   useEffect(() => {
     const visibleCount = toners.filter((t) => !hiddenTonerIds.has(t.id)).length;
     onTonerCountChange(visibleCount);
   }, [toners, hiddenTonerIds, onTonerCountChange]);
 
-  // Filtered lists
   const filteredToners = useMemo(() => {
     let list = toners.filter((t) => !hiddenTonerIds.has(t.id));
     if (tonerSearch) {
@@ -183,27 +117,6 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     if (showTonerLowOnly) list = list.filter((t) => t.quantity <= t.minQuantity);
     return list.sort((a, b) => a.model.localeCompare(b.model));
   }, [toners, tonerSearch, showTonerLowOnly, hiddenTonerIds]);
-
-  const filteredPrinters = useMemo(() => {
-    if (!printerSearch) return printers.sort((a, b) => a.name.localeCompare(b.name));
-    const q = printerSearch.toLowerCase();
-    return printers
-      .filter((p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q) || p.toshibaId?.toLowerCase().includes(q) || p.assetNumber?.toLowerCase().includes(q) || p.roomNumber?.includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [printers, printerSearch]);
-
-  const filteredDatacardPrinters = useMemo(() => {
-    if (!datacardSearch) return datacardPrinters;
-    const q = datacardSearch.toLowerCase();
-    return datacardPrinters.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q) || p.ipAddress?.includes(q)
-    );
-  }, [datacardPrinters, datacardSearch]);
-
-  const filteredTonerLinkList = useMemo(() => {
-    if (!tonerLinkSearch) return tonerLinkList;
-    return tonerLinkList.filter((t) => t.name.toLowerCase().includes(tonerLinkSearch.toLowerCase()));
-  }, [tonerLinkList, tonerLinkSearch]);
 
   // Toner undo logic
   const dismissTonerUndoBanner = useCallback(() => {
@@ -295,99 +208,6 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     } catch { Alert.alert("Error", "Failed to save toner."); }
   };
 
-  // Printer CRUD
-  const savePrinter = async () => {
-    if (!printerForm.name) { Alert.alert("Error", "Name is required."); return; }
-    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
-    const data = { ...printerForm, siteId };
-    try {
-      if (editingPrinter) {
-        await setDoc(doc(db, "printers", editingPrinter.id), data, { merge: true });
-        await logActivity({ siteId, itemName: data.name, itemId: editingPrinter.id, qty: 0, min: 0, prevState: "OK", nextState: "OK", action: "edited", itemType: "printer" });
-      } else {
-        const docRef = await addDoc(collection(db, "printers"), data);
-        await logActivity({ siteId, itemName: data.name, itemId: docRef.id, qty: 0, min: 0, prevState: "OK", nextState: "OK", action: "added", itemType: "printer" });
-      }
-      setShowPrinterModal(false);
-    } catch { Alert.alert("Error", "Failed to save printer."); }
-  };
-
-  const deletePrinter = (printer: Printer) => {
-    Alert.alert("Delete Printer", `Remove ${printer.name}?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { try { await deleteDoc(doc(db, "printers", printer.id)); setShowPrinterModal(false); setEditingPrinter(null); } catch (err: any) { Alert.alert("Error", err.message || "Failed to delete printer."); } } },
-    ]);
-  };
-
-  // Data Card CRUD
-  const saveDatacard = async () => {
-    if (!datacardForm.name.trim()) { Alert.alert("Error", "Name is required."); return; }
-    if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
-    const data = {
-      name: datacardForm.name.trim(), location: datacardForm.location.trim(),
-      ipAddress: datacardForm.ipAddress.trim(), assetNumber: datacardForm.assetNumber.trim(),
-      serial: datacardForm.serial.trim(), ribbonType: datacardForm.ribbonType.trim(),
-      notes: datacardForm.notes.trim(), siteId: siteId ?? "",
-    };
-    try {
-      if (editingDatacard) { await setDoc(doc(db, "datacardPrinters", editingDatacard.id), data, { merge: true }); }
-      else { await addDoc(collection(db, "datacardPrinters"), data); }
-      setShowDatacardModal(false);
-    } catch { Alert.alert("Error", "Failed to save data card printer."); }
-  };
-
-  const deleteDatacard = (printer: DataCardPrinter) => {
-    Alert.alert("Delete Printer", `Remove ${printer.name}?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { try { await deleteDoc(doc(db, "datacardPrinters", printer.id)); setShowDatacardModal(false); setEditingDatacard(null); } catch (err: any) { Alert.alert("Error", err.message || "Failed to delete."); } } },
-    ]);
-  };
-
-  // Link/Unlink/Deduct
-  const handleLinkToner = async (toner: TonerLink) => {
-    if (!selectedPrinter) return;
-    try {
-      await updateDoc(doc(db, "printers", selectedPrinter.id), { tonerId: toner.id });
-      await logActivity({ siteId: siteId ?? "", itemName: `${toner.name} → ${selectedPrinter.name}`, itemId: selectedPrinter.id, qty: toner.stock, min: 0, prevState: "OK", nextState: "OK", action: "linked", itemType: "printer" });
-      setShowLinkModal(false);
-      setSelectedPrinter(null);
-      Alert.alert("Linked!", `${toner.name} linked to ${selectedPrinter.name}.`);
-    } catch { Alert.alert("Error", "Failed to link toner."); }
-  };
-
-  const handleUnlinkToner = async (printer: Printer) => {
-    if (!printer.tonerId) return;
-    const linkedToner = toners.find((t) => t.id === printer.tonerId);
-    Alert.alert("Unlink Toner", `Remove ${linkedToner?.model || "toner"} from ${printer.name}?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Unlink", style: "destructive", onPress: async () => {
-        try {
-          await updateDoc(doc(db, "printers", printer.id), { tonerId: deleteField() });
-          await logActivity({ siteId: siteId ?? "", itemName: `${linkedToner?.model || "Unknown Toner"} ✕ ${printer.name}`, itemId: printer.id, qty: linkedToner?.quantity ?? 0, min: linkedToner?.minQuantity ?? 0, prevState: "OK", nextState: "OK", action: "unlinked", itemType: "printer" });
-          Alert.alert("Unlinked!", `Toner removed from ${printer.name}.`);
-        } catch { Alert.alert("Error", "Failed to unlink toner."); }
-      }},
-    ]);
-  };
-
-  const handleDeductToner = async (printer: Printer) => {
-    if (!printer.tonerId) return;
-    const linkedToner = toners.find((t) => t.id === printer.tonerId);
-    Alert.alert("Deduct Toner", `Use 1 toner for ${printer.name}?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Deduct 1", onPress: async () => {
-        try {
-          const prevQty = linkedToner?.quantity ?? 1;
-          const minQty = linkedToner?.minQuantity ?? 0;
-          const newQty = Math.max(0, prevQty - 1);
-          await updateDoc(doc(db, "toners", printer.tonerId!), { quantity: increment(-1) });
-          await logActivity({ siteId: siteId ?? "", itemName: linkedToner?.model || "Unknown Toner", itemId: printer.tonerId!, qty: newQty, min: minQty, prevState: getStockStatus(prevQty, minQty), nextState: getStockStatus(newQty, minQty), action: "deducted", itemType: "toner" });
-        } catch { Alert.alert("Error", "Failed to update stock."); }
-      }},
-    ]);
-  };
-
-  // CSV Import
   const importTonersFromCSV = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
@@ -428,107 +248,8 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     } catch (err: any) { Alert.alert("Import Failed", err.message || "An unexpected error occurred."); } finally { setImportingToners(false); }
   };
 
-  const importPrintersFromCSV = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
-      if (result.canceled) return;
-      if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
-      setImportingPrinters(true);
-      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
-      const rows = parseCSV(content);
-      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
-      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = makeColFinder(headers);
-      const iName = col(["name", "printer", "description", "desc"]);
-      const iLocation = col(["location", "loc", "dept", "department"]);
-      const iRoomNumber = col(["room#", "room", "roomnumber", "roomnum"]);
-      const iIp = col(["ip", "ipaddress", "ip_address"]);
-      const iAsset = col(["assetnumber", "asset"]);
-      const iToshibaId = col(["toshibaid", "toshiba", "ballysnumber", "ballys"]);
-      const iSerial = col(["serial", "sn", "serialnumber"]);
-      const iModel = col(["model", "make"]);
-      const iTonerSeries = col(["toner", "tonerseries"]);
-      const iBarcode = col(["barcode", "sku", "upc"]);
-      const iNotes = col(["notes", "note"]);
-      if (iName === -1) { Alert.alert("Import Failed", "Could not find a 'Name', 'Description', or 'Printer' column."); return; }
-      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[iName] ?? "") !== "");
-      let count = 0;
-      for (let i = 0; i < dataRows.length; i += 499) {
-        const chunk = dataRows.slice(i, i + 499);
-        const batch = writeBatch(db);
-        for (const row of chunk) {
-          const name = normalizeCell(row[iName] ?? "");
-          if (!name) continue;
-          const stableId = `${siteId}_${name}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-          const model = iModel !== -1 ? normalizeCell(row[iModel] ?? "") : "";
-          const toshibaId = iToshibaId !== -1 ? normalizeCell(row[iToshibaId] ?? "") : "";
-          const roomNumber = iRoomNumber !== -1 ? normalizeCell(row[iRoomNumber] ?? "") : "";
-          batch.set(doc(db, "printers", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), roomNumber, ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: normalizeCell(row[iAsset] ?? ""), toshibaId, serial: normalizeCell(row[iSerial] ?? ""), model, tonerSeries: normalizeCell(row[iTonerSeries] ?? ""), barcode: normalizeCell(row[iBarcode] ?? ""), notes: normalizeCell(row[iNotes] ?? ""), siteId, importedAt: new Date().toISOString() }, { merge: true });
-          count++;
-        }
-        await batch.commit();
-      }
-      Alert.alert("Import Complete", `${count} printer${count !== 1 ? "s" : ""} imported/updated.`);
-    } catch (err: any) { Alert.alert("Import Failed", err.message || "An unexpected error occurred."); } finally { setImportingPrinters(false); }
-  };
-
-  const importDatacardPrintersFromCSV = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "text/plain"] });
-      if (result.canceled) return;
-      if (!siteId) { Alert.alert("Error", "No site assigned to your account."); return; }
-      setImportingDatacardPrinters(true);
-      const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
-      const rows = parseCSV(content);
-      if (rows.length < 2) { Alert.alert("Empty File", "No data rows found in the CSV."); return; }
-      const headers = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, ""));
-      const col = makeColFinder(headers);
-      const iModel = col(["datacard", "model", "name"]);
-      const iSerial = col(["serial", "sn", "serialnumber"]);
-      const iLocation = col(["location", "loc"]);
-      const iIp = col(["printerip", "ipaddress", "ip_address", "ip"]);
-      const iAsset = col(["asset", "assetnumber"]);
-      const iRibbon = col(["ribbon", "ribbontype"]);
-      const iWarranty = col(["warranty"]);
-      const iStatus = col(["status"]);
-      const iMac = col(["mac", "macaddress"]);
-      const iNotes = col(["notes", "note"]);
-      if (iModel === -1 && iSerial === -1) { Alert.alert("Import Failed", "Could not find a model or serial number column."); return; }
-      const idCol = iModel !== -1 ? iModel : iSerial;
-      const dataRows = rows.slice(1).filter((row) => normalizeCell(row[idCol] ?? "") !== "");
-      let count = 0;
-      for (let i = 0; i < dataRows.length; i += 499) {
-        const chunk = dataRows.slice(i, i + 499);
-        const batch = writeBatch(db);
-        for (const row of chunk) {
-          const model = iModel !== -1 ? normalizeCell(row[iModel] ?? "") : "";
-          const serial = iSerial !== -1 ? normalizeCell(row[iSerial] ?? "") : "";
-          const name = model && serial ? `${model} - ${serial}` : model || serial;
-          if (!name) continue;
-          const noteParts: string[] = [];
-          const warranty = iWarranty !== -1 ? normalizeCell(row[iWarranty] ?? "") : "";
-          if (warranty) noteParts.push(`Warranty: ${warranty}`);
-          const status = iStatus !== -1 ? normalizeCell(row[iStatus] ?? "") : "";
-          if (status) noteParts.push(`Status: ${status}`);
-          const mac = iMac !== -1 ? normalizeCell(row[iMac] ?? "") : "";
-          if (mac) noteParts.push(`MAC: ${mac}`);
-          const existingNotes = iNotes !== -1 ? normalizeCell(row[iNotes] ?? "") : "";
-          if (existingNotes) noteParts.push(existingNotes);
-          const notes = noteParts.join(" | ");
-          const idBase = serial || name;
-          const stableId = `${siteId}_dc_${idBase}`.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 100);
-          batch.set(doc(db, "datacardPrinters", stableId), { name, location: normalizeCell(row[iLocation] ?? ""), ipAddress: normalizeCell(row[iIp] ?? ""), assetNumber: iAsset !== -1 ? normalizeCell(row[iAsset] ?? "") : "", serial, ribbonType: iRibbon !== -1 ? normalizeCell(row[iRibbon] ?? "") : "", notes, siteId, importedAt: new Date().toISOString() }, { merge: true });
-          count++;
-        }
-        await batch.commit();
-      }
-      Alert.alert("Import Complete", `${count} data card printer${count !== 1 ? "s" : ""} imported/updated.`);
-    } catch (err: any) { Alert.alert("Import Failed", err.message || "An unexpected error occurred."); } finally { setImportingDatacardPrinters(false); }
-  };
-
-  // Render functions
   const renderToner = ({ item }: { item: Toner }) => (
-    <Pressable onPress={() => router.push(`/toners/${item.id}` as any)}>
+    <Pressable onPress={() => openTonerModal(item)}>
       <View style={[inventoryStyles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={[inventoryStyles.itemName, { color: theme.text }]}>{item.model}</Text>
@@ -552,91 +273,10 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
     </Pressable>
   );
 
-  const renderPrinter = ({ item }: { item: Printer }) => (
-    <View style={[inventoryStyles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Pressable style={{ flex: 1 }} onPress={() => { setEditingPrinter(item); setPrinterForm({ name: item.name || "", location: item.location || "", roomNumber: item.roomNumber || "", ipAddress: item.ipAddress || "", assetNumber: item.assetNumber || "", toshibaId: item.toshibaId || "", serial: item.serial || "", tonerSeries: item.tonerSeries || "", barcode: item.barcode || "", notes: item.notes || "" }); setShowPrinterModal(true); }}>
-        <Text style={[inventoryStyles.itemName, { color: theme.text }]}>{item.name}</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-          <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
-          <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
-          {item.roomNumber ? (
-            <Text style={{ color: theme.mutedText, fontSize: 12, marginLeft: 6 }}>· Rm {item.roomNumber}</Text>
-          ) : null}
-        </View>
-        {(item.toshibaId || item.assetNumber) ? (
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 3, gap: 10 }}>
-            {item.toshibaId ? (
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons name="barcode-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
-                <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.toshibaId}</Text>
-              </View>
-            ) : null}
-            {item.assetNumber ? (
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons name="pricetag-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
-                <Text style={{ color: theme.mutedText, fontSize: 11 }}>{item.assetNumber}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-        {item.tonerSeries ? (
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-            <Ionicons name="print-outline" size={12} color={theme.mutedText} style={{ marginRight: 3 }} />
-            <Text style={{ color: theme.mutedText, fontSize: 11 }}>#{item.tonerSeries}</Text>
-          </View>
-        ) : null}
-        {item.tonerId && <View style={{ marginTop: 6 }}><TonerStockBadge tonerId={item.tonerId} theme={theme} /></View>}
-      </Pressable>
-      <View style={{ alignItems: "flex-end", gap: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
-          <Pressable onPress={() => deletePrinter(item)} hitSlop={8} style={{ padding: 4 }}>
-            <Ionicons name="trash-outline" size={18} color="#ef4444" />
-          </Pressable>
-        </View>
-        {item.tonerId ? (
-          <>
-            <Pressable hitSlop={8} style={[inventoryStyles.actionButton, { backgroundColor: "#ef4444" }]} onPress={() => handleDeductToner(item)}>
-              <Text style={inventoryStyles.actionButtonText}>DEDUCT 1</Text>
-            </Pressable>
-            <Pressable hitSlop={8} style={[inventoryStyles.actionButton, { backgroundColor: "#f59e0b" }]} onPress={() => handleUnlinkToner(item)}>
-              <Text style={inventoryStyles.actionButtonText}>UNLINK</Text>
-            </Pressable>
-          </>
-        ) : (
-          <Pressable hitSlop={8} style={[inventoryStyles.actionButton, { backgroundColor: theme.primary }]} onPress={() => { setSelectedPrinter(item); setTonerLinkSearch(""); setShowLinkModal(true); }}>
-            <Text style={inventoryStyles.actionButtonText}>LINK TONER</Text>
-          </Pressable>
-        )}
-      </View>
-    </View>
-  );
-
-  const renderDatacardPrinter = ({ item }: { item: DataCardPrinter }) => (
-    <View style={[inventoryStyles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Pressable style={{ flex: 1 }} onPress={() => { setEditingDatacard(item); setDatacardForm({ name: item.name || "", location: item.location || "", ipAddress: item.ipAddress || "", assetNumber: item.assetNumber || "", serial: item.serial || "", ribbonType: item.ribbonType || "", notes: item.notes || "" }); setShowDatacardModal(true); }}>
-        <Text style={[inventoryStyles.itemName, { color: theme.text }]}>{item.name}</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-          <Ionicons name="location-outline" size={14} color={theme.mutedText} style={{ marginRight: 4 }} />
-          <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.location || "No location"}</Text>
-          {item.ribbonType && (
-            <>
-              <Ionicons name="pricetag-outline" size={12} color={theme.mutedText} style={{ marginLeft: 8, marginRight: 4 }} />
-              <Text style={{ color: theme.mutedText, fontSize: 12 }}>{item.ribbonType}</Text>
-            </>
-          )}
-        </View>
-      </Pressable>
-      <View style={{ alignItems: "flex-end", gap: 8 }}>
-        <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14 }}>{item.ipAddress || "No IP"}</Text>
-        <Pressable onPress={() => deleteDatacard(item)} hitSlop={8} style={{ padding: 4 }}>
-          <Ionicons name="trash-outline" size={18} color="#ef4444" />
-        </Pressable>
-      </View>
-    </View>
-  );
-
   const tonerUndoPointerEvents = pendingTonerDelete ? "auto" : "none";
+
+  // Printer count display from printers sub-tab (passed via inline in sub-tab bar below)
+  // We no longer own printer/datacard state here — those components manage themselves.
 
   return (
     <View style={{ flex: 1 }}>
@@ -646,10 +286,10 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
           <Text style={{ textAlign: "center", color: tonerSubTab === "toners" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>Toner Inventory</Text>
         </Pressable>
         <Pressable onPress={() => setTonerSubTab("printers")} style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: tonerSubTab === "printers" ? theme.text : "transparent" }}>
-          <Text style={{ textAlign: "center", color: tonerSubTab === "printers" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>Printers ({printers.length})</Text>
+          <Text style={{ textAlign: "center", color: tonerSubTab === "printers" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>Printers</Text>
         </Pressable>
         <Pressable onPress={() => setTonerSubTab("datacard")} style={{ flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: tonerSubTab === "datacard" ? theme.text : "transparent" }}>
-          <Text style={{ textAlign: "center", color: tonerSubTab === "datacard" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>Data Card ({datacardPrinters.length})</Text>
+          <Text style={{ textAlign: "center", color: tonerSubTab === "datacard" ? theme.text : theme.mutedText, fontWeight: "700", fontSize: 12 }}>Data Card</Text>
         </Pressable>
       </View>
 
@@ -682,52 +322,9 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
           }
         />
       ) : tonerSubTab === "printers" ? (
-        <FlatList
-          data={filteredPrinters}
-          keyExtractor={(item) => item.id}
-          renderItem={renderPrinter}
-          contentContainerStyle={{ padding: 16 }}
-          ListHeaderComponent={
-            <>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <Pressable onPress={importPrintersFromCSV} disabled={importingPrinters} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1 }]}>
-                  {importingPrinters ? <ActivityIndicator size="small" color={theme.text} /> : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[inventoryStyles.importBtnText, { color: theme.text }]}>Import CSV</Text></>}
-                </Pressable>
-                <Pressable onPress={() => downloadPrinterTemplate().catch((e) => Alert.alert("Error", e.message))} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
-                  <Ionicons name="document-outline" size={18} color={theme.text} />
-                </Pressable>
-                <Pressable onPress={() => { setEditingPrinter(null); setPrinterForm({ name: "", location: "", roomNumber: "", ipAddress: "", assetNumber: "", toshibaId: "", serial: "", tonerSeries: "", barcode: "", notes: "" }); setShowPrinterModal(true); }} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
-                  <Ionicons name="add" size={18} color={theme.text} />
-                </Pressable>
-              </View>
-              <TextInput style={[inventoryStyles.searchInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]} placeholder="Search printers..." placeholderTextColor={theme.mutedText} value={printerSearch} onChangeText={setPrinterSearch} />
-            </>
-          }
-        />
+        <PrinterList siteId={siteId} toners={toners} />
       ) : (
-        <FlatList
-          data={filteredDatacardPrinters}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDatacardPrinter}
-          contentContainerStyle={{ padding: 16 }}
-          ListHeaderComponent={
-            <>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <Pressable onPress={importDatacardPrintersFromCSV} disabled={importingDatacardPrinters} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, flex: 1 }]}>
-                  {importingDatacardPrinters ? <ActivityIndicator size="small" color={theme.text} /> : <><Ionicons name="cloud-upload-outline" size={16} color={theme.text} style={{ marginRight: 6 }} /><Text style={[inventoryStyles.importBtnText, { color: theme.text }]}>Import CSV</Text></>}
-                </Pressable>
-                <Pressable onPress={() => downloadDatacardTemplate().catch((e) => Alert.alert("Error", e.message))} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
-                  <Ionicons name="document-outline" size={18} color={theme.text} />
-                </Pressable>
-                <Pressable onPress={() => { setEditingDatacard(null); setDatacardForm({ name: "", location: "", ipAddress: "", assetNumber: "", serial: "", ribbonType: "", notes: "" }); setShowDatacardModal(true); }} style={[inventoryStyles.importBtn, { borderColor: theme.border, backgroundColor: theme.card, paddingHorizontal: 12 }]}>
-                  <Ionicons name="add" size={18} color={theme.text} />
-                </Pressable>
-              </View>
-              <TextInput style={[inventoryStyles.searchInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]} placeholder="Search data card printers..." placeholderTextColor={theme.mutedText} value={datacardSearch} onChangeText={setDatacardSearch} />
-            </>
-          }
-          ListEmptyComponent={<Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 40 }}>{datacardSearch ? "No results match." : "No data card printers yet. Tap + to add one."}</Text>}
-        />
+        <DataCardList siteId={siteId} />
       )}
 
       {/* Toner Undo Bar */}
@@ -784,101 +381,6 @@ const TonerSection = forwardRef<TonerSectionRef, TonerSectionProps>(function Ton
               </Pressable>
             )}
           </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Printer Modal */}
-      <Modal visible={showPrinterModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPrinterModal(false)}>
-        <View style={[inventoryStyles.modalContainer, { backgroundColor: theme.background }]}>
-          <View style={inventoryStyles.modalHeader}>
-            <Text style={[inventoryStyles.modalTitle, { color: theme.text }]}>{editingPrinter ? "Edit Printer" : "Add Printer"}</Text>
-            <Pressable onPress={() => setShowPrinterModal(false)}><Ionicons name="close" size={24} color={theme.text} /></Pressable>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {[
-              { label: "Name *", key: "name", placeholder: "Printer name" },
-              { label: "Location / Dept", key: "location", placeholder: "e.g. CAGE, FINANCE" },
-              { label: "Room #", key: "roomNumber", placeholder: "e.g. 1327" },
-              { label: "IP Address", key: "ipAddress", placeholder: "192.168.x.x" },
-              { label: "Toshiba / BAL #", key: "toshibaId", placeholder: "e.g. BAL0810" },
-              { label: "Asset Number", key: "assetNumber", placeholder: "Asset #" },
-              { label: "Serial", key: "serial", placeholder: "Serial #" },
-              { label: "Toner Series", key: "tonerSeries", placeholder: "e.g. 1234-series" },
-              { label: "Barcode", key: "barcode", placeholder: "Barcode" },
-            ].map(({ label, key, placeholder }) => (
-              <View key={key}>
-                <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>{label}</Text>
-                <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]} placeholder={placeholder} placeholderTextColor={theme.mutedText} value={(printerForm as any)[key]} onChangeText={(v) => setPrinterForm((p) => ({ ...p, [key]: v }))} />
-              </View>
-            ))}
-            <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
-            <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100 }]} placeholder="Notes" placeholderTextColor={theme.mutedText} multiline value={printerForm.notes} onChangeText={(v) => setPrinterForm((p) => ({ ...p, notes: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={savePrinter}>
-              <Text style={inventoryStyles.saveBtnText}>{editingPrinter ? "Update Printer" : "Add Printer"}</Text>
-            </Pressable>
-            {editingPrinter && (
-              <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ef4444", marginTop: 8 }]} onPress={() => deletePrinter(editingPrinter)}>
-                <Text style={[inventoryStyles.saveBtnText, { color: "#ef4444" }]}>Delete Printer</Text>
-              </Pressable>
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Data Card Printer Modal */}
-      <Modal visible={showDatacardModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDatacardModal(false)}>
-        <View style={[inventoryStyles.modalContainer, { backgroundColor: theme.background }]}>
-          <View style={inventoryStyles.modalHeader}>
-            <Text style={[inventoryStyles.modalTitle, { color: theme.text }]}>{editingDatacard ? "Edit Data Card Printer" : "Add Data Card Printer"}</Text>
-            <Pressable onPress={() => setShowDatacardModal(false)}><Ionicons name="close" size={24} color={theme.text} /></Pressable>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {[
-              { label: "Name *", key: "name", placeholder: "Printer name" },
-              { label: "Location", key: "location", placeholder: "Location" },
-              { label: "IP Address", key: "ipAddress", placeholder: "192.168.x.x" },
-              { label: "Asset Number", key: "assetNumber", placeholder: "Asset #" },
-              { label: "Serial", key: "serial", placeholder: "Serial #" },
-              { label: "Ribbon Type", key: "ribbonType", placeholder: "e.g. YMCKO, KO, Monochrome" },
-            ].map(({ label, key, placeholder }) => (
-              <View key={key}>
-                <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>{label}</Text>
-                <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]} placeholder={placeholder} placeholderTextColor={theme.mutedText} value={(datacardForm as any)[key]} onChangeText={(v) => setDatacardForm((p) => ({ ...p, [key]: v }))} />
-              </View>
-            ))}
-            <Text style={[inventoryStyles.fieldLabel, { color: theme.mutedText }]}>Notes</Text>
-            <TextInput style={[inventoryStyles.fieldInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card, height: 100 }]} placeholder="Notes" placeholderTextColor={theme.mutedText} multiline value={datacardForm.notes} onChangeText={(v) => setDatacardForm((p) => ({ ...p, notes: v }))} />
-            <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: theme.primary }]} onPress={saveDatacard}>
-              <Text style={inventoryStyles.saveBtnText}>{editingDatacard ? "Update Printer" : "Add Printer"}</Text>
-            </Pressable>
-            {editingDatacard && (
-              <Pressable style={[inventoryStyles.saveBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ef4444", marginTop: 8 }]} onPress={() => deleteDatacard(editingDatacard)}>
-                <Text style={[inventoryStyles.saveBtnText, { color: "#ef4444" }]}>Delete Printer</Text>
-              </Pressable>
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Link Toner Modal */}
-      <Modal visible={showLinkModal} animationType="slide" transparent={true} onRequestClose={() => setShowLinkModal(false)}>
-        <View style={inventoryStyles.modalOverlay}>
-          <View style={[inventoryStyles.linkModalContent, { backgroundColor: theme.card }]}>
-            <Text style={[inventoryStyles.modalTitle, { color: theme.text, marginBottom: 12 }]}>Link Toner to {selectedPrinter?.name}</Text>
-            <TextInput style={[inventoryStyles.searchInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]} placeholder="Search toners..." placeholderTextColor={theme.mutedText} value={tonerLinkSearch} onChangeText={setTonerLinkSearch} />
-            <ScrollView style={{ maxHeight: 380 }}>
-              {filteredTonerLinkList.map((t) => (
-                <Pressable key={t.id} style={[inventoryStyles.linkItem, { borderBottomColor: theme.border }]} onPress={() => handleLinkToner(t)}>
-                  <Text style={{ color: theme.text, fontWeight: "700", fontSize: 15 }}>{t.name}</Text>
-                  <Text style={{ color: theme.mutedText, fontSize: 12, marginTop: 2 }}>Stock: {t.stock}</Text>
-                </Pressable>
-              ))}
-              {filteredTonerLinkList.length === 0 && <Text style={{ color: theme.mutedText, textAlign: "center", marginTop: 24 }}>No toners found.</Text>}
-            </ScrollView>
-            <Pressable style={{ marginTop: 16, alignItems: "center" }} onPress={() => setShowLinkModal(false)}>
-              <Text style={{ color: theme.tint, fontWeight: "800", fontSize: 16 }}>Cancel</Text>
-            </Pressable>
-          </View>
         </View>
       </Modal>
     </View>

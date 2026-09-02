@@ -16,11 +16,13 @@
 // Firestore will throw an error with a direct link to create it on first run.
 
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -434,8 +436,9 @@ export default function AlertsScreen() {
   const [analyticsActivities, setAnalyticsActivities] = useState<ActivityEntry[]>([]);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
-  // ─── Fetch low-stock items ────────────────────────────────────────
-  useEffect(() => {
+  // ─── Fetch low-stock items — paused when tab is not focused ─────
+  useFocusEffect(
+  useCallback(() => {
     const thisGeneration = ++alertGenRef.current;
 
     if (!siteId) {
@@ -526,14 +529,15 @@ export default function AlertsScreen() {
     );
 
     return () => { unsubItems(); unsubToners(); unsubParts(); };
-  }, [siteId]);
+  }, [siteId]));
 
   // ─── Fetch activity log ───────────────────────────────────────────
   // FIX: Now filters by siteId, orders in Firestore, and limits to 100 docs.
   // Previously queried the entire alertsLog collection with no filter.
   // IMPORTANT: Requires a composite index on alertsLog: siteId ASC + createdAt DESC.
   // Firestore will log a link to create it automatically on first run.
-  useEffect(() => {
+  useFocusEffect(
+  useCallback(() => {
     if (!siteId) {
       setActivities([]);
       setLoadingActivities(false);
@@ -573,7 +577,6 @@ export default function AlertsScreen() {
           } as ActivityEntry;
         });
 
-        // No JS sort needed — Firestore orderBy handles it
         setActivities(items);
         setLoadingActivities(false);
       },
@@ -584,63 +587,53 @@ export default function AlertsScreen() {
     );
 
     return () => unsub();
-  }, [siteId]); // FIX: was missing siteId dependency
+  }, [siteId]));
 
-  // ─── Fetch analytics data (dedicated query, up to 500 entries) ────
-  useEffect(() => {
-    if (!siteId) {
-      setAnalyticsActivities([]);
-      setLoadingAnalytics(false);
-      return;
-    }
-
+  // ─── Fetch analytics on demand (getDocs, not a live listener) ────
+  const fetchAnalytics = useCallback(async () => {
+    if (!siteId) return;
     setLoadingAnalytics(true);
 
     const cutoffDate = getDateCutoff(analyticsPeriod);
-    const constraints: any[] = [
-      where("siteId", "==", siteId),
-    ];
+    const constraints: any[] = [where("siteId", "==", siteId)];
     if (cutoffDate) {
       constraints.push(where("createdAt", ">=", Timestamp.fromDate(cutoffDate)));
     }
     constraints.push(orderBy("createdAt", "desc"));
     constraints.push(limit(500));
 
-    const q = query(collection(db, "alertsLog"), ...constraints);
-
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const items: ActivityEntry[] = snapshot.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            siteId: data.siteId ?? "default",
-            itemName: data.itemName ?? data.name ?? "(unknown)",
-            itemId: data.itemId ?? "",
-            qty: data.qty ?? data.quantity ?? 0,
-            min: data.min ?? data.minQuantity ?? 0,
-            prevState: data.prevState ?? "",
-            nextState: data.nextState ?? "",
-            status: data.status ?? data.nextState ?? "",
-            action: data.action ?? inferActionFromStates(data.prevState, data.nextState),
-            itemType: data.itemType ?? "inventory",
-            createdAt: data.createdAt ?? null,
-            dismissed: data.dismissed ?? false,
-            userDismissed: data.userDismissed ?? false,
-          } as ActivityEntry;
-        });
-        setAnalyticsActivities(items);
-        setLoadingAnalytics(false);
-      },
-      (err) => {
-        if (__DEV__) console.error("[AlertsScreen] Error fetching analytics:", err);
-        setLoadingAnalytics(false);
-      }
-    );
-
-    return () => unsub();
+    try {
+      const snapshot = await getDocs(query(collection(db, "alertsLog"), ...constraints));
+      const items: ActivityEntry[] = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          siteId: data.siteId ?? "default",
+          itemName: data.itemName ?? data.name ?? "(unknown)",
+          itemId: data.itemId ?? "",
+          qty: data.qty ?? data.quantity ?? 0,
+          min: data.min ?? data.minQuantity ?? 0,
+          prevState: data.prevState ?? "",
+          nextState: data.nextState ?? "",
+          status: data.status ?? data.nextState ?? "",
+          action: data.action ?? inferActionFromStates(data.prevState, data.nextState),
+          itemType: data.itemType ?? "inventory",
+          createdAt: data.createdAt ?? null,
+          dismissed: data.dismissed ?? false,
+          userDismissed: data.userDismissed ?? false,
+        } as ActivityEntry;
+      });
+      setAnalyticsActivities(items);
+    } catch (err) {
+      if (__DEV__) console.error("[AlertsScreen] Error fetching analytics:", err);
+    } finally {
+      setLoadingAnalytics(false);
+    }
   }, [siteId, analyticsPeriod]);
+
+  useEffect(() => {
+    if (activeView === "analytics") fetchAnalytics();
+  }, [activeView, fetchAnalytics]);
 
   // ─── Dismiss handler ──────────────────────────────────────────────
   const handleDismiss = useCallback(async (item: AlertEntry) => {

@@ -13,7 +13,8 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -150,7 +151,8 @@ export default function AdminScreen() {
 
   const [alsoUpdateTokens, setAlsoUpdateTokens] = useState(true);
 
-  useEffect(() => {
+
+  useFocusEffect(useCallback(() => {
     let alive = true;
 
     // Sites: one-time fetch (relatively static)
@@ -184,7 +186,7 @@ export default function AdminScreen() {
       alive = false;
       unsubUsers();
     };
-  }, []);
+  }, []));
 
   const selectedSiteLabel = useMemo(() => {
     if (!selectedSiteId) return null;

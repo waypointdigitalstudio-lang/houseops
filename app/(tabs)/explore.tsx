@@ -15,7 +15,8 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -142,8 +143,8 @@ export default function DirectoryScreen() {
   const [dirPreviewKind, setDirPreviewKind] = useState<DirPreviewKind | null>(null);
   const [committingDir, setCommittingDir] = useState(false);
 
-  // ── Listeners ───────────────────────────────────────────────────────────
-  useEffect(() => {
+  // ── Listeners — paused when tab is not focused ──────────────────────────
+  useFocusEffect(useCallback(() => {
     if (!siteId) return;
     const unsub = onSnapshot(
       query(collection(db, "contacts"), where("siteId", "==", siteId)),
@@ -155,9 +156,9 @@ export default function DirectoryScreen() {
       (err) => { if (__DEV__) console.error("Contacts listener error:", err); }
     );
     return unsub;
-  }, [siteId]);
+  }, [siteId]));
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!siteId) return;
     const unsub = onSnapshot(
       query(collection(db, "vendors"), where("siteId", "==", siteId)),
@@ -169,9 +170,9 @@ export default function DirectoryScreen() {
       (err) => { if (__DEV__) console.error("Vendors listener error:", err); }
     );
     return unsub;
-  }, [siteId]);
+  }, [siteId]));
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!siteId) return;
     const unsub = onSnapshot(
       query(collection(db, "lincolnTechs"), where("siteId", "==", siteId)),
@@ -183,7 +184,7 @@ export default function DirectoryScreen() {
       (err) => { if (__DEV__) console.error("LincolnTechs listener error:", err); }
     );
     return unsub;
-  }, [siteId]);
+  }, [siteId]));
 
   // ── Contacts helpers ─────────────────────────────────────────────────────
   const activeCategories = useMemo(() => {
